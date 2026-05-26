@@ -1,7 +1,11 @@
-export default function ReportsPage() {
-	return (
-		<div className="space-y-4">
-			<h1 className="text-2xl font-bold">Reports</h1>
-		</div>
-	);
+import { redirect } from "next/navigation";
+
+import { ReportsPageClient } from "@/components/reports/ReportsPageClient";
+import { auth } from "@/lib/auth";
+
+export default async function ReportsPage() {
+	const session = await auth();
+	if (!session) redirect("/login");
+
+	return <ReportsPageClient userId={session.user.id} />;
 }
