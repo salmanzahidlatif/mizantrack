@@ -1,9 +1,9 @@
 "use client";
 
+import { TrendChart } from "@/components/charts/TrendBarChart";
 import { BalanceCards } from "@/components/dashboard/BalanceCards";
 import { MonthSummary } from "@/components/dashboard/MonthSummary";
 import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
-import { TrendChart } from "@/components/charts/TrendBarChart";
 import { TransactionDrawer } from "@/components/transactions/TransactionDrawer";
 import { useDbConfig } from "@/hooks/useDbConfig";
 
@@ -24,7 +24,7 @@ export function DashboardPageClient({ userId }: DashboardPageClientProps) {
 
 			{/* Account balance cards — horizontal scroll */}
 			<section className="space-y-2">
-				<h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+				<h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
 					Accounts
 				</h2>
 				<BalanceCards userId={userId} />
@@ -32,7 +32,7 @@ export function DashboardPageClient({ userId }: DashboardPageClientProps) {
 
 			{/* Month summary */}
 			<section className="space-y-2">
-				<h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+				<h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
 					This Month
 				</h2>
 				<MonthSummary userId={userId} currency={currency} />
@@ -45,7 +45,7 @@ export function DashboardPageClient({ userId }: DashboardPageClientProps) {
 
 			{/* Recent transactions */}
 			<section className="space-y-2">
-				<h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+				<h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
 					Recent Transactions
 				</h2>
 				<RecentTransactions userId={userId} />

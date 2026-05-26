@@ -54,6 +54,10 @@ export interface DbConfig {
 	enabled: boolean;
 	currency: string; // user's default currency
 	fiscalYearStartMonth: number; // 1–12
+	// Gold price cache (US-025)
+	goldApiKey?: string;
+	lastGoldPricePerGram?: number;
+	lastGoldPriceFetchedAt?: number;
 }
 
 export interface SyncMeta {

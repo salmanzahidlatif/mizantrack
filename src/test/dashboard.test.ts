@@ -4,11 +4,11 @@
  */
 import "fake-indexeddb/auto";
 
+import { format, startOfMonth, subMonths } from "date-fns";
 import { beforeEach, describe, expect, it } from "vitest";
-import { addMonths, format, startOfMonth, subMonths } from "date-fns";
 
-import { db } from "@/lib/db/local";
 import { getDateRange } from "@/lib/dateRange";
+import { db } from "@/lib/db/local";
 
 const USER_ID = "user-sprint4-test";
 const ACCOUNT_ID = "550e8400-e29b-41d4-a716-446655440040";
@@ -24,7 +24,7 @@ describe("getDateRange", () => {
 	});
 
 	it("returns current month boundaries for 'month'", () => {
-		const { from, to } = getDateRange("month", 7);
+		const { from, to: _to } = getDateRange("month", 7);
 		const now = new Date();
 		expect(from.getMonth()).toBe(now.getMonth());
 		expect(from.getDate()).toBe(1);

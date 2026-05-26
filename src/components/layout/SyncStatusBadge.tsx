@@ -27,9 +27,7 @@ export function SyncStatusBadge() {
 	if (lastSync) {
 		const label = formatDistanceToNow(new Date(lastSync), { addSuffix: true });
 		return (
-			<div
-				className="flex items-center gap-1 text-emerald-500"
-				title={`Last synced ${label}`}>
+			<div className="flex items-center gap-1 text-emerald-500" title={`Last synced ${label}`}>
 				<CheckCircle2 className="h-4 w-4" />
 			</div>
 		);

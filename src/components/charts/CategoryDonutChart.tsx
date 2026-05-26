@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { useCategories } from "@/hooks/useCategories";
@@ -9,9 +8,16 @@ import { useCategories } from "@/hooks/useCategories";
 import type { Transaction } from "@/types";
 
 const PALETTE = [
-	"#6366f1", "#8b5cf6", "#ec4899", "#f97316",
-	"#22c55e", "#14b8a6", "#3b82f6", "#eab308",
-	"#ef4444", "#a855f7",
+	"#6366f1",
+	"#8b5cf6",
+	"#ec4899",
+	"#f97316",
+	"#22c55e",
+	"#14b8a6",
+	"#3b82f6",
+	"#eab308",
+	"#ef4444",
+	"#a855f7",
 ];
 
 interface CategoryBreakdownChartProps {
@@ -72,7 +78,9 @@ export function CategoryBreakdownChart({ userId, transactions }: CategoryBreakdo
 						// eslint-disable-next-line @typescript-eslint/no-explicit-any
 						formatter={(value: any) => {
 							const n = typeof value === "number" ? value : parseFloat(String(value ?? "0"));
-							return [`${n.toLocaleString("en-US", { maximumFractionDigits: 0 })} (${((n / total) * 100).toFixed(1)}%)`];
+							return [
+								`${n.toLocaleString("en-US", { maximumFractionDigits: 0 })} (${((n / total) * 100).toFixed(1)}%)`,
+							];
 						}}
 					/>
 					<Legend wrapperStyle={{ fontSize: 12 }} />
@@ -85,7 +93,7 @@ export function CategoryBreakdownChart({ userId, transactions }: CategoryBreakdo
 					<div key={item.name} className="flex items-center justify-between py-1.5">
 						<div className="flex items-center gap-2">
 							<span
-								className="h-2.5 w-2.5 rounded-full shrink-0"
+								className="h-2.5 w-2.5 shrink-0 rounded-full"
 								style={{ backgroundColor: PALETTE[index % PALETTE.length] }}
 							/>
 							<span className="text-xs">{item.name}</span>

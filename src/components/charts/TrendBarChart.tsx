@@ -35,7 +35,13 @@ export function TrendChart({ userId, months = 6 }: TrendChartProps) {
 					<YAxis tick={{ fontSize: 11 }} />
 					<Tooltip
 						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			formatter={(value: any) => String(typeof value === "number" ? value.toLocaleString("en-US", { maximumFractionDigits: 0 }) : (value ?? ""))}
+						formatter={(value: any) =>
+							String(
+								typeof value === "number"
+									? value.toLocaleString("en-US", { maximumFractionDigits: 0 })
+									: (value ?? "")
+							)
+						}
 					/>
 					<Legend wrapperStyle={{ fontSize: 12 }} />
 					<Bar dataKey="income" name="Income" fill="#22c55e" radius={[3, 3, 0, 0]} />

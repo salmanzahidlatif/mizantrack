@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
-
 import { format } from "date-fns";
 import { CalendarIcon } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -104,11 +103,7 @@ export function DateRangePicker({
 					<PopoverContent className="w-auto p-0" align="start">
 						<Calendar
 							mode="range"
-							selected={
-								activeRange
-									? { from: activeRange.from, to: activeRange.to }
-									: undefined
-							}
+							selected={activeRange ? { from: activeRange.from, to: activeRange.to } : undefined}
 							onSelect={handleCustomRange}
 							numberOfMonths={2}
 						/>

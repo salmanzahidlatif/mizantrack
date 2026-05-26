@@ -6,9 +6,9 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { getDateRange } from "@/lib/dateRange";
 import { db } from "@/lib/db/local";
 import { dbConfigSchema } from "@/lib/validations/dbConfig";
-import { getDateRange } from "@/lib/dateRange";
 
 const USER_ID = "user-sprint5-test";
 
@@ -34,8 +34,16 @@ describe("dbConfigSchema", () => {
 	});
 
 	it("rejects fiscalYearStartMonth out of range", () => {
-		const r1 = dbConfigSchema.safeParse({ currency: "AED", fiscalYearStartMonth: 0, enabled: false });
-		const r2 = dbConfigSchema.safeParse({ currency: "AED", fiscalYearStartMonth: 13, enabled: false });
+		const r1 = dbConfigSchema.safeParse({
+			currency: "AED",
+			fiscalYearStartMonth: 0,
+			enabled: false,
+		});
+		const r2 = dbConfigSchema.safeParse({
+			currency: "AED",
+			fiscalYearStartMonth: 13,
+			enabled: false,
+		});
 		expect(r1.success).toBe(false);
 		expect(r2.success).toBe(false);
 	});

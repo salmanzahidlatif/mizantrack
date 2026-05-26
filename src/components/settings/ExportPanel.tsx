@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
-
 import { Download, Loader2 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
@@ -15,8 +14,8 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { useDbConfig } from "@/hooks/useDbConfig";
-import { exportToExcel } from "@/lib/export";
 import { getDateRange } from "@/lib/dateRange";
+import { exportToExcel } from "@/lib/export";
 
 import type { DateRange } from "@/types";
 
@@ -30,9 +29,7 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 
 	const [open, setOpen] = useState(false);
 	const [exporting, setExporting] = useState(false);
-	const [range, setRange] = useState<DateRange>(() =>
-		getDateRange("month", fiscalYearStartMonth)
-	);
+	const [range, setRange] = useState<DateRange>(() => getDateRange("month", fiscalYearStartMonth));
 
 	function handleOpen() {
 		setRange(getDateRange("month", fiscalYearStartMonth));
@@ -52,10 +49,10 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 	}
 
 	return (
-		<div className="rounded-xl border border-border bg-card p-4 space-y-3">
+		<div className="space-y-3 rounded-xl border border-border bg-card p-4">
 			<div>
 				<h2 className="font-semibold">Export Data</h2>
-				<p className="text-sm text-muted-foreground mt-0.5">
+				<p className="mt-0.5 text-sm text-muted-foreground">
 					Download your transactions as an Excel file
 				</p>
 			</div>
@@ -83,7 +80,11 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 						<Button variant="outline" onClick={() => setOpen(false)}>
 							Cancel
 						</Button>
-						<Button onClick={() => { void handleDownload(); }} disabled={exporting}>
+						<Button
+							onClick={() => {
+								void handleDownload();
+							}}
+							disabled={exporting}>
 							{exporting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
 							Download
 						</Button>

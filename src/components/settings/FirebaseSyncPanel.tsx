@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 import { formatDistanceToNow } from "date-fns";
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -19,8 +18,8 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useDbConfig } from "@/hooks/useDbConfig";
-import { db } from "@/lib/db/local";
 import { resetFirestoreForUser } from "@/lib/db/firebase";
+import { db } from "@/lib/db/local";
 import { getFirestoreUsage } from "@/lib/db/sync";
 import { useSyncStore } from "@/store/sync-store";
 
@@ -106,7 +105,7 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 	}
 
 	return (
-		<div className="rounded-xl border border-border bg-card p-4 space-y-4">
+		<div className="space-y-4 rounded-xl border border-border bg-card p-4">
 			<div className="flex items-center justify-between">
 				<h2 className="font-semibold">Cloud Sync</h2>
 				<div className="flex items-center gap-2">
@@ -141,13 +140,19 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 			</div>
 
 			<div className="flex gap-2">
-				<Button onClick={() => { void handleSave(); }} disabled={saving || !!jsonError}>
+				<Button
+					onClick={() => {
+						void handleSave();
+					}}
+					disabled={saving || !!jsonError}>
 					{saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
 					Save Config
 				</Button>
 				<Button
 					variant="outline"
-					onClick={() => { void triggerSync(userId); }}
+					onClick={() => {
+						void triggerSync(userId);
+					}}
 					disabled={syncing || !enabled}>
 					{syncing ? (
 						<Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -213,7 +218,11 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 						<Button variant="outline" onClick={() => setResetOpen(false)}>
 							Cancel
 						</Button>
-						<Button variant="destructive" onClick={() => { void handleReset(); }}>
+						<Button
+							variant="destructive"
+							onClick={() => {
+								void handleReset();
+							}}>
 							Clear Config
 						</Button>
 					</DialogFooter>

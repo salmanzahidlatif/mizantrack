@@ -1,15 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
-
 import { Download, Loader2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { CategoryBreakdownChart } from "@/components/charts/CategoryDonutChart";
 import { TrendChart } from "@/components/charts/TrendBarChart";
-import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
+import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
+import { TransactionDrawer } from "@/components/transactions/TransactionDrawer";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -25,7 +25,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { TransactionDrawer } from "@/components/transactions/TransactionDrawer";
 import { useActiveAccounts } from "@/hooks/useAccounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useTransactions } from "@/hooks/useTransactions";
@@ -123,7 +122,11 @@ export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 						<Button variant="outline" onClick={() => setExportOpen(false)}>
 							Cancel
 						</Button>
-						<Button onClick={() => { void handleExport(); }} disabled={exporting}>
+						<Button
+							onClick={() => {
+								void handleExport();
+							}}
+							disabled={exporting}>
 							{exporting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
 							Download
 						</Button>
@@ -167,7 +170,11 @@ export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 					{[
 						{ label: "Income", amount: income, variant: "positive" as const },
 						{ label: "Expenses", amount: -expense, variant: "negative" as const },
-						{ label: "Net", amount: net, variant: (net >= 0 ? "positive" : "negative") as "positive" | "negative" },
+						{
+							label: "Net",
+							amount: net,
+							variant: (net >= 0 ? "positive" : "negative") as "positive" | "negative",
+						},
 					].map(({ label, amount, variant }) => (
 						<div key={label} className="rounded-xl border border-border bg-card p-3 text-center">
 							<p className="mb-1 text-xs text-muted-foreground">{label}</p>

@@ -8,14 +8,15 @@ import {
 	BarChart3,
 	Settings,
 	LogOut,
-	Plus,
+	Moon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
-import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { BottomNav } from "@/components/layout/BottomNav";
 import { SyncStatusBadge } from "@/components/layout/SyncStatusBadge";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,11 +27,10 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAutoSync } from "@/hooks/useAutoSync";
 import { signOutAction } from "@/lib/actions/auth";
 import { seedDefaultCategories } from "@/lib/db/seed";
 import { cn } from "@/lib/utils";
-import { useAutoSync } from "@/hooks/useAutoSync";
-import { useUIStore } from "@/store/ui-store";
 
 import type { Session } from "next-auth";
 
@@ -40,6 +40,7 @@ const NAV_ITEMS = [
 	{ href: "/accounts", label: "Accounts", icon: Wallet },
 	{ href: "/categories", label: "Categories", icon: Tag },
 	{ href: "/reports", label: "Reports", icon: BarChart3 },
+	{ href: "/zakat", label: "Zakat", icon: Moon },
 	{ href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -50,7 +51,6 @@ interface AppShellProps {
 
 export function AppShell({ user, children }: AppShellProps) {
 	const pathname = usePathname();
-	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 
 	useAutoSync(user?.id ?? "");
 
@@ -165,32 +165,8 @@ export function AppShell({ user, children }: AppShellProps) {
 				</main>
 			</div>
 
-			{/* Bottom nav — mobile */}
-			<nav className="fixed right-0 bottom-0 left-0 z-50 border-t border-border bg-background/95 backdrop-blur-sm md:hidden">
-				<div className="flex items-center justify-around px-2 py-2">
-					{NAV_ITEMS.slice(0, 5).map(({ href, label, icon: Icon }) => (
-						<Link
-							key={href}
-							href={href}
-							className={cn(
-								"flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-xs transition-colors",
-								pathname === href ? "text-primary" : "text-muted-foreground"
-							)}>
-							<Icon className="h-5 w-5" />
-							<span>{label}</span>
-						</Link>
-					))}
-				</div>
-			</nav>
-
-			{/* FAB — floating add transaction */}
-			<button
-				type="button"
-				onClick={openAddTransaction}
-				className="fixed right-4 bottom-20 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary shadow-lg transition-transform hover:scale-105 active:scale-95 md:bottom-6">
-				<Plus className="h-6 w-6 text-primary-foreground" />
-				<span className="sr-only">Add transaction</span>
-			</button>
+			{/* Bottom nav + FAB — mobile */}
+			<BottomNav />
 		</div>
 	);
 }

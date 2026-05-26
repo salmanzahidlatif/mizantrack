@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-
 import { endOfMonth, startOfMonth } from "date-fns";
+import { useMemo } from "react";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { useTransactions } from "@/hooks/useTransactions";
@@ -33,7 +32,11 @@ export function MonthSummary({ userId, currency = "AED" }: MonthSummaryProps) {
 	const items = [
 		{ label: "Income", amount: income, variant: "positive" as const },
 		{ label: "Expenses", amount: -expense, variant: "negative" as const },
-		{ label: "Net", amount: net, variant: (net >= 0 ? "positive" : "negative") as "positive" | "negative" },
+		{
+			label: "Net",
+			amount: net,
+			variant: (net >= 0 ? "positive" : "negative") as "positive" | "negative",
+		},
 	];
 
 	return (

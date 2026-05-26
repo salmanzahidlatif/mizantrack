@@ -1,7 +1,6 @@
-import { useMemo } from "react";
-
-import { useLiveQuery } from "dexie-react-hooks";
 import { format, startOfMonth, subMonths } from "date-fns";
+import { useLiveQuery } from "dexie-react-hooks";
+import { useMemo } from "react";
 
 import { db } from "@/lib/db/local";
 
@@ -45,5 +44,5 @@ export function useMonthlySummary(userId: string, months = 6): MonthlySummaryIte
 		}
 
 		return Array.from(buckets.values());
-	}, [transactions, months]); // eslint-disable-line react-hooks/exhaustive-deps
+	}, [transactions, months]);
 }

@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
 import { Check } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +41,7 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 
 	const [currency, setCurrency] = useState("");
 	const [fiscalMonth, setFiscalMonth] = useState(7);
+	const [goldApiKey, setGoldApiKey] = useState("");
 	const [saved, setSaved] = useState(false);
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const initialised = useRef(false);
@@ -63,36 +63,46 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 			}
 			setCurrency(config?.currency ?? "AED");
 			setFiscalMonth(config?.fiscalYearStartMonth ?? 7);
+			setGoldApiKey(config?.goldApiKey ?? "");
 			initialised.current = true;
 		}
 	}, [config, userId]);
 
-	function scheduleSave(newCurrency: string, newMonth: number) {
+	function scheduleSave(newCurrency: string, newMonth: number, newGoldKey: string) {
 		if (saveTimer.current) clearTimeout(saveTimer.current);
-		saveTimer.current = setTimeout(async () => {
-			await db.dbConfig.update(userId, {
-				currency: newCurrency.toUpperCase() || "AED",
-				fiscalYearStartMonth: newMonth,
-			});
-			setSaved(true);
-			setTimeout(() => setSaved(false), 2000);
+		saveTimer.current = setTimeout(() => {
+			void db.dbConfig
+				.update(userId, {
+					currency: newCurrency.toUpperCase() || "AED",
+					fiscalYearStartMonth: newMonth,
+					goldApiKey: newGoldKey || undefined,
+				})
+				.then(() => {
+					setSaved(true);
+					setTimeout(() => setSaved(false), 2000);
+				});
 		}, 500);
 	}
 
 	function handleCurrencyChange(value: string) {
 		const upper = value.toUpperCase().slice(0, 3);
 		setCurrency(upper);
-		scheduleSave(upper, fiscalMonth);
+		scheduleSave(upper, fiscalMonth, goldApiKey);
 	}
 
 	function handleMonthChange(value: string) {
 		const month = parseInt(value, 10);
 		setFiscalMonth(month);
-		scheduleSave(currency, month);
+		scheduleSave(currency, month, goldApiKey);
+	}
+
+	function handleGoldKeyChange(value: string) {
+		setGoldApiKey(value);
+		scheduleSave(currency, fiscalMonth, value);
 	}
 
 	return (
-		<div className="rounded-xl border border-border bg-card p-4 space-y-4">
+		<div className="space-y-4 rounded-xl border border-border bg-card p-4">
 			<div className="flex items-center justify-between">
 				<h2 className="font-semibold">Preferences</h2>
 				{saved && (
@@ -133,6 +143,21 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 						</SelectContent>
 					</Select>
 				</div>
+			</div>
+
+			{/* Gold price API key */}
+			<div className="space-y-1.5">
+				<Label htmlFor="gold-api-key">Gold Price API Key (goldapi.io)</Label>
+				<Input
+					id="gold-api-key"
+					type="password"
+					value={goldApiKey}
+					onChange={(e) => handleGoldKeyChange(e.target.value)}
+					placeholder="Your goldapi.io API key"
+				/>
+				<p className="text-xs text-muted-foreground">
+					Used by the Zakat calculator to fetch live gold prices. Leave blank to enter manually.
+				</p>
 			</div>
 
 			{/* Theme */}

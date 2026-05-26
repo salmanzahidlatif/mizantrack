@@ -1,17 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
-
 import { FileUp, Loader2 } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { importHysabKytab } from "@/lib/import/hysabKytab";
 
 interface ImportPanelProps {
@@ -49,19 +43,16 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 	}
 
 	return (
-		<div className="rounded-xl border border-border bg-card p-4 space-y-3">
+		<div className="space-y-3 rounded-xl border border-border bg-card p-4">
 			<div>
 				<h2 className="font-semibold">Import Data</h2>
-				<p className="text-sm text-muted-foreground mt-0.5">
+				<p className="mt-0.5 text-sm text-muted-foreground">
 					Import your Hysab Kytab backup (.xlsx file)
 				</p>
 			</div>
 
 			<div className="flex items-center gap-3">
-				<Button
-					variant="outline"
-					disabled={importing}
-					onClick={() => fileRef.current?.click()}>
+				<Button variant="outline" disabled={importing} onClick={() => fileRef.current?.click()}>
 					{importing ? (
 						<>
 							<Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -83,7 +74,9 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 				type="file"
 				accept=".xlsx"
 				className="hidden"
-				onChange={(e) => { void handleFile(e); }}
+				onChange={(e) => {
+					void handleFile(e);
+				}}
 			/>
 
 			{/* Result dialog */}
