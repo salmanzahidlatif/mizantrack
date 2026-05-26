@@ -712,11 +712,11 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-006 | Account List with Live Balances | 1d | Must | ⏳ TODO |
-| US-007 | Add & Edit Account Form | 1d | Must | ⏳ TODO |
-| US-008 | Archive & Soft-Delete Accounts | 0.5d | Must | ⏳ TODO |
-| US-009 | Category List (Income / Expense Tree) | 1d | Must | ⏳ TODO |
-| US-010 | Add, Edit & Delete Category | 0.5d | Must | ⏳ TODO |
+| US-006 | Account List with Live Balances | 1d | Must | ✅ DONE |
+| US-007 | Add & Edit Account Form | 1d | Must | ✅ DONE |
+| US-008 | Archive & Soft-Delete Accounts | 0.5d | Must | ✅ DONE |
+| US-009 | Category List (Income / Expense Tree) | 1d | Must | ✅ DONE |
+| US-010 | Add, Edit & Delete Category | 0.5d | Must | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 4d
 
