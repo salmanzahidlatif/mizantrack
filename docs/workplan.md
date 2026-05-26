@@ -381,19 +381,23 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** see my account balances and this month's income vs expense at a glance when I open the app **so that** I know my current financial position immediately.
 
 **Acceptance Criteria:**
-- [ ] `/dashboard` replaces the stub with real content
-- [ ] Account balance cards rendered horizontally (scroll on mobile); each shows account name, currency, and live balance
-- [ ] Month summary strip below cards: "Income: [amount]", "Expenses: [amount]", "Net: [amount]" for the current calendar month
-- [ ] Amounts formatted with currency symbol via `CurrencyAmount` component
-- [ ] Multi-currency accounts each show their own currency (no forced conversion)
-- [ ] Skeleton loading state while data loads
-- [ ] Empty state with "Create your first account" CTA if no accounts exist
+- [x] `/dashboard` replaces the stub with real content
+- [x] Account balance cards rendered horizontally (scroll on mobile); each shows account name, currency, and live balance
+- [x] Month summary strip below cards: "Income: [amount]", "Expenses: [amount]", "Net: [amount]" for the current calendar month
+- [x] Amounts formatted with currency symbol via `CurrencyAmount` component
+- [x] Multi-currency accounts each show their own currency (no forced conversion)
+- [x] Skeleton loading state while data loads
+- [x] Empty state with "Create your first account" CTA if no accounts exist
 
 **Design Reference:** §5.6 Feature Modules (`BalanceCards`, `MonthSummary`), FR-DASH-001, FR-DASH-002  
 **Technical Notes:** Use `useAccounts` + `useAccountBalance` for cards. Month summary: `useTransactions(userId, { from: startOfMonth(now), to: endOfMonth(now) })` then aggregate in component.  
 **Dependencies:** E2 complete, E3 complete  
 **Estimated Effort:** 1d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/dashboard/BalanceCards.tsx`, `MonthSummary.tsx`, `DashboardPageClient.tsx`, `src/app/(app)/dashboard/page.tsx`  
+Commit: `640b218`
 
 ---
 
@@ -402,18 +406,22 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** see my last 10 transactions and a 6-month income/expense chart on the dashboard **so that** I can spot spending trends at a glance.
 
 **Acceptance Criteria:**
-- [ ] "Recent Transactions" section shows last 10 transactions with date, description, amount, and account
-- [ ] Each row navigates to the transaction in the full list (or opens edit drawer) on tap
-- [ ] 6-month bar chart (Recharts `BarChart`) shows income vs expense per month for the last 6 months
-- [ ] Chart legend labels "Income" and "Expense"; bars use distinct colors
-- [ ] Chart renders correctly with zero data months (empty bars, not missing)
-- [ ] Chart is responsive (fills container width)
+- [x] "Recent Transactions" section shows last 10 transactions with date, description, amount, and account
+- [x] Each row navigates to the transaction in the full list (or opens edit drawer) on tap
+- [x] 6-month bar chart (Recharts `BarChart`) shows income vs expense per month for the last 6 months
+- [x] Chart legend labels "Income" and "Expense"; bars use distinct colors
+- [x] Chart renders correctly with zero data months (empty bars, not missing)
+- [x] Chart is responsive (fills container width)
 
 **Design Reference:** §5.6 Feature Modules (`RecentTransactions`, `TrendChart`), FR-DASH-003, FR-DASH-004  
 **Technical Notes:** `useMonthlySummary(userId, 6)` hook: queries last 6 months of transactions, groups by month using `date-fns`, returns `[{ month, income, expense }]`. Recharts `ResponsiveContainer` for responsive sizing.  
 **Dependencies:** US-015  
 **Estimated Effort:** 1.5d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/dashboard/RecentTransactions.tsx`, `src/components/charts/TrendBarChart.tsx`, `src/hooks/useMonthlySummary.ts`  
+Commit: `640b218`
 
 ---
 
@@ -422,18 +430,22 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want** a period selector that works consistently across Reports, Export, and Zakat **so that** I always filter data the same way regardless of which feature I'm using.
 
 **Acceptance Criteria:**
-- [ ] `DateRangePicker` component renders period preset pills: Today / Week / Month / Quarter / Half-Year / Year / Fiscal Year / Custom
-- [ ] Selecting "Custom" opens a calendar popup (react-day-picker, already installed) for from/to dates
-- [ ] Selecting "Fiscal Year" computes boundaries from `DbConfig.fiscalYearStartMonth` (default July)
-- [ ] Selected period stored in `useFilterStore`; all consuming components read from store
-- [ ] Component works standalone (standalone prop for export dialog that doesn't use filter store)
-- [ ] Active pill visually highlighted
+- [x] `DateRangePicker` component renders period preset pills: Today / Week / Month / Quarter / Half-Year / Year / Fiscal Year / Custom
+- [x] Selecting "Custom" opens a calendar popup (react-day-picker, already installed) for from/to dates
+- [x] Selecting "Fiscal Year" computes boundaries from `DbConfig.fiscalYearStartMonth` (default July)
+- [x] Selected period stored in `useFilterStore`; all consuming components read from store
+- [x] Component works standalone (standalone prop for export dialog that doesn't use filter store)
+- [x] Active pill visually highlighted
 
 **Design Reference:** §5.5 UI Component Library (`DateRangePicker`), §6.4 Filter Store, `src/lib/dateRange.ts`  
 **Technical Notes:** Reuse existing `getDateRange()` function from `src/lib/dateRange.ts`. Fiscal year month from `useDbConfig(userId)`. Export `getDateRange` result as `DateRange` for consumer.  
 **Dependencies:** US-002 (filter store)  
 **Estimated Effort:** 1d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/shared/DateRangePicker.tsx`  
+Commit: `640b218`
 
 ---
 
@@ -442,18 +454,22 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** see a breakdown of my spending by category for any period **so that** I can understand where my money goes and prepare for tax season.
 
 **Acceptance Criteria:**
-- [ ] `/reports` page replaces stub; uses `DateRangePicker` from US-017
-- [ ] Summary strip: Total Income / Total Expense / Net Savings for the selected period
-- [ ] Category breakdown rendered as a donut (pie) chart with a legend table below it showing category name, total, and % of expenses
-- [ ] Account filter dropdown — selecting an account limits data to that account's transactions only
-- [ ] Fiscal Year period correctly uses `DbConfig.fiscalYearStartMonth`
-- [ ] Empty state when no transactions in selected period
+- [x] `/reports` page replaces stub; uses `DateRangePicker` from US-017
+- [x] Summary strip: Total Income / Total Expense / Net Savings for the selected period
+- [x] Category breakdown rendered as a donut (pie) chart with a legend table below it showing category name, total, and % of expenses
+- [x] Account filter dropdown — selecting an account limits data to that account's transactions only
+- [x] Fiscal Year period correctly uses `DbConfig.fiscalYearStartMonth`
+- [x] Empty state when no transactions in selected period
 
 **Design Reference:** §5.6 Feature Modules (`ReportFilters`, `CategoryBreakdownChart`, `ReportSummary`), FR-RPT-001–005  
 **Technical Notes:** `useLiveQuery` for transactions in date range; aggregate by `categoryId` in component using `useMemo`. Recharts `PieChart` with `Cell` per category. Category names from `useCategories(userId)`.  
 **Dependencies:** US-017, E3 complete  
 **Estimated Effort:** 1.5d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/reports/ReportsPageClient.tsx`, `src/components/charts/CategoryDonutChart.tsx`  
+Commit: `640b218`
 
 ---
 
@@ -462,17 +478,21 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** see month-by-month income and expense bars and export a summary to Excel **so that** I can share it with my accountant for tax filing.
 
 **Acceptance Criteria:**
-- [ ] Monthly trend bar chart (Recharts `BarChart`) on Reports page showing income and expense grouped by month for the selected period
-- [ ] Chart shows all months in the range, even if zero
-- [ ] "Export" button in Reports header opens a dialog with the current date range pre-filled; clicking "Download" triggers `exportToExcel(userId, range)` and downloads the file
-- [ ] Exported file named `mizantrack-export-YYYY-MM-DD.xlsx`
-- [ ] Export includes all transactions in the selected range (not just the current page)
+- [x] Monthly trend bar chart (Recharts `BarChart`) on Reports page showing income and expense grouped by month for the selected period
+- [x] Chart shows all months in the range, even if zero
+- [x] "Export" button in Reports header opens a dialog with the current date range pre-filled; clicking "Download" triggers `exportToExcel(userId, range)` and downloads the file
+- [x] Exported file named `mizantrack-export-YYYY-MM-DD.xlsx`
+- [x] Export includes all transactions in the selected range (not just the current page)
 
 **Design Reference:** §5.6 Feature Modules (`MonthlyTrendChart`), FR-RPT-003, FR-EXP-001–003  
 **Technical Notes:** Reuse existing `exportToExcel` from `src/lib/export.ts`. Export dialog uses `DateRangePicker` in standalone mode.  
 **Dependencies:** US-018  
 **Estimated Effort:** 1d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/reports/ReportsPageClient.tsx` (export dialog added)  
+Commit: `57a2ce2`
 
 ---
 
@@ -481,18 +501,22 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** configure my default currency, fiscal year start month, and app theme in Settings **so that** reports and the Zakat calculator use my correct settings.
 
 **Acceptance Criteria:**
-- [ ] `/settings` page replaces stub with a preferences card
-- [ ] Default currency: text input (3-char ISO code) with AED pre-filled on first load; saved to `DbConfig.currency`
-- [ ] Fiscal year start month: dropdown (Jan–Dec, default July/7); saved to `DbConfig.fiscalYearStartMonth`
-- [ ] Theme toggle: Light / Dark / System; persisted via `next-themes`
-- [ ] Changes save to Dexie `dbConfig` immediately (no explicit Save button — auto-save on change with debounce)
-- [ ] First-time load creates a `DbConfig` record for the user if none exists
+- [x] `/settings` page replaces stub with a preferences card
+- [x] Default currency: text input (3-char ISO code) with AED pre-filled on first load; saved to `DbConfig.currency`
+- [x] Fiscal year start month: dropdown (Jan–Dec, default July/7); saved to `DbConfig.fiscalYearStartMonth`
+- [x] Theme toggle: Light / Dark / System; persisted via `next-themes`
+- [x] Changes save to Dexie `dbConfig` immediately (no explicit Save button — auto-save on change with debounce)
+- [x] First-time load creates a `DbConfig` record for the user if none exists
 
 **Design Reference:** §5.6 Feature Modules (`PreferencesForm`), FR-SET-001, FR-SET-002, FR-SET-006  
 **Technical Notes:** `db.dbConfig.put({ id: userId, ...defaults })` on first login init. Use `useDbConfig(userId)` hook. Theme toggle reuses existing `ThemeToggle.tsx`.  
 **Dependencies:** US-003 (useDbConfig hook)  
 **Estimated Effort:** 0.5d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/settings/PreferencesForm.tsx`, `src/components/settings/SettingsPageClient.tsx`  
+Note: Gold API key field also added here as part of US-025. Commit: `57a2ce2`
 
 ---
 
@@ -501,17 +525,23 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** upload my Hysab Kytab Excel backup and have all my history imported automatically **so that** I don't lose years of financial records.
 
 **Acceptance Criteria:**
-- [ ] Settings page has an "Import Data" card with a file picker accepting `.xlsx` only
-- [ ] Uploading triggers `importHysabKytab(file, userId)` from existing `src/lib/import/hysabKytab.ts`
-- [ ] Progress indicator shown during import (spinner or progress bar)
-- [ ] On success: modal shows summary — "X accounts imported, Y categories imported, Z transactions imported (N transfers paired)"
-- [ ] On error (missing sheet, parse failure): toast with the specific error message from the importer
-- [ ] Re-importing the same file a second time results in no duplicates (upsert behavior is already in the importer)
-- [ ] After import, navigating to Transactions shows imported data immediately
+- [x] Settings page has an "Import Data" card with a file picker accepting `.xlsx` only
+- [x] Uploading triggers `importHysabKytab(file, userId)` from existing `src/lib/import/hysabKytab.ts`
+- [x] Progress indicator shown during import (spinner or progress bar)
+- [x] On success: modal shows summary — "X accounts imported, Y categories imported, Z transactions imported (N transfers paired)"
+- [x] On error (missing sheet, parse failure): toast with the specific error message from the importer
+- [x] Re-importing the same file a second time results in no duplicates (upsert behavior is already in the importer)
+- [x] After import, navigating to Transactions shows imported data immediately
 
 **Design Reference:** §5.6 Feature Modules (`ImportPanel`), §7.4 HK Import Flow, FR-IMP-001–006  
 **Technical Notes:** Import logic already complete in `src/lib/import/hysabKytab.ts`. This story is UI only — file picker, progress state, success/error display.  
 **Dependencies:** US-020  
+**Estimated Effort:** 1d  
+**Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/settings/ImportPanel.tsx`  
+Commit: `57a2ce2`
 **Estimated Effort:** 1d  
 **Priority:** Must Have
 
