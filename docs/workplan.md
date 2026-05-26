@@ -52,11 +52,11 @@ For individuals managing finances across multiple currencies and geographies who
 **As a** user **I want to** sign in with Google and install the app on my phone **so that** I can use MizanTrack as a PWA shortcut.
 
 **Acceptance Criteria:**
-- [ ] `src/lib/auth.ts` reads `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` env vars (NextAuth v5 convention)
-- [ ] `.env.local.example` documents the corrected var names
-- [ ] `public/icon-192.png` and `public/icon-512.png` exist and are referenced correctly in `manifest.json`
-- [ ] `npm run dev` starts without auth errors; navigating to `/dashboard` redirects to `/login`
-- [ ] `npm run typecheck` and `npm run lint` pass with zero errors/warnings
+- [x] `src/lib/auth.ts` reads `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` env vars (NextAuth v5 convention)
+- [x] `.env.local.example` documents the corrected var names
+- [x] `public/icon-192.png` and `public/icon-512.png` exist and are referenced correctly in `manifest.json`
+- [x] `npm run dev` starts without auth errors; navigating to `/dashboard` redirects to `/login`
+- [x] `npm run typecheck` and `npm run lint` pass with zero errors/warnings
 
 **Design Reference:** §5.1 Auth Layer, §3.3 Deployment Architecture  
 **Technical Notes:** Current code uses `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — rename to `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`. PWA icons can be generated programmatically (e.g., a simple canvas-drawn icon) or any 192×512 PNG.  
@@ -75,11 +75,11 @@ Files: `src/lib/auth.ts` (env var fix), `.env.local.example`, `public/icon-192.p
 **As a** developer **I want** shared UI state stores **so that** any component can read or update filter state, sync status, and modal visibility without prop drilling.
 
 **Acceptance Criteria:**
-- [ ] `src/store/ui-store.ts` exports `useUIStore` with transaction drawer state + open/close actions
-- [ ] `src/store/filter-store.ts` exports `useFilterStore` with all `FilterPeriod`, accountId, categoryId, transactionType, and searchQuery fields + setters + `reset()`
-- [ ] `src/store/sync-store.ts` exports `useSyncStore` with `syncing`, `lastSync`, `error`, and `triggerSync()` action
-- [ ] All three stores typed with TypeScript interfaces matching design §5.4
-- [ ] Stores are importable in any client component without errors
+- [x] `src/store/ui-store.ts` exports `useUIStore` with transaction drawer state + open/close actions
+- [x] `src/store/filter-store.ts` exports `useFilterStore` with all `FilterPeriod`, accountId, categoryId, transactionType, and searchQuery fields + setters + `reset()`
+- [x] `src/store/sync-store.ts` exports `useSyncStore` with `syncing`, `lastSync`, `error`, and `triggerSync()` action
+- [x] All three stores typed with TypeScript interfaces matching design §5.4
+- [x] Stores are importable in any client component without errors
 
 **Design Reference:** §5.4 State Layer (Zustand), §6.4 State Shape  
 **Technical Notes:** Use Zustand `create` with `immer` middleware optional. Keep stores lean — no financial data in Zustand.  
@@ -98,13 +98,13 @@ All three stores typed with interfaces; sync-store wires `syncAll()` and handles
 **As a** developer **I want** typed reactive hooks over Dexie **so that** any component can subscribe to live data without writing raw Dexie queries.
 
 **Acceptance Criteria:**
-- [ ] `src/hooks/useAccounts.ts` — returns live `Account[]` filtered by userId, excluding `deletedAt`
-- [ ] `src/hooks/useCategories.ts` — returns live `Category[]` with optional `type` filter
-- [ ] `src/hooks/useTransactions.ts` — returns live `Transaction[]` accepting `{ accountId?, categoryId?, type?, from?, to?, search? }` filter object
-- [ ] `src/hooks/useAccountBalance.ts` — returns computed `number` balance (opening balance + transaction sum) reactively
-- [ ] `src/hooks/useDbConfig.ts` — returns live `DbConfig | undefined` for userId
-- [ ] `src/hooks/useSyncMeta.ts` — returns live `SyncMeta | undefined`
-- [ ] All hooks use `useLiveQuery` from `dexie-react-hooks`; return `undefined` during load (handles skeleton state)
+- [x] `src/hooks/useAccounts.ts` — returns live `Account[]` filtered by userId, excluding `deletedAt`
+- [x] `src/hooks/useCategories.ts` — returns live `Category[]` with optional `type` filter
+- [x] `src/hooks/useTransactions.ts` — returns live `Transaction[]` accepting `{ accountId?, categoryId?, type?, from?, to?, search? }` filter object
+- [x] `src/hooks/useAccountBalance.ts` — returns computed `number` balance (opening balance + transaction sum) reactively
+- [x] `src/hooks/useDbConfig.ts` — returns live `DbConfig | undefined` for userId
+- [x] `src/hooks/useSyncMeta.ts` — returns live `SyncMeta | undefined`
+- [x] All hooks use `useLiveQuery` from `dexie-react-hooks`; return `undefined` during load (handles skeleton state)
 
 **Design Reference:** §5.2 Local Data Layer, §6.1 Core Entities (balance computation formula)  
 **Technical Notes:** Balance formula: `openingBalance + Σ(income where accountId) - Σ(expense where accountId) - Σ(transfer where accountId=source) + Σ(transfer where toAccountId=dest)`. Query with `useLiveQuery(() => db.transactions.where(...).toArray())`.  
@@ -123,12 +123,12 @@ All hooks use `useLiveQuery`; balance formula implemented per design §6.1.
 **As a** developer **I want** Zod schemas for all form entities **so that** React Hook Form can validate account, category, and transaction inputs before writing to Dexie.
 
 **Acceptance Criteria:**
-- [ ] `src/lib/validations/account.ts` — schema validates title (1–100 chars), currency (3-char ISO code), openingBalance (non-negative number), optional color and icon
-- [ ] `src/lib/validations/category.ts` — schema validates title (1–100 chars), type (`"Income" | "Expense"`), optional parentId (UUID)
-- [ ] `src/lib/validations/transaction.ts` — schema validates type, amount (positive number > 0), date (valid date), accountId (UUID), optional fields; Transfer type requires `toAccountId` different from `accountId`
-- [ ] `src/lib/validations/dbConfig.ts` — schema validates Firebase JSON config has required fields (`apiKey`, `authDomain`, `projectId`)
-- [ ] All schemas export inferred TypeScript types (e.g., `type AccountFormValues = z.infer<typeof accountSchema>`)
-- [ ] `npm run typecheck` passes
+- [x] `src/lib/validations/account.ts` — schema validates title (1–100 chars), currency (3-char ISO code), openingBalance (non-negative number), optional color and icon
+- [x] `src/lib/validations/category.ts` — schema validates title (1–100 chars), type (`"Income" | "Expense"`), optional parentId (UUID)
+- [x] `src/lib/validations/transaction.ts` — schema validates type, amount (positive number > 0), date (valid date), accountId (UUID), optional fields; Transfer type requires `toAccountId` different from `accountId`
+- [x] `src/lib/validations/dbConfig.ts` — schema validates Firebase JSON config has required fields (`apiKey`, `authDomain`, `projectId`)
+- [x] All schemas export inferred TypeScript types (e.g., `type AccountFormValues = z.infer<typeof accountSchema>`)
+- [x] `npm run typecheck` passes
 
 **Design Reference:** §5.2 Local Data Layer, §8 Security Considerations  
 **Technical Notes:** Use `zod` v4 already installed. For Transfer validation use `z.refine()` to check `toAccountId !== accountId`.  
@@ -149,14 +149,14 @@ Files: `src/lib/validations/account.ts`, `category.ts`, `transaction.ts`, `dbCon
 **As a** developer **I want** Vitest configured and shared UI building blocks **so that** tests can be written alongside features.
 
 **Acceptance Criteria:**
-- [ ] `src/lib/db/seed.ts` exports `seedDefaultCategories(userId)` that inserts ~15 default categories (10 Expense, 5 Income) if no categories exist for the user
-- [ ] `seedDefaultCategories` is called in `AppShell` on first authenticated render (guarded by count check — runs once only)
-- [ ] `vitest.config.ts` configured with `jsdom` environment; `@testing-library/react` and `fake-indexeddb` added to devDependencies
-- [ ] `src/components/shared/CurrencyAmount.tsx` — renders formatted amount with currency symbol; positive amounts green, negative red (configurable via prop)
-- [ ] `src/components/shared/EmptyState.tsx` — accepts `title`, `description`, optional `action` (button label + onClick)
-- [ ] `src/components/shared/SkeletonCard.tsx` — generic skeleton placeholder matching card shape
-- [ ] `npm test` runs without errors (even if no test files yet)
-- [ ] `npm run lint` and `npm run typecheck` pass
+- [x] `src/lib/db/seed.ts` exports `seedDefaultCategories(userId)` that inserts ~15 default categories (10 Expense, 5 Income) if no categories exist for the user
+- [x] `seedDefaultCategories` is called in `AppShell` on first authenticated render (guarded by count check — runs once only)
+- [x] `vitest.config.ts` configured with `jsdom` environment; `@testing-library/react` and `fake-indexeddb` added to devDependencies
+- [x] `src/components/shared/CurrencyAmount.tsx` — renders formatted amount with currency symbol; positive amounts green, negative red (configurable via prop)
+- [x] `src/components/shared/EmptyState.tsx` — accepts `title`, `description`, optional `action` (button label + onClick)
+- [x] `src/components/shared/SkeletonCard.tsx` — generic skeleton placeholder matching card shape
+- [x] `npm test` runs without errors (even if no test files yet)
+- [x] `npm run lint` and `npm run typecheck` pass
 
 **Design Reference:** §5.5 UI Component Library, §5.6 Feature Modules, §10 Testing Strategy  
 **Technical Notes:** Default categories: Food, Transport, Shopping, Healthcare, Utilities, Rent, Education, Entertainment, Personal Care, Others (Expense); Salary, Freelance, Business, Investment, Gift (Income). Install `@testing-library/react`, `@testing-library/jest-dom`, `fake-indexeddb`, `vitest`, `jsdom` as devDependencies. Also install `@tanstack/react-virtual` for transaction list (US-011).  
@@ -185,18 +185,22 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** see all my accounts with their current balances on the Accounts page **so that** I have a quick overview of my financial position.
 
 **Acceptance Criteria:**
-- [ ] `/accounts` page renders a grid of `AccountCard` components, one per non-deleted account
-- [ ] Each card shows: account title, currency, current balance (computed live from transactions), color indicator
-- [ ] Balance updates in real time when transactions are added/edited/deleted elsewhere
-- [ ] Archived accounts are hidden by default; a toggle reveals them with visual distinction
-- [ ] Empty state shown when no accounts exist, with a CTA to create the first account
-- [ ] Loading skeleton shown while Dexie query resolves
+- [x] `/accounts` page renders a grid of `AccountCard` components, one per non-deleted account
+- [x] Each card shows: account title, currency, current balance (computed live from transactions), color indicator
+- [x] Balance updates in real time when transactions are added/edited/deleted elsewhere
+- [x] Archived accounts are hidden by default; a toggle reveals them with visual distinction
+- [x] Empty state shown when no accounts exist, with a CTA to create the first account
+- [x] Loading skeleton shown while Dexie query resolves
 
 **Design Reference:** §5.6 Feature Modules (`AccountCard`, `AccountList`), §6.1 Core Entities (balance formula)  
 **Technical Notes:** Use `useAccounts(userId)` and `useAccountBalance(accountId)` hooks. Accounts page is a client component (`"use client"`). Balance hook uses `useLiveQuery`.  
 **Dependencies:** E1 complete (US-001–005)  
 **Estimated Effort:** 1d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/accounts/AccountList.tsx` (includes inline AccountCard), `src/app/(app)/accounts/page.tsx`  
+Commit: `740e360`
 
 ---
 
@@ -205,18 +209,22 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** create a new account or edit an existing one **so that** I can track my AED and PKR accounts separately.
 
 **Acceptance Criteria:**
-- [ ] "Add Account" button opens a drawer/dialog containing the account form
-- [ ] Form fields: Title (required), Currency (required, ISO-4217 text input with common shortcuts AED/PKR/USD), Opening Balance (number, default 0), Color (color picker or predefined swatches), Icon (optional text/emoji)
-- [ ] Submitting a valid form creates the account in Dexie and closes the drawer; account appears immediately in the list
-- [ ] Tapping an existing account card's edit action pre-fills the form with current values; saving updates the record (`updatedAt` refreshed)
-- [ ] Validation errors shown inline per field (Zod schema from US-004)
-- [ ] Form disabled / loading state during Dexie write
+- [x] "Add Account" button opens a drawer/dialog containing the account form
+- [x] Form fields: Title (required), Currency (required, ISO-4217 text input with common shortcuts AED/PKR/USD), Opening Balance (number, default 0), Color (color picker or predefined swatches), Icon (optional text/emoji)
+- [x] Submitting a valid form creates the account in Dexie and closes the drawer; account appears immediately in the list
+- [x] Tapping an existing account card's edit action pre-fills the form with current values; saving updates the record (`updatedAt` refreshed)
+- [x] Validation errors shown inline per field (Zod schema from US-004)
+- [x] Form disabled / loading state during Dexie write
 
 **Design Reference:** §5.6 Feature Modules (`AccountForm`), §5.4 State Layer (ui-store drawer state)  
 **Technical Notes:** Use React Hook Form + `zodResolver`. Write to Dexie via `db.accounts.put(...)`. Use `useUIStore` to open/close drawer. On edit, pass account id via `useUIStore.openEditAccount(id)`.  
 **Dependencies:** US-006  
 **Estimated Effort:** 1d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/accounts/AccountDrawer.tsx`  
+Commit: `740e360`
 
 ---
 
@@ -225,17 +233,21 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** archive accounts I no longer use or delete mistakenly created ones **so that** my active account list stays clean.
 
 **Acceptance Criteria:**
-- [ ] Account card has a context menu (three-dot or swipe) with "Edit", "Archive", "Delete" actions
-- [ ] Archive sets `isArchived: true`; archived accounts disappear from the main list and transaction entry dropdowns; archived toggle in accounts page shows them
-- [ ] Delete sets `deletedAt: number`; deleted accounts disappear from all UI; sync propagates tombstone to Firestore
-- [ ] Deleting an account with existing transactions shows a confirmation dialog warning about orphaned transactions
-- [ ] Actions show a toast notification on success
+- [x] Account card has a context menu (three-dot or swipe) with "Edit", "Archive", "Delete" actions
+- [x] Archive sets `isArchived: true`; archived accounts disappear from the main list and transaction entry dropdowns; archived toggle in accounts page shows them
+- [x] Delete sets `deletedAt: number`; deleted accounts disappear from all UI; sync propagates tombstone to Firestore
+- [x] Deleting an account with existing transactions shows a confirmation dialog warning about orphaned transactions
+- [x] Actions show a toast notification on success
 
 **Design Reference:** §5.2 Local Data Layer, FR-ACC-003, FR-ACC-004  
 **Technical Notes:** Soft-delete pattern: `db.accounts.update(id, { deletedAt: Date.now(), updatedAt: Date.now() })`. All `useAccounts` queries already filter `!deletedAt`.  
 **Dependencies:** US-007  
 **Estimated Effort:** 0.5d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/accounts/AccountList.tsx` (archive/delete actions inline)  
+Commit: `740e360`
 
 ---
 
@@ -244,17 +256,21 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** see my income and expense categories organized in a tree **so that** I can understand how my spending is classified.
 
 **Acceptance Criteria:**
-- [ ] `/categories` page has two tabs: "Expense" and "Income"
-- [ ] Each tab renders a flat list (parent categories, with children indented beneath them) using `useCategories(userId, type)`
-- [ ] Default seeded categories from US-005 appear on first load
-- [ ] Empty state shown per tab if no categories of that type exist
-- [ ] Loading skeleton displayed while data loads
+- [x] `/categories` page has two tabs: "Expense" and "Income"
+- [x] Each tab renders a flat list (parent categories, with children indented beneath them) using `useCategories(userId, type)`
+- [x] Default seeded categories from US-005 appear on first load
+- [x] Empty state shown per tab if no categories of that type exist
+- [x] Loading skeleton displayed while data loads
 
 **Design Reference:** §5.6 Feature Modules (`CategoryTree`)  
 **Technical Notes:** One level of parent/child (`parentId`). Render: filter to parents (no `parentId`), then for each parent render its children. Client component.  
 **Dependencies:** E1 complete  
 **Estimated Effort:** 1d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/categories/CategoryTree.tsx`, `src/app/(app)/categories/page.tsx`  
+Commit: `740e360`
 
 ---
 
@@ -263,17 +279,21 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** manage my categories **so that** I can customize them to match how I actually spend.
 
 **Acceptance Criteria:**
-- [ ] "Add Category" button (one per tab) opens a form with: Title (required), Type (pre-filled to active tab), Parent Category (optional dropdown of existing same-type categories), Color (optional), Icon (optional)
-- [ ] Saving creates category in Dexie; it appears immediately in the list
-- [ ] Tapping an existing category's edit action pre-fills form; saving updates it
-- [ ] Delete action soft-deletes the category (`deletedAt` set); child categories of deleted parent remain in list (orphaned, shown flat)
-- [ ] Validation errors shown inline
+- [x] "Add Category" button (one per tab) opens a form with: Title (required), Type (pre-filled to active tab), Parent Category (optional dropdown of existing same-type categories), Color (optional), Icon (optional)
+- [x] Saving creates category in Dexie; it appears immediately in the list
+- [x] Tapping an existing category's edit action pre-fills form; saving updates it
+- [x] Delete action soft-deletes the category (`deletedAt` set); child categories of deleted parent remain in list (orphaned, shown flat)
+- [x] Validation errors shown inline
 
 **Design Reference:** §5.6 Feature Modules (`CategoryForm`), FR-CAT-001–003  
 **Technical Notes:** Use same RHF + Zod pattern as US-007. Parent dropdown filtered to same `type` only. On delete: `db.categories.update(id, { deletedAt: Date.now(), updatedAt: Date.now() })`.  
 **Dependencies:** US-009  
 **Estimated Effort:** 0.5d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/categories/CategoryDrawer.tsx`  
+Commit: `740e360`
 
 ---
 
@@ -291,19 +311,23 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** browse my transactions with filters **so that** I can quickly find specific income, expenses, or transfers from a large history.
 
 **Acceptance Criteria:**
-- [ ] `/transactions` page renders a virtualized transaction list (using `@tanstack/react-virtual`) that handles 10,000+ items without scroll degradation
-- [ ] Transactions grouped by date (descending), with sticky date headers
-- [ ] Each row shows: type icon, description/place, category chip, amount (colored: red for expense, green for income, blue for transfer), account name
-- [ ] Filter bar with: Period selector (all `FilterPeriod` presets), Account dropdown, Type selector (All / Expense / Income / Transfer), Search input (description + place)
-- [ ] Filters driven by `useFilterStore`; list updates reactively
-- [ ] Empty state shown when no transactions match active filters
-- [ ] Loading skeleton shown during initial load
+- [x] `/transactions` page renders a virtualized transaction list (using `@tanstack/react-virtual`) that handles 10,000+ items without scroll degradation
+- [x] Transactions grouped by date (descending), with sticky date headers
+- [x] Each row shows: type icon, description/place, category chip, amount (colored: red for expense, green for income, blue for transfer), account name
+- [x] Filter bar with: Period selector (all `FilterPeriod` presets), Account dropdown, Type selector (All / Expense / Income / Transfer), Search input (description + place)
+- [x] Filters driven by `useFilterStore`; list updates reactively
+- [x] Empty state shown when no transactions match active filters
+- [x] Loading skeleton shown during initial load
 
 **Design Reference:** §5.6 Feature Modules (`TransactionList`, `TransactionRow`, `TransactionFilters`), §9 Performance (react-virtual decision)  
 **Technical Notes:** `useTransactions(userId, filters)` hook passes filter object; hook applies `useLiveQuery` with Dexie `.and()` chain. Virtualize with `useVirtualizer` from `@tanstack/react-virtual`. CurrencyAmount component from US-005.  
 **Dependencies:** E1 complete, US-006 (AccountSelect), US-009 (CategorySelect)  
 **Estimated Effort:** 2d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/transactions/TransactionList.tsx`, `src/app/(app)/transactions/page.tsx`  
+Commit: `e5edf3f`
 
 ---
 
@@ -312,20 +336,24 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** quickly add an expense or income transaction **so that** I can log my spending on the go.
 
 **Acceptance Criteria:**
-- [ ] FAB (floating action button) visible on all pages above bottom nav; tapping opens `TransactionDrawer`
-- [ ] Drawer is a bottom sheet on mobile, centered dialog on desktop (using shadcn Sheet / Dialog)
-- [ ] Segmented control at top: "Expense" · "Income" · "Transfer" (Transfer handled in US-014)
-- [ ] Fields: Amount (large numeric input, required), Date (date picker, default today), Account (dropdown, required), Category (dropdown filtered by type, required for Expense/Income), Description (text, optional), Tags (comma-separated chip input, optional), Place (text, optional)
-- [ ] Collapsible "Travel Currency" section: symbol, rate, local amount, location (all optional)
-- [ ] Saving writes record to Dexie; drawer closes; transaction list updates instantly
-- [ ] All fields validated (Zod schema from US-004); errors shown inline
-- [ ] Amount field auto-focuses when drawer opens
+- [x] FAB (floating action button) visible on all pages above bottom nav; tapping opens `TransactionDrawer`
+- [x] Drawer is a bottom sheet on mobile, centered dialog on desktop (using shadcn Sheet / Dialog)
+- [x] Segmented control at top: "Expense" · "Income" · "Transfer" (Transfer handled in US-014)
+- [x] Fields: Amount (large numeric input, required), Date (date picker, default today), Account (dropdown, required), Category (dropdown filtered by type, required for Expense/Income), Description (text, optional), Tags (comma-separated chip input, optional), Place (text, optional)
+- [x] Collapsible "Travel Currency" section: symbol, rate, local amount, location (all optional)
+- [x] Saving writes record to Dexie; drawer closes; transaction list updates instantly
+- [x] All fields validated (Zod schema from US-004); errors shown inline
+- [x] Amount field auto-focuses when drawer opens
 
 **Design Reference:** §5.6 Feature Modules (`TransactionDrawer`), §7.2 Transaction Create Flow  
 **Technical Notes:** Drawer state managed by `useUIStore`. On save: `db.transactions.put({ id: uuid(), userId, ...formValues, updatedAt: Date.now() })`. Use `useAccounts` and `useCategories` for dropdown data.  
 **Dependencies:** US-011, US-007, US-010  
 **Estimated Effort:** 1d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/transactions/TransactionDrawer.tsx`  
+Commit: `e5edf3f`
 
 ---
 
@@ -334,17 +362,21 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** correct a mistake in a transaction or remove it **so that** my balance stays accurate.
 
 **Acceptance Criteria:**
-- [ ] Tapping a transaction row opens the edit drawer pre-filled with current values
-- [ ] Saving an edit updates the record in Dexie (`updatedAt` refreshed); list reflects change immediately
-- [ ] Long-press (mobile) or context menu (desktop) on a row shows "Edit" and "Delete" options
-- [ ] Delete sets `deletedAt` with confirmation dialog; transaction disappears from list; account balance updates
-- [ ] Deleting a Transfer transaction shows a note that the paired transfer records may need manual review
+- [x] Tapping a transaction row opens the edit drawer pre-filled with current values
+- [x] Saving an edit updates the record in Dexie (`updatedAt` refreshed); list reflects change immediately
+- [x] Long-press (mobile) or context menu (desktop) on a row shows "Edit" and "Delete" options
+- [x] Delete sets `deletedAt` with confirmation dialog; transaction disappears from list; account balance updates
+- [x] Deleting a Transfer transaction shows a note that the paired transfer records may need manual review
 
 **Design Reference:** §5.6 Feature Modules (`TransactionDrawer`), FR-TXN-008, FR-TXN-009  
 **Technical Notes:** Reuse `TransactionDrawer` with `editId` prop; pre-fill via `db.transactions.get(editId)`. Delete: `db.transactions.update(id, { deletedAt: Date.now(), updatedAt: Date.now() })`.  
 **Dependencies:** US-012  
 **Estimated Effort:** 0.5d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/transactions/TransactionDrawer.tsx` (edit + delete in same component)  
+Commit: `e5edf3f`
 
 ---
 
@@ -353,18 +385,22 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 **As a** user **I want to** record a transfer between my AED and PKR accounts **so that** both account balances remain accurate when I move money between them.
 
 **Acceptance Criteria:**
-- [ ] Selecting "Transfer" in the drawer hides the Category field and shows a "To Account" dropdown
-- [ ] "To Account" dropdown excludes the selected source account
-- [ ] Saving creates a single `Transfer` record with both `accountId` (source) and `toAccountId` (destination)
-- [ ] Source account balance decreases by amount; destination account balance increases by amount
-- [ ] Zod validation prevents `accountId === toAccountId`
-- [ ] Transfer rows display with both account names ("From → To")
+- [x] Selecting "Transfer" in the drawer hides the Category field and shows a "To Account" dropdown
+- [x] "To Account" dropdown excludes the selected source account
+- [x] Saving creates a single `Transfer` record with both `accountId` (source) and `toAccountId` (destination)
+- [x] Source account balance decreases by amount; destination account balance increases by amount
+- [x] Zod validation prevents `accountId === toAccountId`
+- [x] Transfer rows display with both account names ("From → To")
 
 **Design Reference:** §5.6 Feature Modules (`TransactionDrawer`), FR-TXN-002, FR-TXN-003  
 **Technical Notes:** Balance formula in `useAccountBalance` already accounts for transfers (design §6.1). Transfer amounts always positive; type field carries direction.  
 **Dependencies:** US-012  
 **Estimated Effort:** 1d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/transactions/TransactionDrawer.tsx` (Transfer type handling in same component)  
+Commit: `e5edf3f`
 
 ---
 
@@ -634,10 +670,10 @@ Commit: `57a2ce2`
 **As a** user **I want** the Zakat calculator to automatically fetch today's gold price **so that** I don't have to look it up manually every time I calculate Zakat.
 
 **Acceptance Criteria:**
-- [ ] `src/lib/goldPrice.ts` exports `fetchGoldPrice(): Promise<number | null>` returning price per gram in USD
-- [ ] Fetches from a configured gold price API (goldapi.io or metals-api — user configures API key in Settings, OQ-01)
-- [ ] Result cached in Dexie `dbConfig` as `lastGoldPricePerGram` and `lastGoldPriceFetchedAt` for 1 hour; stale cache returned if API call fails
-- [ ] Returns `null` if API key not configured or API unavailable after 1 retry
+- [x] `src/lib/goldPrice.ts` exports `fetchGoldPrice(): Promise<number | null>` returning price per gram in USD
+- [x] Fetches from a configured gold price API (goldapi.io or metals-api — user configures API key in Settings, OQ-01)
+- [x] Result cached in Dexie `dbConfig` as `lastGoldPricePerGram` and `lastGoldPriceFetchedAt` for 1 hour; stale cache returned if API call fails
+- [x] Returns `null` if API key not configured or API unavailable after 1 retry
 - [x] API key stored in `DbConfig` (added as optional field); never logged or sent to any MizanTrack server
 - [x] Unit test covers: successful fetch, API failure (returns cached), expired cache (refetches), null when no key
 
