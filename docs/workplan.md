@@ -728,10 +728,10 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-011 | Transaction List with Virtualization, Filters & Search | 2d | Must | ⏳ TODO |
-| US-012 | Add Transaction Drawer (Expense & Income) | 1d | Must | ⏳ TODO |
-| US-013 | Edit & Soft-Delete Transaction | 0.5d | Must | ⏳ TODO |
-| US-014 | Transfer Transaction | 1d | Must | ⏳ TODO |
+| US-011 | Transaction List with Virtualization, Filters & Search | 2d | Must | ✅ DONE |
+| US-012 | Add Transaction Drawer (Expense & Income) | 1d | Must | ✅ DONE |
+| US-013 | Edit & Soft-Delete Transaction | 0.5d | Must | ✅ DONE |
+| US-014 | Transfer Transaction | 1d | Must | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 4.5d
 
