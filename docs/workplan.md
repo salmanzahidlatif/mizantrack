@@ -743,10 +743,10 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-015 | Dashboard — Balance Cards & Month Summary | 1d | Must | ⏳ TODO |
-| US-016 | Dashboard — Recent Transactions & Trend Chart | 1.5d | Must | ⏳ TODO |
-| US-017 | Shared DateRangePicker Component | 1d | Must | ⏳ TODO |
-| US-018 | Reports — Period Selector, Category Breakdown & Account Filter | 1.5d | Must | ⏳ TODO |
+| US-015 | Dashboard — Balance Cards & Month Summary | 1d | Must | ✅ DONE |
+| US-016 | Dashboard — Recent Transactions & Trend Chart | 1.5d | Must | ✅ DONE |
+| US-017 | Shared DateRangePicker Component | 1d | Must | ✅ DONE |
+| US-018 | Reports — Period Selector, Category Breakdown & Account Filter | 1.5d | Must | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 5d
 
@@ -758,12 +758,12 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-019 | Reports — Monthly Trend Chart & XLSX Export | 1d | Must | ⏳ TODO |
-| US-020 | Settings — Preferences Form | 0.5d | Must | ⏳ TODO |
-| US-021 | HK Import UI | 1d | Must | ⏳ TODO |
-| US-022 | Excel Export UI | 0.5d | Must | ⏳ TODO |
-| US-023 | Firebase Config Form & Sync Status UI | 1d | Must | ⏳ TODO |
-| US-024 | Auto-Sync on Online Event & Sync Status Badge | 0.5d | Must | ⏳ TODO |
+| US-019 | Reports — Monthly Trend Chart & XLSX Export | 1d | Must | ✅ DONE |
+| US-020 | Settings — Preferences Form | 0.5d | Must | ✅ DONE |
+| US-021 | HK Import UI | 1d | Must | ✅ DONE |
+| US-022 | Excel Export UI | 0.5d | Must | ✅ DONE |
+| US-023 | Firebase Config Form & Sync Status UI | 1d | Must | ✅ DONE |
+| US-024 | Auto-Sync on Online Event & Sync Status Badge | 0.5d | Must | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 4.5d
 
@@ -775,11 +775,11 @@ Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, 
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-025 | Gold Price Client | 1d | Should | ⏳ TODO |
-| US-026 | Zakat Assessment Form & Calculation | 1.5d | Should | ⏳ TODO |
-| US-027 | Zakat Export & Navigation | 0.5d | Should | ⏳ TODO |
-| US-028 | Mobile Bottom Navigation & UX Polish | 0.5d | Should | ⏳ TODO |
-| US-029 | PWA Audit & E2E Tests | 1d | Should | ⏳ TODO |
+| US-025 | Gold Price Client | 1d | Should | ✅ DONE |
+| US-026 | Zakat Assessment Form & Calculation | 1.5d | Should | ✅ DONE |
+| US-027 | Zakat Export & Navigation | 0.5d | Should | ✅ DONE |
+| US-028 | Mobile Bottom Navigation & UX Polish | 0.5d | Should | ✅ DONE |
+| US-029 | PWA Audit & E2E Tests | 1d | Should | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 4.5d
 
