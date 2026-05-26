@@ -1,7 +1,11 @@
-export default function CategoriesPage() {
-	return (
-		<div className="space-y-4">
-			<h1 className="text-2xl font-bold">Categories</h1>
-		</div>
-	);
+import { redirect } from "next/navigation";
+
+import { CategoriesPageClient } from "@/components/categories/CategoriesPageClient";
+import { auth } from "@/lib/auth";
+
+export default async function CategoriesPage() {
+	const session = await auth();
+	if (!session) redirect("/login");
+
+	return <CategoriesPageClient userId={session.user.id} />;
 }
