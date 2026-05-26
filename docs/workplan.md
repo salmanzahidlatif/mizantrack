@@ -552,18 +552,22 @@ Commit: `57a2ce2`
 **As a** user **I want to** export my transactions to an Excel file for any date range **so that** I can back up my data or open it in Hysab Kytab.
 
 **Acceptance Criteria:**
-- [ ] Settings page has an "Export Data" card with a "Download Export" button
-- [ ] Clicking the button opens a dialog with a date range picker (DateRangePicker standalone from US-017)
-- [ ] Default range is the current month; Fiscal Year preset also available
-- [ ] Clicking "Download" calls `exportToExcel(userId, range)` and triggers browser file download
-- [ ] Downloaded file named `mizantrack-export-YYYY-MM-DD.xlsx`
-- [ ] Button disabled and shows spinner during export generation
+- [x] Settings page has an "Export Data" card with a "Download Export" button
+- [x] Clicking the button opens a dialog with a date range picker (DateRangePicker standalone from US-017)
+- [x] Default range is the current month; Fiscal Year preset also available
+- [x] Clicking "Download" calls `exportToExcel(userId, range)` and triggers browser file download
+- [x] Downloaded file named `mizantrack-export-YYYY-MM-DD.xlsx`
+- [x] Button disabled and shows spinner during export generation
 
 **Design Reference:** §5.6 Feature Modules (`ExportPanel`), FR-EXP-001–003  
 **Technical Notes:** Export logic already complete in `src/lib/export.ts`. This story is UI only.  
 **Dependencies:** US-017, US-020  
 **Estimated Effort:** 0.5d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/settings/ExportPanel.tsx`  
+Commit: `57a2ce2`
 
 ---
 
@@ -572,19 +576,23 @@ Commit: `57a2ce2`
 **As a** user **I want to** paste my Firebase config in Settings and see sync status **so that** my data is backed up to my own cloud.
 
 **Acceptance Criteria:**
-- [ ] Settings page has a "Cloud Sync" card with a `<textarea>` for Firebase JSON config and an Enable Sync toggle
-- [ ] Saving validates the JSON (Zod schema from US-004); invalid config shows an error
-- [ ] Valid config saved to `DbConfig.firebaseConfig` and `DbConfig.enabled`
-- [ ] "Sync Now" button triggers `syncAll(userId)` from existing sync module; spinner shown during sync; success/error toast after
-- [ ] Sync status section shows: "Last synced: [relative time]" or "Never synced" and the current `syncing` state
-- [ ] Firestore usage bar shows estimated MB used vs 1GB free limit (uses `getFirestoreUsage`)
-- [ ] "Reset Config" link clears Firebase config with a confirmation dialog
+- [x] Settings page has a "Cloud Sync" card with a `<textarea>` for Firebase JSON config and an Enable Sync toggle
+- [x] Saving validates the JSON (Zod schema from US-004); invalid config shows an error
+- [x] Valid config saved to `DbConfig.firebaseConfig` and `DbConfig.enabled`
+- [x] "Sync Now" button triggers `syncAll(userId)` from existing sync module; spinner shown during sync; success/error toast after
+- [x] Sync status section shows: "Last synced: [relative time]" or "Never synced" and the current `syncing` state
+- [x] Firestore usage bar shows estimated MB used vs 1GB free limit (uses `getFirestoreUsage`)
+- [x] "Reset Config" link clears Firebase config with a confirmation dialog
 
 **Design Reference:** §5.6 Feature Modules (`FirebaseConfigForm`), §7.3 Auto-Sync Flow, FR-SYN-001–008  
 **Technical Notes:** Sync logic already complete in `src/lib/db/sync.ts` and `firebase.ts`. This story is UI + wiring to `useSyncStore`. `triggerSync` action in sync-store calls `syncAll` and updates state.  
 **Dependencies:** US-002 (sync-store), US-020  
 **Estimated Effort:** 1d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/components/settings/FirebaseSyncPanel.tsx`  
+Commit: `57a2ce2`
 
 ---
 
@@ -593,17 +601,21 @@ Commit: `57a2ce2`
 **As a** user **I want** my data to sync automatically when my phone gets internet access **so that** I never have to manually trigger sync after coming back online.
 
 **Acceptance Criteria:**
-- [ ] `src/hooks/useAutoSync.ts` registers a `window` `online` event listener on mount
-- [ ] When browser goes online and sync is enabled: `syncAll(userId)` fires automatically; `useSyncStore` updates `syncing` and `lastSync`
-- [ ] Auto-sync also runs on a 5-minute interval when online and enabled
-- [ ] `SyncStatusBadge` component in AppShell header shows: cloud icon with spinner when syncing, checkmark with relative time when idle, error icon with tooltip when errored
-- [ ] Hook cleanup removes event listener on unmount
+- [x] `src/hooks/useAutoSync.ts` registers a `window` `online` event listener on mount
+- [x] When browser goes online and sync is enabled: `syncAll(userId)` fires automatically; `useSyncStore` updates `syncing` and `lastSync`
+- [x] Auto-sync also runs on a 5-minute interval when online and enabled
+- [x] `SyncStatusBadge` component in AppShell header shows: cloud icon with spinner when syncing, checkmark with relative time when idle, error icon with tooltip when errored
+- [x] Hook cleanup removes event listener on unmount
 
 **Design Reference:** §5.3 Sync Layer, §5.5 UI Component Library (`SyncStatusBadge`), FR-SYN-003  
 **Technical Notes:** `useAutoSync` is called once in `AppShell`. Interval via `setInterval` with cleanup in `useEffect` return. Use `navigator.onLine` check before firing sync.  
 **Dependencies:** US-023  
 **Estimated Effort:** 0.5d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/hooks/useAutoSync.ts`, `src/components/layout/SyncStatusBadge.tsx`  
+Commit: `57a2ce2`
 
 ---
 
