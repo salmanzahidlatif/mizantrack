@@ -1,7 +1,11 @@
-export default function TransactionsPage() {
-	return (
-		<div className="space-y-4">
-			<h1 className="text-2xl font-bold">Transactions</h1>
-		</div>
-	);
+import { redirect } from "next/navigation";
+
+import { TransactionsPageClient } from "@/components/transactions/TransactionsPageClient";
+import { auth } from "@/lib/auth";
+
+export default async function TransactionsPage() {
+	const session = await auth();
+	if (!session) redirect("/login");
+
+	return <TransactionsPageClient userId={session.user.id} />;
 }

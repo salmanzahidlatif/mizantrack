@@ -8,6 +8,7 @@ import {
 	BarChart3,
 	Settings,
 	LogOut,
+	Plus,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -27,6 +28,7 @@ import {
 import { signOutAction } from "@/lib/actions/auth";
 import { seedDefaultCategories } from "@/lib/db/seed";
 import { cn } from "@/lib/utils";
+import { useUIStore } from "@/store/ui-store";
 
 import type { Session } from "next-auth";
 
@@ -46,6 +48,7 @@ interface AppShellProps {
 
 export function AppShell({ user, children }: AppShellProps) {
 	const pathname = usePathname();
+	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 
 	useEffect(() => {
 		if (user?.id) {
@@ -174,6 +177,15 @@ export function AppShell({ user, children }: AppShellProps) {
 					))}
 				</div>
 			</nav>
+
+			{/* FAB — floating add transaction */}
+			<button
+				type="button"
+				onClick={openAddTransaction}
+				className="fixed right-4 bottom-20 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary shadow-lg transition-transform hover:scale-105 active:scale-95 md:bottom-6">
+				<Plus className="h-6 w-6 text-primary-foreground" />
+				<span className="sr-only">Add transaction</span>
+			</button>
 		</div>
 	);
 }
