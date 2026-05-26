@@ -11,12 +11,16 @@
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:coverage": "vitest run --coverage",
 		"validate": "npm run typecheck && npm run lint && npm run format:check"
 	},
 	"dependencies": {
 		"@auth/firebase-adapter": "^2.11.1",
 		"@eslint/eslintrc": "^3.3.5",
 		"@hookform/resolvers": "^5.2.2",
+		"@tanstack/react-virtual": "^3.13.26",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"date-fns": "^4.1.0",
@@ -48,12 +52,16 @@
 		"@eslint/js": "^9.39.4",
 		"@next/eslint-plugin-next": "^16.2.1",
 		"@tailwindcss/postcss": "^4",
+		"@testing-library/jest-dom": "^6.9.1",
+		"@testing-library/react": "^16.3.2",
 		"@types/node": "^20",
 		"@types/react": "^19",
 		"@types/react-dom": "^19",
 		"@types/uuid": "^10.0.0",
 		"@typescript-eslint/eslint-plugin": "^8.57.2",
 		"@typescript-eslint/parser": "^8.57.2",
+		"@vitejs/plugin-react": "^6.0.2",
+		"@vitest/coverage-v8": "^4.1.7",
 		"eslint": "^9",
 		"eslint-config-next": "16.2.1",
 		"eslint-config-prettier": "^10.1.8",
@@ -62,9 +70,12 @@
 		"eslint-plugin-prettier": "^5.5.5",
 		"eslint-plugin-react": "^7.37.5",
 		"eslint-plugin-unused-imports": "^4.4.1",
+		"fake-indexeddb": "^6.2.5",
+		"jsdom": "^29.1.1",
 		"prettier": "^3.8.1",
 		"prettier-plugin-tailwindcss": "^0.7.2",
 		"tailwindcss": "^4",
-		"typescript": "^5"
+		"typescript": "^5",
+		"vitest": "^4.1.7"
 	}
 }

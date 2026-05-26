@@ -63,6 +63,10 @@ For individuals managing finances across multiple currencies and geographies who
 **Estimated Effort:** 0.5d  
 **Priority:** Must Have
 
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/lib/auth.ts` (env var fix), `.env.local.example`, `public/icon-192.png`, `public/icon-512.png`  
+`[Rule 1]` AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET fix applied. Icons generated via Python script (RGBA PNG with rounded-rect + violet accent).
+
 ---
 
 ### Story US-002: Create Zustand Stores
@@ -81,6 +85,10 @@ For individuals managing finances across multiple currencies and geographies who
 **Dependencies:** US-001  
 **Estimated Effort:** 0.5d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/store/ui-store.ts`, `src/store/filter-store.ts`, `src/store/sync-store.ts`  
+All three stores typed with interfaces; sync-store wires `syncAll()` and handles errors.
 
 ---
 
@@ -103,6 +111,10 @@ For individuals managing finances across multiple currencies and geographies who
 **Estimated Effort:** 1d  
 **Priority:** Must Have
 
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/hooks/useAccounts.ts`, `useActiveAccounts.ts` (same file), `useCategories.ts`, `useTransactions.ts`, `useAccountBalance.ts`, `useDbConfig.ts`, `useSyncMeta.ts`  
+All hooks use `useLiveQuery`; balance formula implemented per design §6.1.
+
 ---
 
 ### Story US-004: Create Zod Validation Schemas
@@ -122,6 +134,10 @@ For individuals managing finances across multiple currencies and geographies who
 **Dependencies:** None  
 **Estimated Effort:** 0.5d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/lib/validations/account.ts`, `category.ts`, `transaction.ts`, `dbConfig.ts`  
+`[Rule 1]` Tests discovered Zod v4 uses strict RFC 4122 UUID regex (requires version nibble 1-5); test UUIDs updated to valid v4 format.
 
 ---
 
@@ -146,6 +162,11 @@ For individuals managing finances across multiple currencies and geographies who
 **Dependencies:** US-001, US-002, US-003  
 **Estimated Effort:** 1d  
 **Priority:** Must Have
+
+**Status: ✅ COMPLETE (2026-05-26)**  
+Files: `src/lib/db/seed.ts`, `vitest.config.ts`, `src/test/setup.ts`, `src/components/shared/CurrencyAmount.tsx`, `EmptyState.tsx`, `SkeletonCard.tsx`  
+Installed: `@tanstack/react-virtual`, `vitest`, `@vitest/coverage-v8`, `jsdom`, `@testing-library/react`, `@testing-library/jest-dom`, `fake-indexeddb`, `@vitejs/plugin-react`  
+31 tests passing (validations.test.ts: 26, seed.test.ts: 5). `npm run validate` passes cleanly.
 
 ---
 
@@ -675,11 +696,11 @@ For individuals managing finances across multiple currencies and geographies who
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-001 | Fix Auth & Add PWA Icons | 0.5d | Must | ⏳ TODO |
-| US-002 | Create Zustand Stores | 0.5d | Must | ⏳ TODO |
-| US-003 | Create Dexie Live Query Hooks | 1d | Must | ⏳ TODO |
-| US-004 | Create Zod Validation Schemas | 0.5d | Must | ⏳ TODO |
-| US-005 | Seed Default Categories, Setup Vitest & Shared Components | 1d | Must | ⏳ TODO |
+| US-001 | Fix Auth & Add PWA Icons | 0.5d | Must | ✅ DONE |
+| US-002 | Create Zustand Stores | 0.5d | Must | ✅ DONE |
+| US-003 | Create Dexie Live Query Hooks | 1d | Must | ✅ DONE |
+| US-004 | Create Zod Validation Schemas | 0.5d | Must | ✅ DONE |
+| US-005 | Seed Default Categories, Setup Vitest & Shared Components | 1d | Must | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 3.5d
 

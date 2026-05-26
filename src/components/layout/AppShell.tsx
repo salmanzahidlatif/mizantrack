@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -24,6 +25,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signOutAction } from "@/lib/actions/auth";
+import { seedDefaultCategories } from "@/lib/db/seed";
 import { cn } from "@/lib/utils";
 
 import type { Session } from "next-auth";
@@ -44,6 +46,12 @@ interface AppShellProps {
 
 export function AppShell({ user, children }: AppShellProps) {
 	const pathname = usePathname();
+
+	useEffect(() => {
+		if (user?.id) {
+			void seedDefaultCategories(user.id);
+		}
+	}, [user?.id]);
 
 	return (
 		<div className="flex min-h-screen flex-col bg-background">
