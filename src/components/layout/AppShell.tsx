@@ -15,6 +15,7 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { SyncStatusBadge } from "@/components/layout/SyncStatusBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +29,7 @@ import {
 import { signOutAction } from "@/lib/actions/auth";
 import { seedDefaultCategories } from "@/lib/db/seed";
 import { cn } from "@/lib/utils";
+import { useAutoSync } from "@/hooks/useAutoSync";
 import { useUIStore } from "@/store/ui-store";
 
 import type { Session } from "next-auth";
@@ -50,6 +52,8 @@ export function AppShell({ user, children }: AppShellProps) {
 	const pathname = usePathname();
 	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 
+	useAutoSync(user?.id ?? "");
+
 	useEffect(() => {
 		if (user?.id) {
 			void seedDefaultCategories(user.id);
@@ -68,6 +72,7 @@ export function AppShell({ user, children }: AppShellProps) {
 						<span className="text-sm font-semibold">MizanTrack</span>
 					</div>
 					<div className="flex items-center gap-2">
+						<SyncStatusBadge />
 						<ThemeToggle />
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>

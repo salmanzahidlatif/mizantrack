@@ -1,12 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+
+import { Download, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { CategoryBreakdownChart } from "@/components/charts/CategoryDonutChart";
 import { TrendChart } from "@/components/charts/TrendBarChart";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
+import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import {
 	Select,
 	SelectContent,
@@ -19,7 +30,10 @@ import { useActiveAccounts } from "@/hooks/useAccounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useTransactions } from "@/hooks/useTransactions";
 import { getDateRange } from "@/lib/dateRange";
+import { exportToExcel } from "@/lib/export";
 import { useFilterStore } from "@/store/filter-store";
+
+import type { DateRange } from "@/types";
 
 interface ReportsPageClientProps {
 	userId: string;
@@ -41,6 +55,11 @@ export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 		to: to.getTime(),
 	});
 
+	// Export dialog state
+	const [exportOpen, setExportOpen] = useState(false);
+	const [exportRange, setExportRange] = useState<DateRange>({ from, to });
+	const [exporting, setExporting] = useState(false);
+
 	const { income, expense, net } = useMemo(() => {
 		if (!transactions) return { income: 0, expense: 0, net: 0 };
 		let inc = 0;
@@ -52,13 +71,65 @@ export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 		return { income: inc, expense: exp, net: inc - exp };
 	}, [transactions]);
 
+	async function handleExport() {
+		setExporting(true);
+		try {
+			await exportToExcel(userId, exportRange);
+		} catch {
+			toast.error("Export failed. Please try again.");
+		} finally {
+			setExporting(false);
+			setExportOpen(false);
+		}
+	}
+
 	return (
 		<div className="space-y-5">
 			{/* Header */}
-			<div>
-				<h1 className="text-2xl font-bold">Reports</h1>
-				<p className="text-sm text-muted-foreground">Analyse your spending</p>
+			<div className="flex items-start justify-between gap-2">
+				<div>
+					<h1 className="text-2xl font-bold">Reports</h1>
+					<p className="text-sm text-muted-foreground">Analyse your spending</p>
+				</div>
+				<Button
+					size="sm"
+					variant="outline"
+					className="shrink-0"
+					onClick={() => {
+						setExportRange({ from, to });
+						setExportOpen(true);
+					}}>
+					<Download className="mr-1.5 h-3.5 w-3.5" />
+					Export
+				</Button>
 			</div>
+
+			{/* Export dialog */}
+			<Dialog open={exportOpen} onOpenChange={setExportOpen}>
+				<DialogContent className="max-w-sm">
+					<DialogHeader>
+						<DialogTitle>Export to Excel</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-3 py-2">
+						<p className="text-sm text-muted-foreground">Select date range to export:</p>
+						<DateRangePicker
+							standalone
+							value={exportRange}
+							onChange={setExportRange}
+							fiscalYearStartMonth={fiscalYearStartMonth}
+						/>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setExportOpen(false)}>
+							Cancel
+						</Button>
+						<Button onClick={() => { void handleExport(); }} disabled={exporting}>
+							{exporting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+							Download
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 
 			{/* Filters */}
 			<div className="space-y-2">
