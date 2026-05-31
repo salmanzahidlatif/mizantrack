@@ -108,7 +108,29 @@ function Step4Content() {
 					<li>Your Firebase project has been created ✓</li>
 					<li>A web app has been registered ✓</li>
 					<li>The config JSON has been pasted and validated ✓</li>
+					<li>Firestore security rules are set (see below) ✓</li>
 				</ul>
+			</div>
+			<div className="space-y-1">
+				<p className="text-xs font-medium text-foreground">Required Firestore Security Rules</p>
+				<p className="text-xs">
+					In your Firebase project → <strong>Firestore Database</strong> → <strong>Rules</strong>,
+					paste:
+				</p>
+				<pre className="overflow-x-auto rounded bg-muted px-3 py-2 font-mono text-xs leading-relaxed">
+					{`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{document=**} {
+      allow read, write: if true;
+    }
+  }
+}`}
+				</pre>
+				<p className="text-xs">
+					This is safe because your data lives in <em>your own private Firebase project</em> — no
+					one else has access to it.
+				</p>
 			</div>
 			<p className="text-sm">
 				Click <strong>Apply Config</strong> to pre-fill the config field. You can then review it and

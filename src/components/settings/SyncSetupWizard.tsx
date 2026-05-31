@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 import type { ParseFirebaseConfigResult } from "@/lib/firebaseConfigParser";
 
-const STEP_COUNT = 5;
+const STEP_COUNT = 6;
 
 interface SyncSetupWizardProps {
 	open: boolean;
@@ -55,7 +55,7 @@ export function SyncSetupWizard({
 		}
 	}
 
-	const isNextDisabled = activeStep === 3 && parseResult?.valid !== true;
+	const isNextDisabled = activeStep === 4 && parseResult?.valid !== true;
 
 	return (
 		<Sheet open={open} onOpenChange={onOpenChange}>

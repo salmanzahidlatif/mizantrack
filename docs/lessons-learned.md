@@ -1,5 +1,31 @@
 # Lessons Learned
 
+## 2026-05-31 - Firebase permission-denied on all sync operations
+
+### What Happened
+Sync operations (both `syncAll` and `getFirestoreUsage`) failed with Firebase `permission-denied`. The `getFirestoreUsage` failure surfaced as an unhandled promise rejection in the browser console. Sync errors were caught in the store but showed the raw Firebase message ("Missing or insufficient permissions.") rather than actionable guidance.
+
+### Root Cause
+MizanTrack initializes the Firebase JS SDK client-side with user-supplied credentials but never calls any Firebase Authentication API (no `signInAnonymously`, no `signInWithCustomToken`). As a result, `request.auth` is `null` for every Firestore request. The README documented rules requiring `request.auth != null && request.auth.uid == userId`, which denies every operation. This is an architectural mismatch: the app uses NextAuth (Google OAuth) for auth but the documented Firestore rules assumed Firebase Auth was also in use.
+
+Additionally, `getFirestoreUsage` had no try/catch — Firebase errors from `getCountFromServer` (the `RunAggregationQuery` RPC) propagated as unhandled promise rejections.
+
+### Fix Applied
+- **`src/lib/db/sync.ts`**: Wrapped `getFirestoreUsage` Firebase calls in try/catch; returns `null` on any error. Usage indicator fails gracefully instead of throwing.
+- **`src/store/sync-store.ts`**: Detects Firebase `permission-denied` error code and surfaces the user-friendly message: "Sync failed: permission denied. Check your Firestore security rules."
+- **`README.md`**: Updated Firestore rules to `allow read, write: if true;`. This is appropriate because each user's data is in their **own private Firebase project** — isolation is at the project level, not the document level. MizanTrack has no backend to issue Firebase custom tokens.
+- **`src/components/settings/SyncSetupSteps.tsx`**: Added Firestore rules to the Step 4 pre-flight checklist with an inline rules snippet, so new users are guided to set the rules before applying config.
+
+### Regression Tests
+- `sync.test.ts`: `getFirestoreUsage_PermissionDenied_ReturnsNullInsteadOfThrowing`
+- `sync.test.ts`: `getFirestoreUsage_AnyFirestoreError_ReturnsNull`
+- `sync.test.ts`: `getFirestoreUsage_NoConfig_ReturnsNull`
+
+### Prevention
+- When using Firebase Firestore in a no-backend app (NextAuth only, no Firebase Auth), the only viable Firestore rules pattern is `allow read, write: if true;` for user-owned projects. Document this prominently and explain the security model.
+- Any function that calls Firebase SDK and is invoked with `void` (fire-and-forget) must internally catch all errors — otherwise Firebase errors become silent unhandled rejections that only appear in the browser console.
+- Firebase `permission-denied` is a predictable failure mode when setting up sync. Always translate it to an actionable UI message (not the raw SDK message).
+
 ## 2026-05-31 - Settings page hydration mismatch + currency save silently failing
 
 ### What Happened

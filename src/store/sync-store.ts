@@ -24,7 +24,13 @@ export const useSyncStore = create<SyncStore>((set) => ({
 			await syncAll(userId);
 			set({ syncing: false, lastSync: Date.now(), error: null });
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Sync failed";
+			const code = err instanceof Error && "code" in err ? (err as { code: string }).code : null;
+			const message =
+				code === "permission-denied"
+					? "Sync failed: permission denied. Check your Firestore security rules."
+					: err instanceof Error
+						? err.message
+						: "Sync failed";
 			set({ syncing: false, error: message });
 		}
 	},

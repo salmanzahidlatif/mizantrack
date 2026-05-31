@@ -88,23 +88,27 @@ export async function getFirestoreUsage(userId: string) {
 	const firestore = await getFirestoreForUser(userId);
 	if (!firestore) return null;
 
-	const counts = await Promise.all(
-		["transactions", "accounts", "categories"].map(async (col) => {
-			const snap = await getCountFromServer(collection(firestore, `users/${userId}/${col}`));
-			return { col, count: snap.data().count };
-		})
-	);
+	try {
+		const counts = await Promise.all(
+			["transactions", "accounts", "categories"].map(async (col) => {
+				const snap = await getCountFromServer(collection(firestore, `users/${userId}/${col}`));
+				return { col, count: snap.data().count };
+			})
+		);
 
-	// Rough estimate: avg doc ~600 bytes
-	const totalDocs = counts.reduce((sum, c) => sum + c.count, 0);
-	const estimatedMB = ((totalDocs * 600) / 1024 / 1024).toFixed(2);
-	const freeLimitMB = 1024;
+		// Rough estimate: avg doc ~600 bytes
+		const totalDocs = counts.reduce((sum, c) => sum + c.count, 0);
+		const estimatedMB = ((totalDocs * 600) / 1024 / 1024).toFixed(2);
+		const freeLimitMB = 1024;
 
-	return {
-		counts,
-		totalDocs,
-		estimatedMB,
-		freeLimitMB,
-		percentUsed: ((+estimatedMB / freeLimitMB) * 100).toFixed(1),
-	};
+		return {
+			counts,
+			totalDocs,
+			estimatedMB,
+			freeLimitMB,
+			percentUsed: ((+estimatedMB / freeLimitMB) * 100).toFixed(1),
+		};
+	} catch {
+		return null;
+	}
 }

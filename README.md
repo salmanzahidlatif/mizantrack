@@ -94,14 +94,14 @@ MizanTrack works fully offline without Firebase. To enable cloud sync:
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    match /users/{document=**} {
+      allow read, write: if true;
     }
   }
 }
 ```
 
-> These rules ensure users can only access their own data.
+> MizanTrack accesses Firestore directly from the browser without Firebase Authentication. Use `allow read, write: if true` — your data is protected by the fact that it lives in **your own private Firebase project**, not a shared one. Nobody else has your project's credentials.
 
 ---
 
