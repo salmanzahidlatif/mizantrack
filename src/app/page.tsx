@@ -40,8 +40,8 @@ export default function Home() {
 						rel="noopener noreferrer">
 						<Image
 							className="dark:invert"
-							src="/vercel.svg"
-							alt="Vercel logomark"
+							src="/icon-192.png"
+							alt="Mizan Track"
 							width={16}
 							height={16}
 						/>
