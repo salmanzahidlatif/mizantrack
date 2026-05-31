@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, ArrowLeftRight, Wallet, BarChart3, Settings, Plus } from "lucide-react";
+import { LayoutDashboard, ArrowLeftRight, Wallet, BarChart3, Moon, Settings, Plus } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -12,6 +12,7 @@ const BOTTOM_NAV_ITEMS = [
 	{ href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
 	{ href: "/accounts", label: "Accounts", icon: Wallet },
 	{ href: "/reports", label: "Reports", icon: BarChart3 },
+	{ href: "/zakat", label: "Zakat", icon: Moon },
 	{ href: "/settings", label: "Settings", icon: Settings },
 ];
 
