@@ -1,6 +1,8 @@
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 
+import { resolveSessionUserId } from "@/lib/auth/session";
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
 	providers: [
 		GoogleProvider({
@@ -16,6 +18,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 				return Response.redirect(new URL("/login", nextUrl));
 			}
 			return true;
+		},
+		session({ session, token }) {
+			if (session.user) {
+				session.user.id = resolveSessionUserId(token) ?? "";
+			}
+
+			return session;
 		},
 	},
 	pages: { signIn: "/login" },
