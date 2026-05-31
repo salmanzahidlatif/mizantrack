@@ -62,7 +62,7 @@ export function AppShell({ user, children }: AppShellProps) {
 	}, [user?.id]);
 
 	return (
-		<div className="flex min-h-screen flex-col bg-background">
+		<div className="flex h-screen flex-col overflow-hidden bg-background">
 			{/* Top header */}
 			<header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
 				<div className="flex h-14 items-center justify-between px-4">
@@ -110,9 +110,9 @@ export function AppShell({ user, children }: AppShellProps) {
 				</div>
 			</header>
 
-			<div className="flex flex-1">
+			<div className="flex min-h-0 flex-1">
 				{/* Sidebar — desktop */}
-				<aside className="hidden w-56 shrink-0 border-r border-border md:flex md:flex-col">
+				<aside className="hidden w-56 shrink-0 overflow-y-auto border-r border-border md:flex md:flex-col">
 					<nav className="flex flex-col gap-1 p-3 pt-4">
 						{NAV_ITEMS.map(({ href, label, icon: Icon }) => (
 							<Link
