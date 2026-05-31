@@ -10,6 +10,7 @@ import {
 	LogOut,
 	Moon,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
@@ -67,10 +68,7 @@ export function AppShell({ user, children }: AppShellProps) {
 				<div className="flex h-14 items-center justify-between px-4">
 					<div className="flex items-center gap-2">
 						<div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-							<img 
-								src="/icon-192.png" 
-								alt="Mizan Track"  
-							/>
+							<Image src="/icon-192.png" alt="Mizan Track" width={28} height={28} unoptimized />
 						</div>
 						<span className="text-sm font-semibold">Mizan Track</span>
 					</div>
