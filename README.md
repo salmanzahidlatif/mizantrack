@@ -78,6 +78,14 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ---
 
+### To release a new version, visit this Deployment Hook
+
+[https://api.vercel.com/v1/integrations/deploy/prj_gVmTRi2VAfGKRPGB3E752XI3rV7d/cSYkqQqkYL](https://api.vercel.com/v1/integrations/deploy/prj_gVmTRi2VAfGKRPGB3E752XI3rV7d/cSYkqQqkYL)
+
+then visit [https://mizantrack.vercel.app](https://mizantrack.vercel.app)
+
+---
+
 ## Firebase Setup (Optional — for cloud sync)
 
 MizanTrack works fully offline without Firebase. To enable cloud sync:
