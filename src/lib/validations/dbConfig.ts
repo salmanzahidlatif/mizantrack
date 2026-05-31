@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const firebaseConfigSchema = z.object({
+export const firebaseConfigSchema = z.object({
 	apiKey: z.string().min(1, "apiKey is required"),
 	authDomain: z.string().min(1, "authDomain is required"),
 	projectId: z.string().min(1, "projectId is required"),

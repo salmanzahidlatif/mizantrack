@@ -146,6 +146,33 @@ describe("DbConfig Dexie operations", () => {
 		expect(config?.enabled).toBe(true);
 		expect(config?.firebaseConfig).toBe(firebaseConfig);
 	});
+
+	it("update_WhenNoRecord_ReturnsZeroAndDoesNotCreate", async () => {
+		// Regression: Dexie update silently fails when the record doesn't exist.
+		// scheduleSave must upsert, not just update.
+		const count = await db.dbConfig.update("nonexistent-user", { currency: "PKR" });
+		expect(count).toBe(0);
+		const config = await db.dbConfig.get("nonexistent-user");
+		expect(config).toBeUndefined();
+	});
+
+	it("upsertDbConfig_WhenNoRecord_CreatesWithCorrectCurrency", async () => {
+		// Regression: saving PKR must succeed even when no config record exists yet.
+		const userId = "upsert-test-user";
+		const count = await db.dbConfig.update(userId, { currency: "PKR", fiscalYearStartMonth: 4 });
+		if (count === 0) {
+			await db.dbConfig.put({
+				id: userId,
+				currency: "PKR",
+				fiscalYearStartMonth: 4,
+				firebaseConfig: "",
+				enabled: false,
+			});
+		}
+		const saved = await db.dbConfig.get(userId);
+		expect(saved?.currency).toBe("PKR");
+		expect(saved?.fiscalYearStartMonth).toBe(4);
+	});
 });
 
 // ─── Export range logic ───────────────────────────────────────────────────────

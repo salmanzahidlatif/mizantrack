@@ -1,7 +1,7 @@
 # Technical Design: MizanTrack
 
-**Document Version:** 1.0  
-**Last Updated:** 2026-05-26  
+**Document Version:** 1.1  
+**Last Updated:** 2026-05-31  
 **Mode:** New Project  
 **PRD Reference:** docs/prd.md  
 **Target Stack:** Next.js 16 · TypeScript · Dexie.js · Firebase Firestore · NextAuth v5 · Zustand · shadcn/ui · Tailwind CSS v4
@@ -44,6 +44,7 @@
 11. [Implementation Plan](#11-implementation-plan)
 12. [Open Questions & Decisions](#12-open-questions--decisions)
 13. [Appendices](#13-appendices)
+14. [Feature Designs](#14-feature-designs)
 
 ---
 
@@ -51,6 +52,7 @@
 
 | Version | Date       | Author              | Changes                                   |
 |---------|------------|---------------------|-------------------------------------------|
+| 1.1     | 2026-05-31 | Salman Zahid Latif  | Added Feature Designs section; linked Cloud Sync Onboarding |
 | 1.0     | 2026-05-26 | Salman Zahid Latif  | Phase 1 & 2: Architecture + component design |
 
 ---
@@ -991,3 +993,13 @@ this.version(2).stores({
   // No data migration needed — index rebuild only
 });
 ```
+
+---
+
+## 14. Feature Designs
+
+Sub-documents for individual features with their own PRD and design lifecycle:
+
+| Feature | PRD | Design |
+|---|---|---|
+| Cloud Sync Onboarding | [docs/cloud-sync-onboarding/prd.md](cloud-sync-onboarding/prd.md) | [docs/cloud-sync-onboarding/design.md](cloud-sync-onboarding/design.md) |

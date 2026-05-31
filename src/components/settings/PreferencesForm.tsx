@@ -43,8 +43,13 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 	const [fiscalMonth, setFiscalMonth] = useState(7);
 	const [goldApiKey, setGoldApiKey] = useState("");
 	const [saved, setSaved] = useState(false);
+	const [mounted, setMounted] = useState(false);
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const initialised = useRef(false);
+
+	useEffect(() => {
+		setMounted(true);
+	}, []);
 
 	// Seed defaults on first load and sync local state from DB
 	useEffect(() => {
@@ -76,6 +81,20 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 					currency: newCurrency.toUpperCase() || "AED",
 					fiscalYearStartMonth: newMonth,
 					goldApiKey: newGoldKey || undefined,
+				})
+				.then((count) => {
+					if (count === 0) {
+						// Record doesn't exist yet — create it with safe defaults
+						return db.dbConfig.put({
+							id: userId,
+							currency: newCurrency.toUpperCase() || "AED",
+							fiscalYearStartMonth: newMonth,
+							firebaseConfig: "",
+							enabled: false,
+							...(newGoldKey ? { goldApiKey: newGoldKey } : {}),
+						});
+					}
+					return undefined;
 				})
 				.then(() => {
 					setSaved(true);
@@ -170,7 +189,7 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 							type="button"
 							onClick={() => setTheme(t)}
 							className={`rounded-lg border px-3 py-1.5 text-sm capitalize transition-colors ${
-								theme === t
+								mounted && theme === t
 									? "border-primary bg-primary text-primary-foreground"
 									: "border-border hover:bg-accent"
 							}`}>

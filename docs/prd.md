@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 
 **Product:** MizanTrack — Personal Finance Tracker  
-**Version:** 1.0  
-**Date:** 2026-05-26  
+**Version:** 1.1  
+**Date:** 2026-05-31  
 **Owner:** Salman Zahid Latif  
 **Status:** Draft
 
@@ -10,6 +10,7 @@
 
 ## Table of Contents
 
+- [Feature Documents](#feature-documents)
 - [1. Executive Summary](#1-executive-summary)
 - [2. Problem Statement](#2-problem-statement)
 - [3. Goals & Non-Goals](#3-goals--non-goals)
@@ -26,7 +27,14 @@
 
 | Version | Date       | Author              | Changes                  |
 |---------|------------|---------------------|--------------------------|
+| 1.1     | 2026-05-31 | Salman Zahid Latif  | Added Cloud Sync onboarding feature PRD reference |
 | 1.0     | 2026-05-26 | Salman Zahid Latif  | Initial draft            |
+
+---
+
+## Feature Documents
+
+- [Cloud Sync Onboarding Instructions PRD](cloud-sync-onboarding/prd.md)
 
 ---
 

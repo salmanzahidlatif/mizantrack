@@ -5,6 +5,8 @@ import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Trash2 } from "lucide-re
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { SyncSetupWizard } from "@/components/settings/SyncSetupWizard";
+import { SyncValidationFeedback } from "@/components/settings/SyncValidationFeedback";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -21,7 +23,10 @@ import { useDbConfig } from "@/hooks/useDbConfig";
 import { resetFirestoreForUser } from "@/lib/db/firebase";
 import { db } from "@/lib/db/local";
 import { getFirestoreUsage } from "@/lib/db/sync";
+import { parseFirebaseConfigJson } from "@/lib/firebaseConfigParser";
 import { useSyncStore } from "@/store/sync-store";
+
+import type { ParseFirebaseConfigResult } from "@/lib/firebaseConfigParser";
 
 interface FirebaseSyncPanelProps {
 	userId: string;
@@ -33,9 +38,11 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 
 	const [configJson, setConfigJson] = useState("");
 	const [enabled, setEnabled] = useState(false);
-	const [jsonError, setJsonError] = useState<string | null>(null);
+	const [parseResult, setParseResult] = useState<ParseFirebaseConfigResult | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [resetOpen, setResetOpen] = useState(false);
+	const [wizardOpen, setWizardOpen] = useState(false);
+	const [wizardInitialStep, setWizardInitialStep] = useState<number | undefined>(undefined);
 	const [usage, setUsage] = useState<{
 		estimatedMB: string;
 		freeLimitMB: number;
@@ -57,27 +64,10 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 		});
 	}, [enabled, userId, lastSync]);
 
-	function validateJson(value: string): boolean {
-		if (!value.trim()) {
-			setJsonError(null);
-			return true;
-		}
-		try {
-			const parsed = JSON.parse(value) as Record<string, unknown>;
-			if (!parsed.apiKey || !parsed.authDomain || !parsed.projectId) {
-				setJsonError("Config must include apiKey, authDomain, and projectId.");
-				return false;
-			}
-			setJsonError(null);
-			return true;
-		} catch {
-			setJsonError("Invalid JSON. Please paste the full Firebase config object.");
-			return false;
-		}
-	}
-
 	async function handleSave() {
-		if (!validateJson(configJson)) return;
+		if (!configJson.trim()) return;
+		const result = parseFirebaseConfigJson(configJson);
+		if (!result.valid) return;
 		setSaving(true);
 		try {
 			await db.dbConfig.update(userId, {
@@ -109,6 +99,16 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 			<div className="flex items-center justify-between">
 				<h2 className="font-semibold">Cloud Sync</h2>
 				<div className="flex items-center gap-2">
+					<Button
+						variant="outline"
+						size="sm"
+						className="text-xs"
+						onClick={() => {
+							setWizardInitialStep(0);
+							setWizardOpen(true);
+						}}>
+						Get Setup Instructions
+					</Button>
 					<Label htmlFor="sync-enabled" className="text-sm">
 						Enable Sync
 					</Label>
@@ -130,13 +130,21 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 					value={configJson}
 					onChange={(e) => {
 						setConfigJson(e.target.value);
-						validateJson(e.target.value);
+						setParseResult(e.target.value.trim() ? parseFirebaseConfigJson(e.target.value) : null);
 					}}
 					placeholder={`{\n  "apiKey": "...",\n  "authDomain": "...",\n  "projectId": "..."\n}`}
 					className="font-mono text-xs"
 					rows={6}
 				/>
-				{jsonError && <p className="text-xs text-destructive">{jsonError}</p>}
+				{parseResult && !parseResult.valid && (
+					<SyncValidationFeedback
+						errors={parseResult.errors}
+						onOpenWizardAtStep={(step) => {
+							setWizardInitialStep(step);
+							setWizardOpen(true);
+						}}
+					/>
+				)}
 			</div>
 
 			<div className="flex gap-2">
@@ -144,7 +152,7 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 					onClick={() => {
 						void handleSave();
 					}}
-					disabled={saving || !!jsonError}>
+					disabled={saving || (parseResult !== null && !parseResult.valid)}>
 					{saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
 					Save Config
 				</Button>
@@ -228,6 +236,17 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
+			<SyncSetupWizard
+				open={wizardOpen}
+				onOpenChange={setWizardOpen}
+				initialStep={wizardInitialStep}
+				onConfigPasted={(json) => {
+					setConfigJson(json);
+					setParseResult(parseFirebaseConfigJson(json));
+					setEnabled(true);
+				}}
+			/>
 		</div>
 	);
 }
