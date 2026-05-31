@@ -13,4 +13,13 @@ describe("useDbConfig", () => {
 		expect(render().result.current).toBeUndefined();
 		expect(getSpy).not.toHaveBeenCalled();
 	});
+
+	it("useDbConfig_NullUserId_DoesNotThrowAndReturnsUndefined", () => {
+		const getSpy = vi.spyOn(db.dbConfig, "get");
+		const render = () => renderHook(() => useDbConfig(null as unknown as string));
+
+		expect(render).not.toThrow();
+		expect(render().result.current).toBeUndefined();
+		expect(getSpy).not.toHaveBeenCalled();
+	});
 });

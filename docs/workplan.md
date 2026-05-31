@@ -68,6 +68,8 @@ For individuals managing finances across multiple currencies and geographies who
 Files: `src/lib/auth.ts` (env var fix), `.env.local.example`, `public/icon-192.png`, `public/icon-512.png`  
 `[Rule 1]` AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET fix applied. Icons generated via Python script (RGBA PNG with rounded-rect + violet accent).
 
+Post-release bugfix (2026-05-31): Added NextAuth session callback to map `token.sub` to `session.user.id` and guarded protected routes against missing `session.user.id` to prevent post-login runtime errors in Dexie hooks.
+
 ---
 
 ### Story US-002: Create Zustand Stores
