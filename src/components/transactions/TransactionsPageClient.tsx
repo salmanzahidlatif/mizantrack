@@ -1,6 +1,5 @@
 "use client";
 
-import { TransactionDrawer } from "@/components/transactions/TransactionDrawer";
 import { TransactionFilters } from "@/components/transactions/TransactionFilters";
 import { TransactionList } from "@/components/transactions/TransactionList";
 import { useActiveAccounts } from "@/hooks/useAccounts";
@@ -47,8 +46,6 @@ export function TransactionsPageClient({ userId }: TransactionsPageClientProps) 
 				accounts={accounts ?? []}
 				categories={categories ?? []}
 			/>
-
-			<TransactionDrawer userId={userId} />
 		</div>
 	);
 }

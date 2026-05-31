@@ -4,7 +4,6 @@ import { TrendChart } from "@/components/charts/TrendBarChart";
 import { BalanceCards } from "@/components/dashboard/BalanceCards";
 import { MonthSummary } from "@/components/dashboard/MonthSummary";
 import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
-import { TransactionDrawer } from "@/components/transactions/TransactionDrawer";
 import { useDbConfig } from "@/hooks/useDbConfig";
 
 interface DashboardPageClientProps {
@@ -50,9 +49,6 @@ export function DashboardPageClient({ userId }: DashboardPageClientProps) {
 				</h2>
 				<RecentTransactions userId={userId} />
 			</section>
-
-			{/* Drawer — required so FAB can open it from this page */}
-			<TransactionDrawer userId={userId} />
 		</div>
 	);
 }

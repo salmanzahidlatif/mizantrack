@@ -18,6 +18,7 @@ import { useEffect } from "react";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { SyncStatusBadge } from "@/components/layout/SyncStatusBadge";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { TransactionDrawer } from "@/components/transactions/TransactionDrawer";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -168,6 +169,9 @@ export function AppShell({ user, children }: AppShellProps) {
 
 			{/* Bottom nav + FAB — mobile */}
 			<BottomNav />
+
+			{/* Global transaction drawer — FAB and all pages share this instance */}
+			<TransactionDrawer userId={user?.id ?? ""} />
 		</div>
 	);
 }

@@ -9,7 +9,6 @@ import { TrendChart } from "@/components/charts/TrendBarChart";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
-import { TransactionDrawer } from "@/components/transactions/TransactionDrawer";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -193,9 +192,6 @@ export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 
 			{/* Monthly trend chart */}
 			<TrendChart userId={userId} months={6} />
-
-			{/* Drawer — FAB support */}
-			<TransactionDrawer userId={userId} />
 		</div>
 	);
 }
