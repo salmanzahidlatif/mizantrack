@@ -30,7 +30,7 @@ export function BottomNav() {
 							key={href}
 							href={href}
 							className={cn(
-								"flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-xs transition-colors",
+								"flex flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-xs transition-colors",
 								pathname === href ? "text-primary" : "text-muted-foreground"
 							)}>
 							<Icon className="h-5 w-5" />
