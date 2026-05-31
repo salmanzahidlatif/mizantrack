@@ -1,5 +1,33 @@
 # Lessons Learned
 
+## 2026-05-31 - PWA service worker never generated (next-pwa@5 incompatibility)
+
+### What Happened
+The app was deployed to Vercel and the manifest.json rendered a "Syntax error" in the browser console. The service worker (`sw.js`) was never generated, making the app non-installable and non-functional offline. The same problem existed locally in production builds.
+
+### Root Cause
+`next-pwa@5.6.0` uses Webpack plugin hooks (`InjectManifest` from `workbox-webpack-plugin`) that are incompatible with Next.js 16's Webpack 5 build pipeline. The library silently skips SW generation without throwing a build error. The `isDev` guard in `next.config.js` also disabled the PWA wrapper entirely in dev mode, making the issue untestable locally.
+
+Separately, `public/manifest.json` was missing fields required by current browser installability criteria: `scope`, `id`, `orientation`, `lang`, `categories`, and icon `purpose` — causing the manifest Syntax error from a stale SW serving a cached version of the manifest.
+
+### Fix Applied
+- **`package.json`**: Replaced `next-pwa@^5.6.0` with `@ducanh2912/next-pwa@^10.2.9` — maintained fork of next-pwa with `peerDeps: { next: '>=14', webpack: '>=5' }`; no extra CLI dependencies required.
+- **`next.config.js`**: Changed `require("next-pwa")` → `require("@ducanh2912/next-pwa").default`; removed the `isDev` conditional entirely (the new library handles dev vs prod internally via a lightweight stub SW in dev mode); added `fallbackRoutes: { document: "/offline" }`.
+- **`public/manifest.json`**: Added `id`, `scope`, `orientation`, `lang`, `categories`; updated icon entries with `purpose` fields (`"maskable any"` for 512px, `"any"` for 192px).
+- **`src/app/offline/page.tsx`**: New standalone offline fallback page (no AppShell, no auth) served by the SW when offline navigation hits an uncached route.
+- **`src/types/next-pwa.d.ts`**: Cleared the stale `declare module "next-pwa"` shim; `@ducanh2912/next-pwa` ships its own types.
+
+### Regression Tests
+- `manifest.test.ts`: `hasRequiredInstallabilityFields` — verifies `scope`, `id`, `orientation`, `lang`, `categories` are present
+- `manifest.test.ts`: `hasAtLeastOneMaskableIcon` — verifies at least one icon has `purpose` containing `"maskable"`
+- `manifest.test.ts`: `hasBothIconSizes` — verifies 192×192 and 512×512 are present
+
+### Prevention
+- `next-pwa@5` is a known dead end for Next.js ≥14. Never use it in new projects. The maintained replacement is `@ducanh2912/next-pwa`.
+- Never guard `withPWA` on `isDev` — you lose the ability to test SW locally. The new library handles the dev/prod distinction correctly internally.
+- Manifest required fields change over time as browser installability criteria evolve. Validate with Lighthouse PWA audit after every manifest change.
+- A stale service worker can cache a broken manifest response indefinitely. Hard-refresh (Ctrl+Shift+R / Cmd+Shift+R) clears this; a new correctly-generated SW will purge the old cache on activation.
+
 ## 2026-05-31 - Firebase permission-denied on all sync operations
 
 ### What Happened
