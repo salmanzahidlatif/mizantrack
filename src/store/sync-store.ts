@@ -25,12 +25,15 @@ export const useSyncStore = create<SyncStore>((set) => ({
 			set({ syncing: false, lastSync: Date.now(), error: null });
 		} catch (err) {
 			const code = err instanceof Error && "code" in err ? (err as { code: string }).code : null;
-			const message =
-				code === "permission-denied"
-					? "Sync failed: permission denied. Check your Firestore security rules."
-					: err instanceof Error
-						? err.message
-						: "Sync failed";
+			let message: string;
+			if (code === "permission-denied") {
+				message = "Sync failed: permission denied. Check your Firestore security rules.";
+			} else if (code === "resource-exhausted") {
+				message =
+					"Sync failed: Firestore daily quota exceeded. Free tier allows 20k writes and 50k reads per day. Sync will resume tomorrow.";
+			} else {
+				message = err instanceof Error ? err.message : "Sync failed";
+			}
 			set({ syncing: false, error: message });
 		}
 	},
