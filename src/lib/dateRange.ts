@@ -60,6 +60,10 @@ export function getDateRange(
 		case "custom":
 			return customRange ?? { from: startOfMonth(now), to: endOfMonth(now) };
 
+		case "all":
+			// Return epoch-start (0) as `from` so useTransactions skips the from-filter (0 is falsy)
+			return { from: new Date(0), to: new Date(8640000000000000) };
+
 		default:
 			return { from: startOfMonth(now), to: endOfMonth(now) };
 	}
