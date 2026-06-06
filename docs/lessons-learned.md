@@ -99,3 +99,72 @@ After Google sign-in, users reached `/dashboard` but the client crashed with `Un
 ### Prevention
 - Do not rely on TypeScript module augmentation alone for auth session shape; always set runtime session fields in auth callbacks.
 - Gate protected routes on both session existence and required identity fields (`session.user.id`).
+
+---
+
+## 2026-06-06 - HK import hardcoded AED currency for all accounts
+
+### What Happened
+After importing a Hysab Kytab `.xlsx` backup, all 38 imported accounts showed `currency: "AED"` regardless of the user's configured default currency (PKR). The dashboard and Accounts page displayed AED amounts instead of the correct PKR amounts.
+
+### Root Cause
+`importHysabKytab` hardcoded `currency: "AED"` when writing each account. HK's `.xlsx` export does not include a per-account currency field, so there is nothing to read from the file. The correct behaviour is to use the user's configured default currency from `dbConfig`, falling back to "AED" only when no config exists.
+
+### Fix Applied
+- **`src/lib/import/hysabKytab.ts`**: Read `dbConfig` at the start of import (`const userConfig = await db.dbConfig.get(userId)`); derive `defaultCurrency = userConfig?.currency ?? "AED"`; use that for every imported account.
+
+### Regression Tests
+- `settings.test.ts`: `importHysabKytab_UserCurrencyPKR_AccountsImportedAsPKR`
+- `settings.test.ts`: `importHysabKytab_NoConfig_AccountsFallBackToAED`
+
+### Prevention
+- Never hardcode a user-configuration-dependent value (currency, locale, timezone) inside an import/export function. Always read it from the user's configuration record at the start of the operation.
+
+---
+
+## 2026-06-06 - All date range filters showed 0 results after HK import
+
+### What Happened
+After importing historical data (2018–2024) from Hysab Kytab, every date range preset (Today, This Week, This Month, etc.) showed 0 transactions. The user perceived this as broken filters.
+
+### Root Cause
+The imported data was all from 2018–2024 but the current date was June 2026. All presets filtered to the **current** calendar period (e.g. June 2026). There was no "All Time" option that would reveal historical data.
+
+### Fix Applied
+- **`src/types/index.ts`**: Added `"all"` to the `FilterPeriod` union type.
+- **`src/lib/dateRange.ts`**: `getDateRange("all")` returns `{ from: new Date(0), to: new Date(8640000000000000) }`. `new Date(0)` as `from` produces `0` when passed through `.getTime()` — which is **falsy** — so `useTransactions`'s `if (from && t.date < from)` guard is skipped, showing all records regardless of age.
+- **`src/components/transactions/TransactionFilters.tsx`**: Added "All Time" as the first option in the period `<Select>`.
+- **`src/components/shared/DateRangePicker.tsx`**: Added "All" as the first preset button.
+
+### Regression Test
+- `settings.test.ts`: `getDateRange_All_FromIsEpochZeroSoFilterSkipped` — verifies `from.getTime() === 0` and `to` is far in the future.
+
+### Prevention
+- Any app that supports historical data import must have an "All Time" or equivalent period that bypasses date filtering. Add it at the same time as the import feature, not later.
+- When `0` (epoch) is used to represent "no lower bound", document explicitly that `0` is falsy in JS and that the filter guard `if (from && ...)` correctly skips the check. Future developers must not change this guard to `if (from !== undefined && ...)`.
+
+---
+
+## 2026-06-06 - Firestore WriteBatch.set() throws on undefined fields from HK import
+
+### What Happened
+After importing Hysab Kytab data and triggering a Firestore sync, the sync failed with: `Function WriteBatch.set() called with invalid data. Unsupported field value: undefined (found in field categoryId in document users/…/transactions/…)`
+
+### Root Cause
+Two contributing causes:
+
+1. **Explicit `undefined` in import**: `importHysabKytab` stored `categoryId: undefined` and `toAccountId: undefined` as explicit object keys. Dexie stores these fine (IndexedDB ignores `undefined` values), but when `syncAll` serialised these records and passed them to `batch.set()`, the Firebase SDK treated the explicit `undefined` as an invalid value and threw.
+
+2. **No sanitisation in sync**: `syncCollection` passed the raw Dexie record directly to `batch.set()` without stripping optional undefined fields.
+
+### Fix Applied
+- **`src/lib/import/hysabKytab.ts`**: Removed all explicit `property: undefined` assignments. Optional fields (`categoryId`, `toAccountId`, `place`) are now conditionally spread with `...(value ? { key: value } : {})` so they only appear in the stored object when they have a real value.
+- **`src/lib/db/sync.ts`**: Added a sanitisation step in `syncCollection` before every `batch.set()` call: `const clean = Object.fromEntries(Object.entries(record).filter(([, v]) => v !== undefined))`. This is a defence-in-depth guard for any records that may have accumulated `undefined` fields before the fix.
+
+### Regression Test
+- `sync.test.ts`: `syncAll_TransactionWithUndefinedCategoryId_DoesNotPassUndefinedToFirestore` — seeds a transaction without `categoryId`, calls `syncAll`, asserts that every document passed to `batch.set` has no `undefined` values.
+
+### Prevention
+- The Firestore JS SDK forbids `undefined` field values. Never store `property: undefined` in objects destined for Firestore. Use `...(value ? { key: value } : {})` for optional fields.
+- Always sanitise `undefined` fields in the sync layer as a defence-in-depth measure — callers may not always produce clean objects.
+- Note: this is distinct from Firestore `deleteField()` (which removes an existing field). Passing `undefined` is simply rejected; use `deleteField()` if you intentionally want to remove a field from an existing document.
