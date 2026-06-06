@@ -13,6 +13,7 @@ import { useFilterStore } from "@/store/filter-store";
 import type { DateRange, FilterPeriod } from "@/types";
 
 const PRESETS: { value: FilterPeriod; label: string }[] = [
+	{ value: "all", label: "All" },
 	{ value: "today", label: "Today" },
 	{ value: "week", label: "Week" },
 	{ value: "month", label: "Month" },
