@@ -26,6 +26,10 @@ export async function importHysabKytab(file: File, userId: string) {
 	const wb = XLSX.read(buffer);
 	const now = Date.now();
 
+	// Use the user's configured default currency; fall back to AED if not set
+	const userConfig = await db.dbConfig.get(userId);
+	const defaultCurrency = userConfig?.currency ?? "AED";
+
 	// --- Accounts ---
 	const accountSheet = wb.Sheets["ACCOUNT"];
 	if (!accountSheet) {
@@ -50,7 +54,7 @@ export async function importHysabKytab(file: File, userId: string) {
 			userId,
 			title: row["Title"],
 			openingBalance: Number(row["Opening Balance"]) || 0,
-			currency: "AED",
+			currency: defaultCurrency,
 			isArchived: false,
 			updatedAt: now,
 		});
@@ -138,7 +142,6 @@ export async function importHysabKytab(file: File, userId: string) {
 					date,
 					amount: Math.abs(amount),
 					description: row["Description"] ?? "",
-					categoryId: undefined,
 					accountId,
 					toAccountId,
 					updatedAt: now,
@@ -161,7 +164,6 @@ export async function importHysabKytab(file: File, userId: string) {
 				date,
 				amount: Math.abs(amount),
 				description: row["Description"] ?? "",
-				categoryId: undefined,
 				accountId,
 				updatedAt: now,
 			});
@@ -177,6 +179,9 @@ export async function importHysabKytab(file: File, userId: string) {
 
 		if (row["Voucher Type"] === "Transfer") continue;
 
+		const resolvedCategoryId = categoryMap.get(row["Category Name"] ?? "");
+		const resolvedPlace = row["Place"] || undefined;
+
 		const tx: Transaction = {
 			id: uuid(),
 			userId,
@@ -184,15 +189,15 @@ export async function importHysabKytab(file: File, userId: string) {
 			date: parseHKDate(String(row["Voucher Date"])),
 			amount: Math.abs(Number(row["Voucher Amount"])),
 			description: row["Description"] ?? "",
-			categoryId: categoryMap.get(row["Category Name"] ?? ""),
 			accountId: accountMap.get(row["Account Name"]) ?? "",
 			tags: row["Tags"]
 				? String(row["Tags"])
 						.split(",")
 						.map((t: string) => t.trim())
 				: [],
-			place: row["Place"] ?? undefined,
 			updatedAt: now,
+			...(resolvedCategoryId ? { categoryId: resolvedCategoryId } : {}),
+			...(resolvedPlace ? { place: resolvedPlace } : {}),
 		};
 
 		if (row["Travel Currency Symbol"]) {
