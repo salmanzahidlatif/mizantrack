@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
+	DialogDescription,
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
@@ -107,9 +108,9 @@ export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 				<DialogContent className="max-w-sm">
 					<DialogHeader>
 						<DialogTitle>Export to Excel</DialogTitle>
+						<DialogDescription>Select date range to export:</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-3 py-2">
-						<p className="text-sm text-muted-foreground">Select date range to export:</p>
 						<DateRangePicker
 							standalone
 							value={exportRange}

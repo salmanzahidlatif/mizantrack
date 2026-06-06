@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { importHysabKytab } from "@/lib/import/hysabKytab";
 
 interface ImportPanelProps {
@@ -84,6 +84,7 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 				<DialogContent className="max-w-sm">
 					<DialogHeader>
 						<DialogTitle>Import Complete</DialogTitle>
+						<DialogDescription>Your Hysab Kytab data has been imported.</DialogDescription>
 					</DialogHeader>
 					{result && (
 						<div className="space-y-3 py-2">

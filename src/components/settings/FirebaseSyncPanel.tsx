@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
+	DialogDescription,
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
@@ -218,10 +219,10 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 				<DialogContent className="max-w-sm">
 					<DialogHeader>
 						<DialogTitle>Clear Firebase Config?</DialogTitle>
+						<DialogDescription>
+							This will disconnect cloud sync. Your local data won&apos;t be affected.
+						</DialogDescription>
 					</DialogHeader>
-					<p className="text-sm text-muted-foreground">
-						This will disconnect cloud sync. Your local data won&apos;t be affected.
-					</p>
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setResetOpen(false)}>
 							Cancel
