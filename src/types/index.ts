@@ -73,7 +73,8 @@ export type FilterPeriod =
 	| "half-year"
 	| "year"
 	| "fiscal-year"
-	| "custom";
+	| "custom"
+	| "all";
 
 export interface DateRange {
 	from: Date;
