@@ -4,10 +4,12 @@
  */
 import "fake-indexeddb/auto";
 
+import * as XLSX from "xlsx";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { getDateRange } from "@/lib/dateRange";
 import { db } from "@/lib/db/local";
+import { importHysabKytab } from "@/lib/import/hysabKytab";
 import { dbConfigSchema } from "@/lib/validations/dbConfig";
 
 const USER_ID = "user-sprint5-test";
@@ -194,5 +196,138 @@ describe("export date range", () => {
 		// ~365 days (365 or 366 for leap year)
 		expect(days).toBeGreaterThanOrEqual(364);
 		expect(days).toBeLessThanOrEqual(366);
+	});
+
+	it("getDateRange_All_FromIsEpochZeroSoFilterSkipped", () => {
+		// Regression: "all" period must return from=epoch-0 so useTransactions skips
+		// the from-filter (0 is falsy) and shows every historical transaction.
+		const { from, to } = getDateRange("all");
+		expect(from.getTime()).toBe(0);
+		// to must be far in the future — beyond any realistic transaction date
+		expect(to.getTime()).toBeGreaterThan(new Date("2100-01-01").getTime());
+	});
+});
+
+// ─── HK Import: currency regression ─────────────────────────────────────────
+
+function makeMinimalHKFile(accountTitle = "Cash", openingBalance = 5000): File {
+	const wb = XLSX.utils.book_new();
+
+	XLSX.utils.book_append_sheet(
+		wb,
+		XLSX.utils.json_to_sheet([{ Title: accountTitle, "Opening Balance": openingBalance }]),
+		"ACCOUNT"
+	);
+	XLSX.utils.book_append_sheet(
+		wb,
+		XLSX.utils.json_to_sheet([{ Title: "Grocery", "Category Type": "Expense" }]),
+		"CATEGORY"
+	);
+	XLSX.utils.book_append_sheet(
+		wb,
+		XLSX.utils.json_to_sheet([
+			{
+				"Voucher Type": "Expense",
+				"Voucher Date": "01/01/2020",
+				"Voucher Amount": -100,
+				"Category Name": "Grocery",
+				"Account Name": accountTitle,
+			},
+		]),
+		"ACTIVITIES"
+	);
+
+	// XLSX type:"array" returns a plain number[] — convert to a proper ArrayBuffer via Uint8Array
+	const arr = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as number[];
+	return new File([new Uint8Array(arr).buffer], "test.xlsx", {
+		type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	});
+}
+
+describe("importHysabKytab — currency", () => {
+	const USER_PKR = "hk-import-pkr-user";
+	const USER_NO_CONFIG = "hk-import-noconfig-user";
+
+	beforeEach(async () => {
+		await db.accounts.where("userId").anyOf([USER_PKR, USER_NO_CONFIG]).delete();
+		await db.dbConfig.delete(USER_PKR);
+		await db.dbConfig.delete(USER_NO_CONFIG);
+	});
+
+	it("importHysabKytab_UserCurrencyPKR_AccountsImportedAsPKR", async () => {
+		// Regression: before fix, currency was hardcoded to "AED" regardless of user config
+		await db.dbConfig.put({
+			id: USER_PKR,
+			currency: "PKR",
+			fiscalYearStartMonth: 4,
+			firebaseConfig: "",
+			enabled: false,
+		});
+
+		const file = makeMinimalHKFile();
+		await importHysabKytab(file, USER_PKR);
+
+		const accounts = await db.accounts.where("userId").equals(USER_PKR).toArray();
+		expect(accounts.length).toBeGreaterThan(0);
+		accounts.forEach((a) => expect(a.currency).toBe("PKR"));
+	});
+
+	it("importHysabKytab_NoConfig_AccountsFallBackToAED", async () => {
+		// When no dbConfig exists, currency should fall back to "AED"
+		const file = makeMinimalHKFile();
+		await importHysabKytab(file, USER_NO_CONFIG);
+
+		const accounts = await db.accounts.where("userId").equals(USER_NO_CONFIG).toArray();
+		expect(accounts.length).toBeGreaterThan(0);
+		accounts.forEach((a) => expect(a.currency).toBe("AED"));
+	});
+
+	it("importHysabKytab_TransactionWithNoCategory_CategoryIdOmitted", async () => {
+		// Regression: categoryId: undefined causes Firestore WriteBatch.set() to throw.
+		// After fix, transactions with no matching category must omit categoryId entirely.
+		await db.dbConfig.put({
+			id: USER_PKR,
+			currency: "PKR",
+			fiscalYearStartMonth: 4,
+			firebaseConfig: "",
+			enabled: false,
+		});
+
+		const wb = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([{ Title: "Cash", "Opening Balance": 0 }]),
+			"ACCOUNT"
+		);
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([{ Title: "Grocery", "Category Type": "Expense" }]),
+			"CATEGORY"
+		);
+		// Activity references a category that does NOT exist in the CATEGORY sheet
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([
+				{
+					"Voucher Type": "Expense",
+					"Voucher Date": "01/01/2020",
+					"Voucher Amount": -50,
+					"Category Name": "Unknown Category",
+					"Account Name": "Cash",
+				},
+			]),
+			"ACTIVITIES"
+		);
+		const arr = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as number[];
+		const file = new File([new Uint8Array(arr).buffer], "test.xlsx");
+
+		await importHysabKytab(file, USER_PKR);
+
+		const txns = await db.transactions.where("userId").equals(USER_PKR).toArray();
+		expect(txns.length).toBeGreaterThan(0);
+		txns.forEach((t) => {
+			// categoryId must be absent (undefined), NOT explicitly set to undefined
+			expect(Object.prototype.hasOwnProperty.call(t, "categoryId") && t.categoryId === undefined).toBe(false);
+		});
 	});
 });
