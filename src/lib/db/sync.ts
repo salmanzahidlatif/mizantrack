@@ -54,7 +54,11 @@ async function syncCollection(
 			const batch = writeBatch(firestore);
 			chunk.forEach((record: SyncableRecord) => {
 				const ref = doc(firestore, `users/${userId}/${tableName}`, record.id);
-				batch.set(ref, record, { merge: true });
+				// Firestore rejects documents with `undefined` values — strip them before writing
+				const clean = Object.fromEntries(
+					Object.entries(record).filter(([, v]) => v !== undefined)
+				);
+				batch.set(ref, clean, { merge: true });
 			});
 			await batch.commit();
 		}
