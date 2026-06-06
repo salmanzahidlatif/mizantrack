@@ -22,8 +22,8 @@ export default function OfflinePage() {
 				<img src="/icon-192.png" alt="MizanTrack" width={72} height={72} style={{ opacity: 0.8 }} />
 				<h1 style={{ fontSize: "1.5rem", fontWeight: 600, margin: 0 }}>You&apos;re offline</h1>
 				<p style={{ fontSize: "0.9rem", color: "#a1a1aa", maxWidth: "320px", margin: 0 }}>
-					MizanTrack couldn&apos;t connect. Your local data is still available — reopen the app
-					when you&apos;re back online.
+					MizanTrack couldn&apos;t connect. Your local data is still available — reopen the app when
+					you&apos;re back online.
 				</p>
 				<button
 					onClick={() => window.location.reload()}

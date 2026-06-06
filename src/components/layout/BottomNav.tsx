@@ -1,6 +1,14 @@
 "use client";
 
-import { LayoutDashboard, ArrowLeftRight, Wallet, BarChart3, Moon, Settings, Plus } from "lucide-react";
+import {
+	LayoutDashboard,
+	ArrowLeftRight,
+	Wallet,
+	BarChart3,
+	Moon,
+	Settings,
+	Plus,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
