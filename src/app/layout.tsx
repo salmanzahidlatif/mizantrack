@@ -2,6 +2,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import React from "react";
 
+import RegisterSW from "@/components/layout/RegisterSW";
+
 import type { Metadata, Viewport } from "next";
 
 import "./globals.css";
@@ -18,8 +20,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
 	title: "MizanTrack",
-	description: "Personal Finance Tracker",
-	manifest: "/manifest.json",
+	description: "Personal Finance Tracker + Budgeting App + Zakat Calculator",
+	manifest: "/manifest.webmanifest",
 	appleWebApp: {
 		capable: true,
 		statusBarStyle: "black-translucent",
@@ -40,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 		<html lang="en" suppressHydrationWarning>
 			<body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
 				<ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+					<RegisterSW />
 					{children}
 				</ThemeProvider>
 			</body>
