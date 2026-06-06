@@ -1,6 +1,48 @@
 # Lessons Learned
 
-## 2026-06-06 - NextAuth v5 generates a fresh UUID userId per session; cross-environment sync broken
+## 2026-06-06 - Radix UI DialogContent accessibility warning (missing Description)
+
+### What Happened
+Browser console showed repeated warnings: `Warning: Missing Description or aria-describedby={undefined} for {DialogContent}`. The warnings fired whenever an affected dialog was opened. Four dialogs were affected: the HK import result dialog, both export dialogs (Settings and Reports), and the Firebase config reset confirmation dialog.
+
+### Root Cause
+Radix UI's `DialogContent` renders a visually hidden `DialogDescription` slot and warns at runtime if that slot is empty and `aria-describedby` is not explicitly set to `undefined`. The affected dialogs all used `DialogHeader` + `DialogTitle` but omitted `DialogDescription`. The description is required for screen readers to announce the dialog's purpose when it opens.
+
+### Fix Applied
+- **`src/components/settings/ImportPanel.tsx`**: Added `<DialogDescription>Your Hysab Kytab data has been imported.</DialogDescription>` inside `DialogHeader`.
+- **`src/components/settings/ExportPanel.tsx`**: Promoted the existing visible `<p>Select date range:</p>` to `<DialogDescription>` inside `DialogHeader`.
+- **`src/components/reports/ReportsPageClient.tsx`**: Same as ExportPanel.
+- **`src/components/settings/FirebaseSyncPanel.tsx`**: Promoted the existing `<p>This will disconnect cloud sync…</p>` to `<DialogDescription>` inside `DialogHeader`.
+
+### Prevention
+- Every `DialogContent` must contain a `DialogDescription` (or set `aria-describedby={undefined}` intentionally if the content is truly self-describing without any text). Make this part of the component checklist whenever a new dialog is added.
+- If the description text is visually redundant, use `<DialogDescription className="sr-only">` to satisfy the accessibility requirement without affecting visual design.
+
+---
+
+## 2026-06-06 - Firestore resource-exhausted error shows raw SDK message
+
+### What Happened
+After a large HK import (8276 transactions), syncing to Firestore approached and occasionally exceeded the Firestore free tier daily write limit (20k writes/day). The browser logged `FirebaseError: [code=resource-exhausted]: Quota exceeded. Using maximum backoff delay to prevent overloading the backend.` The sync status badge showed the raw Firebase SDK message instead of a human-readable explanation.
+
+### Root Cause
+`triggerSync` in `sync-store.ts` only had a special-case handler for `code === "permission-denied"`. All other Firebase error codes, including `resource-exhausted`, fell through to `err.message` — which is the SDK's internal message ("RESOURCE_EXHAUSTED" or "Quota exceeded."). The user sees no actionable guidance.
+
+The quota exhaustion itself is expected behaviour for large imports: 8384 records × 2 ops (write + read per sync) = ~16k Firestore operations per sync, which is 80% of the daily write quota. Two full syncs in one day will exceed it.
+
+### Fix Applied
+- **`src/store/sync-store.ts`**: Added `code === "resource-exhausted"` to the error handler:
+  `"Sync failed: Firestore daily quota exceeded. Free tier allows 20k writes and 50k reads per day. Sync will resume tomorrow."`
+
+### Regression Tests
+- `sync.test.ts`: `triggerSync_ResourceExhausted_SurfacesFriendlyQuotaMessage`
+- `sync.test.ts`: `triggerSync_PermissionDenied_SurfacesFriendlyPermissionMessage`
+
+### Prevention
+- Whenever a new Firebase error code is known to be a predictable failure mode, add a friendly message case in `triggerSync`. Current handled codes: `permission-denied`, `resource-exhausted`.
+- Document to users that initial sync of a large HK import (>10k records) may temporarily exhaust the Firestore free tier quota. Recommend syncing from Settings rather than auto-sync when importing large datasets.
+
+
 
 ### What Happened
 After syncing data from the local dev environment to Firestore and then opening the Vercel production deployment, pressing "Sync" on production pulled no data. The Firebase console showed two completely separate `/users/{id}/` document trees despite both environments being logged in with the same Google account. The userId on local was a UUID (`d351689b-7c79-4f3c-9d13-5b4041cdcc23`); the userId on production was a different UUID.
