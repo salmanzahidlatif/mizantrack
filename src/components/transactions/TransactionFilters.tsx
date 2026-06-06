@@ -16,6 +16,7 @@ import { useFilterStore } from "@/store/filter-store";
 import type { Account, FilterPeriod, TransactionType } from "@/types";
 
 const PERIOD_OPTIONS: { value: FilterPeriod; label: string }[] = [
+	{ value: "all", label: "All Time" },
 	{ value: "today", label: "Today" },
 	{ value: "week", label: "This Week" },
 	{ value: "month", label: "This Month" },
