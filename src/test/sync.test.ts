@@ -1,7 +1,8 @@
 /**
- * Regression tests for src/lib/db/sync.ts
+ * Regression tests for src/lib/db/sync.ts and src/store/sync-store.ts
  * Covers: getFirestoreUsage returns null when Firestore throws (permission-denied)
  *         syncAll strips undefined fields before Firestore WriteBatch.set()
+ *         triggerSync surfaces resource-exhausted as a user-friendly message
  */
 import "fake-indexeddb/auto";
 
@@ -9,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/lib/db/local";
 import { getFirestoreUsage, syncAll } from "@/lib/db/sync";
+import { useSyncStore } from "@/store/sync-store";
 
 // Mock the firebase module so tests don't need a real Firebase project
 vi.mock("@/lib/db/firebase", () => ({
