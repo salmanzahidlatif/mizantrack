@@ -131,3 +131,45 @@ describe("syncAll — strip undefined fields", () => {
 		}
 	});
 });
+
+// ─── triggerSync: error code handling ────────────────────────────────────────
+
+describe("triggerSync — error code messages", () => {
+	it("triggerSync_ResourceExhausted_SurfacesFriendlyQuotaMessage", async () => {
+		// Regression: before fix, resource-exhausted showed the raw Firebase SDK message.
+		// After fix, the store surfaces a human-readable message about daily quota.
+		const { getFirestoreForUser } = await import("@/lib/db/firebase");
+
+		const quotaError = Object.assign(new Error("Quota exceeded."), {
+			code: "resource-exhausted",
+			name: "FirebaseError",
+		});
+		vi.mocked(getFirestoreForUser).mockRejectedValueOnce(quotaError);
+
+		// Reset store state before test
+		useSyncStore.setState({ syncing: false, error: null, lastSync: null });
+
+		await useSyncStore.getState().triggerSync("user-quota-test");
+
+		const { syncing, error } = useSyncStore.getState();
+		expect(syncing).toBe(false);
+		expect(error).toContain("quota exceeded");
+	});
+
+	it("triggerSync_PermissionDenied_SurfacesFriendlyPermissionMessage", async () => {
+		const { getFirestoreForUser } = await import("@/lib/db/firebase");
+
+		const permError = Object.assign(new Error("Missing or insufficient permissions."), {
+			code: "permission-denied",
+			name: "FirebaseError",
+		});
+		vi.mocked(getFirestoreForUser).mockRejectedValueOnce(permError);
+
+		useSyncStore.setState({ syncing: false, error: null, lastSync: null });
+
+		await useSyncStore.getState().triggerSync("user-perm-test");
+
+		const { error } = useSyncStore.getState();
+		expect(error).toContain("permission denied");
+	});
+});
