@@ -1,10 +1,14 @@
 /**
  * Regression tests for src/lib/db/sync.ts
  * Covers: getFirestoreUsage returns null when Firestore throws (permission-denied)
+ *         syncAll strips undefined fields before Firestore WriteBatch.set()
  */
-import { describe, expect, it, vi } from "vitest";
+import "fake-indexeddb/auto";
 
-import { getFirestoreUsage } from "@/lib/db/sync";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { db } from "@/lib/db/local";
+import { getFirestoreUsage, syncAll } from "@/lib/db/sync";
 
 // Mock the firebase module so tests don't need a real Firebase project
 vi.mock("@/lib/db/firebase", () => ({
@@ -15,6 +19,11 @@ vi.mock("@/lib/db/firebase", () => ({
 vi.mock("firebase/firestore", () => ({
 	collection: vi.fn((_db: unknown, path: string) => ({ path })),
 	getCountFromServer: vi.fn(),
+	writeBatch: vi.fn(),
+	doc: vi.fn((_db: unknown, ...segments: string[]) => ({ path: segments.join("/") })),
+	getDocs: vi.fn(),
+	query: vi.fn(),
+	where: vi.fn(),
 }));
 
 describe("getFirestoreUsage", () => {
@@ -57,5 +66,66 @@ describe("getFirestoreUsage", () => {
 
 		const result = await getFirestoreUsage("user-1");
 		expect(result).toBeNull();
+	});
+});
+
+// ─── syncAll: undefined field stripping ──────────────────────────────────────
+
+describe("syncAll — strip undefined fields", () => {
+	const USER_ID = "sync-undefined-test-user";
+
+	beforeEach(async () => {
+		await db.transactions.where("userId").equals(USER_ID).delete();
+		await db.syncMeta.delete("lastSync");
+	});
+
+	it("syncAll_TransactionWithUndefinedCategoryId_DoesNotPassUndefinedToFirestore", async () => {
+		// Regression: Firestore WriteBatch.set() throws
+		// "Unsupported field value: undefined" when categoryId is undefined.
+		// After fix, syncAll must strip undefined fields before calling batch.set().
+
+		// Arrange — seed a transaction that has no categoryId (as imported from HK)
+		await db.transactions.put({
+			id: "txn-no-cat-001",
+			userId: USER_ID,
+			type: "Expense",
+			date: Date.now(),
+			amount: 100,
+			accountId: "acc-001",
+			updatedAt: Date.now(),
+			// categoryId intentionally absent (as imported from HK)
+		});
+
+		const mockCommit = vi.fn().mockResolvedValue(undefined);
+		const capturedDocs: Record<string, unknown>[] = [];
+		const mockSet = vi.fn((ref: unknown, data: unknown) => {
+			capturedDocs.push(data as Record<string, unknown>);
+		});
+		const mockBatch = { set: mockSet, commit: mockCommit };
+
+		const { getFirestoreForUser } = await import("@/lib/db/firebase");
+		const firestore = await import("firebase/firestore");
+
+		vi.mocked(getFirestoreForUser).mockResolvedValue(
+			{} as Awaited<ReturnType<typeof getFirestoreForUser>>
+		);
+		vi.mocked(firestore.writeBatch).mockReturnValue(mockBatch as unknown as ReturnType<typeof firestore.writeBatch>);
+		// Return empty snapshot for pull step
+		vi.mocked(firestore.getDocs).mockResolvedValue({ docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>);
+		vi.mocked(firestore.query).mockReturnValue({} as unknown as ReturnType<typeof firestore.query>);
+		vi.mocked(firestore.where).mockReturnValue({} as unknown as ReturnType<typeof firestore.where>);
+		vi.mocked(firestore.collection).mockReturnValue({} as unknown as ReturnType<typeof firestore.collection>);
+
+		// Act
+		await syncAll(USER_ID);
+
+		// Assert — batch.set must have been called
+		expect(mockSet).toHaveBeenCalled();
+
+		// Every document passed to batch.set must not contain undefined values
+		for (const docData of capturedDocs) {
+			const hasUndefined = Object.values(docData).some((v) => v === undefined);
+			expect(hasUndefined).toBe(false);
+		}
 	});
 });
