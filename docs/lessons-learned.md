@@ -1,6 +1,41 @@
 # Lessons Learned
 
-## 2026-05-31 - PWA service worker never generated (next-pwa@5 incompatibility)
+## 2026-06-06 - NextAuth v5 generates a fresh UUID userId per session; cross-environment sync broken
+
+### What Happened
+After syncing data from the local dev environment to Firestore and then opening the Vercel production deployment, pressing "Sync" on production pulled no data. The Firebase console showed two completely separate `/users/{id}/` document trees despite both environments being logged in with the same Google account. The userId on local was a UUID (`d351689b-7c79-4f3c-9d13-5b4041cdcc23`); the userId on production was a different UUID.
+
+### Root Cause
+NextAuth v5 (Auth.js) **intentionally** sets `user.id = crypto.randomUUID()` on every OAuth sign-in, independent of the Google account's identity. The comment in `@auth/core/lib/actions/callback/oauth/callback.js` states:
+
+> "The user's id is intentionally not set based on the profile id, as the user should remain independent of the provider and the profile id is saved on the Account already, as `providerAccountId`."
+
+Google's stable numeric sub (`providerAccountId`) is therefore never propagated to `token.sub` by default. Without a custom `jwt` callback, `token.sub` = a new UUID per session per device/environment. Two sign-ins (local + production) produce two different UUIDs → two different Firestore paths → sync finds nothing to pull.
+
+### Fix Applied
+- **`src/lib/auth/session.ts`**: Extracted `pinTokenSubToProvider(token, account)` helper that copies `account.providerAccountId` → `token.sub` when the account object is present (only on the initial sign-in; null on subsequent JWT refreshes).
+- **`src/lib/auth.ts`**: Added `jwt` callback that calls `pinTokenSubToProvider`. `account` is non-null only during the OAuth sign-in flow, so `token.sub` is pinned once and then persists across all subsequent requests on that device.
+
+After the fix, `session.user.id` = Google's stable numeric account ID (e.g. `"118402808840027279814"`) on every environment. Firestore paths are consistent: `/users/118402808840027279814/...` everywhere.
+
+### Migration Steps Required (one-time after deploying this fix)
+1. Deploy the fix to Vercel.
+2. Sign out on both local dev and Vercel (clears the JWT cookies that contain the old UUID-based `token.sub`).
+3. Sign back in on both environments. `token.sub` will now be the Google numeric ID.
+4. **Local Dexie (IndexedDB):** existing data is stored under the old UUID. Open DevTools → Application → Storage → IndexedDB → `mizantrack` → clear all tables. Then reimport from the HK backup.
+5. **Vercel Firestore:** delete the old UUID documents in the Firebase console, then sync fresh data from local after reimport.
+
+### Regression Tests
+- `auth.test.ts`: `onSignIn_PinsTokenSubToProviderAccountId`
+- `auth.test.ts`: `onSubsequentRequest_NullAccount_PreservesExistingTokenSub`
+- `auth.test.ts`: `sameGoogleAccount_LocalAndProduction_ProduceSameUserId`
+
+### Prevention
+- When using NextAuth v5 with OAuth providers and NO database adapter, always add a `jwt` callback that pins `token.sub = account.providerAccountId` on sign-in. The default behavior is a random UUID per session which is only suitable for database-backed setups (where NextAuth creates a consistent internal user record).
+- Verify that `session.user.id` looks like an OAuth provider ID (numeric string for Google), not a UUID (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`). A UUID here is a red flag that the jwt callback is missing.
+- Add this check to any new NextAuth v5 project with OAuth + no database adapter from day one.
+
+
 
 ### What Happened
 The app was deployed to Vercel and the manifest.json rendered a "Syntax error" in the browser console. The service worker (`sw.js`) was never generated, making the app non-installable and non-functional offline. The same problem existed locally in production builds.
