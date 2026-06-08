@@ -11,7 +11,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db/local";
 import { getFirestoreUsage, syncAll } from "@/lib/db/sync";
 import { useSyncStore } from "@/store/sync-store";
-
 // Mock the firebase module so tests don't need a real Firebase project
 vi.mock("@/lib/db/firebase", () => ({
 	getFirestoreForUser: vi.fn(),
@@ -171,5 +170,54 @@ describe("triggerSync — error code messages", () => {
 
 		const { error } = useSyncStore.getState();
 		expect(error).toContain("permission denied");
+	});
+});
+
+// ─── syncAll: progress counts ────────────────────────────────────────────────
+
+describe("syncAll — progress counts", () => {
+	it("syncAll_NoConfig_ReturnsZeroCounts", async () => {
+		const { getFirestoreForUser } = await import("@/lib/db/firebase");
+		vi.mocked(getFirestoreForUser).mockResolvedValueOnce(null);
+
+		const result = await syncAll("user-no-cfg");
+		expect(result.synced).toBe(false);
+		expect(result.totalPushed).toBe(0);
+		expect(result.totalPulled).toBe(0);
+	});
+
+	it("triggerSync_Success_StoresLastSyncResultWithCounts", async () => {
+		// After a successful sync, lastSyncResult in the store must reflect the
+		// pushed/pulled counts returned by syncAll.
+		const { getFirestoreForUser } = await import("@/lib/db/firebase");
+		const firestore = await import("firebase/firestore");
+
+		vi.mocked(getFirestoreForUser).mockResolvedValue(
+			{} as Awaited<ReturnType<typeof getFirestoreForUser>>
+		);
+
+		const mockCommit = vi.fn().mockResolvedValue(undefined);
+		const mockSet = vi.fn();
+		vi.mocked(firestore.writeBatch).mockReturnValue({
+			set: mockSet,
+			commit: mockCommit,
+		} as unknown as ReturnType<typeof firestore.writeBatch>);
+		vi.mocked(firestore.getDocs).mockResolvedValue(
+			{ docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>
+		);
+		vi.mocked(firestore.query).mockReturnValue({} as unknown as ReturnType<typeof firestore.query>);
+		vi.mocked(firestore.where).mockReturnValue({} as unknown as ReturnType<typeof firestore.where>);
+		vi.mocked(firestore.collection).mockReturnValue(
+			{} as unknown as ReturnType<typeof firestore.collection>
+		);
+
+		useSyncStore.setState({ syncing: false, error: null, lastSync: null, lastSyncResult: null });
+
+		await useSyncStore.getState().triggerSync("user-counts-test");
+
+		const { lastSyncResult } = useSyncStore.getState();
+		expect(lastSyncResult).not.toBeNull();
+		expect(typeof lastSyncResult?.totalPushed).toBe("number");
+		expect(typeof lastSyncResult?.totalPulled).toBe("number");
 	});
 });

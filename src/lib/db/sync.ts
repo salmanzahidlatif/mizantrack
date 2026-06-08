@@ -17,19 +17,51 @@ import type { Account, Category, Transaction } from "@/types";
 type SyncableTable = "accounts" | "categories" | "transactions";
 type SyncableRecord = Account | Category | Transaction;
 
-export async function syncAll(userId: string): Promise<{ synced: boolean; reason?: string }> {
+export interface SyncTableResult {
+	pushed: number;
+	pulled: number;
+}
+
+export interface SyncResult {
+	synced: boolean;
+	reason?: string;
+	tables?: Record<SyncableTable, SyncTableResult>;
+	totalPushed: number;
+	totalPulled: number;
+}
+
+export type SyncProgressCallback = (progress: {
+	table: SyncableTable;
+	pushed: number;
+	pulled: number;
+	totalPushed: number;
+	totalPulled: number;
+}) => void;
+
+export async function syncAll(
+	userId: string,
+	onProgress?: SyncProgressCallback
+): Promise<SyncResult> {
 	const firestore = await getFirestoreForUser(userId);
-	if (!firestore) return { synced: false, reason: "no-config" };
+	if (!firestore) return { synced: false, reason: "no-config", totalPushed: 0, totalPulled: 0 };
 
 	const meta = await localDb.syncMeta.get("lastSync");
 	const lastSync = meta?.timestamp ?? 0;
 
+	const tables = {} as Record<SyncableTable, SyncTableResult>;
+	let totalPushed = 0;
+	let totalPulled = 0;
+
 	for (const table of ["accounts", "categories", "transactions"] as SyncableTable[]) {
-		await syncCollection(userId, table, lastSync, firestore);
+		const result = await syncCollection(userId, table, lastSync, firestore);
+		tables[table] = result;
+		totalPushed += result.pushed;
+		totalPulled += result.pulled;
+		onProgress?.({ table, ...result, totalPushed, totalPulled });
 	}
 
 	await localDb.syncMeta.put({ id: "lastSync", timestamp: Date.now() });
-	return { synced: true };
+	return { synced: true, tables, totalPushed, totalPulled };
 }
 
 async function syncCollection(
@@ -37,7 +69,7 @@ async function syncCollection(
 	tableName: SyncableTable,
 	lastSync: number,
 	firestore: Firestore
-) {
+): Promise<SyncTableResult> {
 	const table = localDb[tableName];
 
 	// Push local changes
@@ -47,6 +79,7 @@ async function syncCollection(
 		.and((r: SyncableRecord) => r.updatedAt > lastSync)
 		.toArray();
 
+	let pushed = 0;
 	if (localChanged.length > 0) {
 		// Firestore batch limit is 500
 		for (let i = 0; i < localChanged.length; i += 499) {
@@ -61,6 +94,7 @@ async function syncCollection(
 				batch.set(ref, clean, { merge: true });
 			});
 			await batch.commit();
+			pushed += chunk.length;
 		}
 	}
 
@@ -69,6 +103,7 @@ async function syncCollection(
 		query(collection(firestore, `users/${userId}/${tableName}`), where("updatedAt", ">", lastSync))
 	);
 
+	let pulled = 0;
 	for (const docSnap of remoteSnap.docs) {
 		const remote = docSnap.data() as SyncableRecord;
 		const local = await table.get(remote.id);
@@ -84,8 +119,11 @@ async function syncCollection(
 					await localDb.transactions.put(remote as Transaction);
 					break;
 			}
+			pulled++;
 		}
 	}
+
+	return { pushed, pulled };
 }
 
 export async function getFirestoreUsage(userId: string) {
