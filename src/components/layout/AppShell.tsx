@@ -33,6 +33,8 @@ import { useAutoSync } from "@/hooks/useAutoSync";
 import { signOutAction } from "@/lib/actions/auth";
 import { seedDefaultCategories } from "@/lib/db/seed";
 import { cn } from "@/lib/utils";
+import { useSyncStore } from "@/store/sync-store";
+import { toast } from "sonner";
 
 import type { Session } from "next-auth";
 
@@ -53,8 +55,17 @@ interface AppShellProps {
 
 export function AppShell({ user, children }: AppShellProps) {
 	const pathname = usePathname();
+	const syncError = useSyncStore((s) => s.error);
 
 	useAutoSync(user?.id ?? "");
+
+	// Show a toast whenever a sync error is set so the user is notified
+	// regardless of which page they are on.
+	useEffect(() => {
+		if (syncError) {
+			toast.error(syncError, { duration: 8000 });
+		}
+	}, [syncError]);
 
 	useEffect(() => {
 		if (user?.id) {
