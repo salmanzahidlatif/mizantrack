@@ -2,13 +2,14 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { ChevronDown } from "lucide-react";
+import { CalendarIcon, ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
 
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import {
 	Drawer,
 	DrawerClose,
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
 	Select,
 	SelectContent,
@@ -54,6 +56,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 	const allCategories = useCategories(userId);
 	const [showTravel, setShowTravel] = useState(false);
 	const [confirming, setConfirming] = useState(false);
+	const [datePickerOpen, setDatePickerOpen] = useState(false);
 
 	const {
 		register,
@@ -73,6 +76,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 
 	const watchedType = watch("type") as TransactionType;
 	const watchedAccount = watch("accountId");
+	const watchedDate = watch("date");
 
 	const categories = (allCategories ?? []).filter((c) => {
 		if (watchedType === "Expense") return c.type === "Expense";
@@ -147,15 +151,6 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 		closeTransactionDrawer();
 	}
 
-	const todayStr = format(new Date(), "yyyy-MM-dd");
-	const watchedDate = watch("date");
-	const dateStr =
-		watchedDate instanceof Date
-			? format(watchedDate, "yyyy-MM-dd")
-			: typeof watchedDate === "string"
-				? watchedDate
-				: todayStr;
-
 	return (
 		<Drawer
 			open={isTransactionDrawerOpen}
@@ -207,19 +202,36 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 
 						{/* Date */}
 						<div className="space-y-1.5">
-							<Label htmlFor="txn-date">Date *</Label>
-							<Input
-								id="txn-date"
-								type="date"
-								max={todayStr}
-								value={dateStr}
-								onChange={(e) =>
-									setValue("date", new Date(e.target.value), { shouldValidate: true })
-								}
-							/>
-							{errors.date && (
-								<p className="text-xs text-destructive">{errors.date.message as string}</p>
-							)}
+						<Label>Date *</Label>
+						<Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+							<PopoverTrigger asChild>
+								<Button
+									type="button"
+									variant="outline"
+									className="w-full justify-start font-normal">
+									<CalendarIcon className="mr-2 h-4 w-4" />
+									{watchedDate instanceof Date
+										? format(watchedDate, "d MMMM yyyy")
+										: "Pick a date"}
+								</Button>
+							</PopoverTrigger>
+							<PopoverContent className="w-auto p-0" align="start">
+								<Calendar
+									mode="single"
+									selected={watchedDate instanceof Date ? watchedDate : undefined}
+
+									onSelect={(d) => {
+										if (d) {
+											setValue("date", d, { shouldValidate: true });
+											setDatePickerOpen(false);
+										}
+									}}
+								/>
+							</PopoverContent>
+						</Popover>
+						{errors.date && (
+							<p className="text-xs text-destructive">{errors.date.message as string}</p>
+						)}
 						</div>
 
 						{/* From Account */}
