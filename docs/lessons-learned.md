@@ -1,5 +1,24 @@
 # Lessons Learned
 
+## 2026-06-15 - Root `/` route showed Next.js scaffold placeholder instead of redirecting
+
+### What Happened
+Navigating to `http://localhost:3000/` (or the production root URL) rendered the default Next.js "To get started, edit the page.tsx file" starter page instead of redirecting authenticated users to `/dashboard` and unauthenticated users to `/login`.
+
+### Root Cause
+`src/app/page.tsx` was never replaced after project scaffolding — it still contained the unmodified `create-next-app` starter template. The `proxy.ts` middleware only protects routes under `(app)` and redirects `/login` for unauthenticated access; it has no explicit rule for the bare `/` path, so the scaffold rendered as-is.
+
+### Fix Applied
+Replaced `src/app/page.tsx` with a minimal async server component that calls `auth()` and redirects:
+- Authenticated (`session.user.id` present) → `/dashboard`
+- Unauthenticated → `/login`
+
+### Prevention
+- The root `page.tsx` must be replaced immediately after scaffolding any authenticated Next.js app. It should never contain placeholder content.
+- Add `/` → redirect as the first thing to verify when setting up a new Next.js project with authentication.
+
+---
+
 ## 2026-06-06 - Radix UI DialogContent accessibility warning (missing Description)
 
 ### What Happened
