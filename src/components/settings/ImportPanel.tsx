@@ -47,7 +47,7 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 			<div>
 				<h2 className="font-semibold">Import Data</h2>
 				<p className="mt-0.5 text-sm text-muted-foreground">
-					Import your Hysab Kytab backup (.xlsx file)
+					Import your Hysab Kytab backup (.xlsx or .xls file)
 				</p>
 			</div>
 
@@ -65,14 +65,14 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 						</>
 					)}
 				</Button>
-				<span className="text-xs text-muted-foreground">.xlsx files only</span>
+				<span className="text-xs text-muted-foreground">.xlsx / .xls files</span>
 			</div>
 
 			{/* Hidden file input */}
 			<input
 				ref={fileRef}
 				type="file"
-				accept=".xlsx"
+				accept=".xlsx,.xls"
 				className="hidden"
 				onChange={(e) => {
 					void handleFile(e);
