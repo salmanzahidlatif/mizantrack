@@ -6,6 +6,11 @@ import { db } from "@/lib/db/local";
 import type { HKAccountRow, HKActivityRow, HKCategoryRow } from "./types";
 import type { Transaction } from "@/types";
 
+/** Strip a trailing " (Closed)" marker (case-insensitive) from an HK name. */
+function stripClosed(name: string): string {
+	return name.replace(/\s*\(closed\)\s*$/i, "").trim();
+}
+
 function parseHKDate(raw: string): number {
 	// Format: "29 00:00:00/07/2018" or "29/07/2018"
 	const m1 = String(raw).match(/^(\d+)\s[\d:]+\/(\d+)\/(\d+)$/);
@@ -18,7 +23,8 @@ function parseHKDate(raw: string): number {
 		// @ts-ignore
 		return new Date(+m2[3], +m2[2] - 1, +m2[1]).getTime();
 	}
-	return Date.now();
+	// Unrecognised format — fall back to 1 Jan 2000 so historical filters are not polluted
+	return new Date(2000, 0, 1).getTime();
 }
 
 export async function importHysabKytab(file: File, userId: string) {
@@ -40,22 +46,28 @@ export async function importHysabKytab(file: File, userId: string) {
 	const accountMap = new Map<string, string>(); // title → id
 
 	for (const row of accRows) {
+		const rawTitle = row["Title"];
+		const isClosed = /\s*\(closed\)\s*$/i.test(rawTitle);
+		const cleanTitle = isClosed ? stripClosed(rawTitle) : rawTitle;
+
 		const existing = await db.accounts
 			.where("userId")
 			.equals(userId)
-			.and((a) => a.title === row["Title"])
+			.and((a) => a.title === cleanTitle)
 			.first();
 
 		const id = existing?.id ?? uuid();
-		accountMap.set(row["Title"], id);
+		// Key by the raw HK name AND the clean name so both resolve correctly
+		accountMap.set(rawTitle, id);
+		if (isClosed) accountMap.set(cleanTitle, id);
 
 		await db.accounts.put({
 			id,
 			userId,
-			title: row["Title"],
+			title: cleanTitle,
 			openingBalance: Number(row["Opening Balance"]) || 0,
 			currency: defaultCurrency,
-			isArchived: false,
+			isArchived: isClosed,
 			updatedAt: now,
 		});
 	}
@@ -98,6 +110,11 @@ export async function importHysabKytab(file: File, userId: string) {
 	}
 
 	const actRows = XLSX.utils.sheet_to_json<HKActivityRow>(activitiesSheet);
+
+	// Resolve an activity's account name: try exact match first, then strip "(Closed)"
+	const resolveAccountId = (name: string) =>
+		accountMap.get(name) ?? accountMap.get(stripClosed(name)) ?? "";
+
 	let imported = 0;
 	let transfersPaired = 0;
 
@@ -116,7 +133,7 @@ export async function importHysabKytab(file: File, userId: string) {
 
 		const date = parseHKDate(String(row["Voucher Date"]));
 		const amount = Number(row["Voucher Amount"]);
-		const accountId = accountMap.get(row["Account Name"]) ?? "";
+		const accountId = resolveAccountId(row["Account Name"]);
 
 		if (amount < 0) {
 			// This is the source — find the matching positive entry
@@ -133,7 +150,7 @@ export async function importHysabKytab(file: File, userId: string) {
 				const match = transfers[matchIdx];
 				if (!match) continue; // safety check
 
-				const toAccountId = accountMap.get(match.row["Account Name"]) ?? "";
+				const toAccountId = resolveAccountId(match.row["Account Name"]);
 
 				await db.transactions.put({
 					id: uuid(),
@@ -189,7 +206,7 @@ export async function importHysabKytab(file: File, userId: string) {
 			date: parseHKDate(String(row["Voucher Date"])),
 			amount: Math.abs(Number(row["Voucher Amount"])),
 			description: row["Description"] ?? "",
-			accountId: accountMap.get(row["Account Name"]) ?? "",
+			accountId: resolveAccountId(row["Account Name"]),
 			tags: row["Tags"]
 				? String(row["Tags"])
 						.split(",")

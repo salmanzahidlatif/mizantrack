@@ -331,3 +331,90 @@ describe("importHysabKytab — currency", () => {
 		});
 	});
 });
+
+// ─── HK Import: (Closed) account handling ────────────────────────────────────
+
+describe("importHysabKytab — (Closed) accounts", () => {
+	const USER = "hk-closed-account-user";
+
+	beforeEach(async () => {
+		await db.accounts.where("userId").equals(USER).delete();
+		await db.transactions.where("userId").equals(USER).delete();
+		await db.categories.where("userId").equals(USER).delete();
+		await db.dbConfig.delete(USER);
+	});
+
+	function makeClosedAccountFile(accountInSheet: string, accountInActivity: string): File {
+		const wb = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([{ Title: accountInSheet, "Opening Balance": 1000 }]),
+			"ACCOUNT"
+		);
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([{ Title: "Food", "Category Type": "Expense" }]),
+			"CATEGORY"
+		);
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([
+				{
+					"Voucher Type": "Expense",
+					"Voucher Date": "01/06/2020",
+					"Voucher Amount": -200,
+					"Category Name": "Food",
+					"Account Name": accountInActivity,
+				},
+			]),
+			"ACTIVITIES"
+		);
+		const arr = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as number[];
+		return new File([new Uint8Array(arr).buffer], "test.xlsx");
+	}
+
+	it("importHysabKytab_ClosedAccountInSheet_StoredWithCleanNameAndArchived", async () => {
+		// Account sheet: "Alfalah (Closed)" → stored as "Alfalah", isArchived=true
+		const file = makeClosedAccountFile("Alfalah (Closed)", "Alfalah (Closed)");
+		await importHysabKytab(file, USER);
+
+		const accounts = await db.accounts.where("userId").equals(USER).toArray();
+		expect(accounts).toHaveLength(1);
+		expect(accounts[0]!.title).toBe("Alfalah");
+		expect(accounts[0]!.isArchived).toBe(true);
+	});
+
+	it("importHysabKytab_ActivityClosedNameMatchesCleanAccount_TransactionLinked", async () => {
+		// Account sheet: "Alfalah (Closed)", Activity: "Alfalah (Closed)" → transaction links to same account
+		const file = makeClosedAccountFile("Alfalah (Closed)", "Alfalah (Closed)");
+		await importHysabKytab(file, USER);
+
+		const accounts = await db.accounts.where("userId").equals(USER).toArray();
+		const txns = await db.transactions.where("userId").equals(USER).toArray();
+		expect(txns).toHaveLength(1);
+		expect(txns[0]!.accountId).toBe(accounts[0]!.id);
+	});
+
+	it("importHysabKytab_ActivityCleanNameMatchesClosedAccount_TransactionLinked", async () => {
+		// Account sheet: "Alfalah (Closed)", Activity: "Alfalah" (no suffix) → still links
+		const file = makeClosedAccountFile("Alfalah (Closed)", "Alfalah");
+		await importHysabKytab(file, USER);
+
+		const accounts = await db.accounts.where("userId").equals(USER).toArray();
+		const txns = await db.transactions.where("userId").equals(USER).toArray();
+		expect(txns).toHaveLength(1);
+		expect(txns[0]!.accountId).toBe(accounts[0]!.id);
+	});
+
+	it("importHysabKytab_ActivityClosedNameMatchesOpenAccount_TransactionLinked", async () => {
+		// Account sheet: "Alfalah" (no suffix), Activity: "Alfalah (Closed)" → still links
+		const file = makeClosedAccountFile("Alfalah", "Alfalah (Closed)");
+		await importHysabKytab(file, USER);
+
+		const accounts = await db.accounts.where("userId").equals(USER).toArray();
+		const txns = await db.transactions.where("userId").equals(USER).toArray();
+		expect(txns).toHaveLength(1);
+		expect(txns[0]!.accountId).toBe(accounts[0]!.id);
+	});
+});
+
