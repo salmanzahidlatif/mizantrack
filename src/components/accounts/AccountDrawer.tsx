@@ -52,13 +52,13 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 		formState: { errors, isSubmitting },
 	} = useForm<AccountFormValues>({
 		resolver: zodResolver(accountSchema) as Resolver<AccountFormValues>,
-		defaultValues: { currency: "AED", openingBalance: 0 },
+		defaultValues: { currency: "PKR", openingBalance: 0 },
 	});
 
 	// Load existing account for editing
 	useEffect(() => {
 		if (!isAccountDrawerOpen) {
-			reset({ currency: "AED", openingBalance: 0 });
+			reset({ currency: "PKR", openingBalance: 0 });
 			return;
 		}
 		if (!editAccountId) return;
@@ -134,7 +134,7 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 						</div>
 						<Input
 							id="acc-currency"
-							placeholder="AED"
+							placeholder="PKR"
 							maxLength={3}
 							className="uppercase"
 							{...register("currency")}

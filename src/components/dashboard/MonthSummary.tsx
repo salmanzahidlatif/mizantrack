@@ -11,7 +11,7 @@ interface MonthSummaryProps {
 	currency?: string;
 }
 
-export function MonthSummary({ userId, currency = "AED" }: MonthSummaryProps) {
+export function MonthSummary({ userId, currency = "PKR" }: MonthSummaryProps) {
 	const now = new Date();
 	const from = startOfMonth(now).getTime();
 	const to = endOfMonth(now).getTime();

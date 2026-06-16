@@ -272,14 +272,14 @@ describe("importHysabKytab — currency", () => {
 		accounts.forEach((a) => expect(a.currency).toBe("PKR"));
 	});
 
-	it("importHysabKytab_NoConfig_AccountsFallBackToAED", async () => {
-		// When no dbConfig exists, currency should fall back to "AED"
+	it("importHysabKytab_NoConfig_AccountsFallBackToPKR", async () => {
+		// When no dbConfig exists, currency should fall back to "PKR"
 		const file = makeMinimalHKFile();
 		await importHysabKytab(file, USER_NO_CONFIG);
 
 		const accounts = await db.accounts.where("userId").equals(USER_NO_CONFIG).toArray();
 		expect(accounts.length).toBeGreaterThan(0);
-		accounts.forEach((a) => expect(a.currency).toBe("AED"));
+		accounts.forEach((a) => expect(a.currency).toBe("PKR"));
 	});
 
 	it("importHysabKytab_TransactionWithNoCategory_CategoryIdOmitted", async () => {
@@ -417,4 +417,171 @@ describe("importHysabKytab — (Closed) accounts", () => {
 		expect(txns[0]!.accountId).toBe(accounts[0]!.id);
 	});
 });
+
+// ─── HK Import: deduplication, trailing spaces, tilde, unresolved ─────────────
+
+describe("importHysabKytab — idempotency and name normalization", () => {
+	const USER = "hk-normalization-user";
+
+	beforeEach(async () => {
+		await db.accounts.where("userId").equals(USER).delete();
+		await db.transactions.where("userId").equals(USER).delete();
+		await db.categories.where("userId").equals(USER).delete();
+		await db.dbConfig.delete(USER);
+	});
+
+	function makeFile(accountTitle: string, activityAccountName: string): File {
+		const wb = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([{ Title: accountTitle, "Opening Balance": 1000 }]),
+			"ACCOUNT"
+		);
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([{ Title: "Food", "Category Type": "Expense" }]),
+			"CATEGORY"
+		);
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([
+				{
+					"Voucher Type": "Expense",
+					"Voucher Date": "01/03/2022",
+					"Voucher Amount": -200,
+					"Category Name": "Food",
+					"Account Name": activityAccountName,
+				},
+			]),
+			"ACTIVITIES"
+		);
+		const arr = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as number[];
+		return new File([new Uint8Array(arr).buffer], "test.xlsx");
+	}
+
+	it("importHysabKytab_SameFileImportedTwice_TransactionCountDoesNotDouble", async () => {
+		// Regression: before fix, each import generated random UUIDs → duplicates stacked up
+		const file = makeFile("Cash", "Cash");
+		await importHysabKytab(file, USER);
+		await importHysabKytab(file, USER);
+
+		const txns = await db.transactions.where("userId").equals(USER).toArray();
+		expect(txns).toHaveLength(1); // exactly one, not two
+	});
+
+	it("importHysabKytab_AccountWithTrailingSpace_ActivityLinksCorrectly", async () => {
+		// "Huma Bajo " in ACCOUNT sheet, "Huma Bajo" in ACTIVITIES (no trailing space)
+		const file = makeFile("Huma Bajo ", "Huma Bajo");
+		await importHysabKytab(file, USER);
+
+		const accounts = await db.accounts.where("userId").equals(USER).toArray();
+		const txns = await db.transactions.where("userId").equals(USER).toArray();
+		expect(accounts[0]!.title).toBe("Huma Bajo"); // stored without trailing space
+		expect(txns).toHaveLength(1);
+		expect(txns[0]!.accountId).toBe(accounts[0]!.id);
+	});
+
+	it("importHysabKytab_TildeAccountTitle_StoredWithHyphen", async () => {
+		// "Saving~2" in ACCOUNT sheet should be stored as "Saving-2"
+		const file = makeFile("Saving~2", "Saving~2");
+		await importHysabKytab(file, USER);
+
+		const accounts = await db.accounts.where("userId").equals(USER).toArray();
+		expect(accounts[0]!.title).toBe("Saving-2");
+	});
+
+	it("importHysabKytab_NormalizedNameMatch_EasyPaisaResolvesCase", async () => {
+		// "Easypaisa" in ACCOUNT sheet, "easy paisa" in ACTIVITIES (different casing/spacing)
+		const file = makeFile("Easypaisa", "easy paisa");
+		await importHysabKytab(file, USER);
+
+		const accounts = await db.accounts.where("userId").equals(USER).toArray();
+		const txns = await db.transactions.where("userId").equals(USER).toArray();
+		expect(txns).toHaveLength(1);
+		expect(txns[0]!.accountId).toBe(accounts[0]!.id);
+	});
+
+	it("importHysabKytab_NoAccountActivity_AutoCreatesArchivedAccount", async () => {
+		// "No Account" should auto-create an archived account and the transaction should be imported
+		const wb = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([{ Title: "Cash", "Opening Balance": 0 }]),
+			"ACCOUNT"
+		);
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([{ Title: "Food", "Category Type": "Expense" }]),
+			"CATEGORY"
+		);
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([
+				{
+					"Voucher Type": "Expense",
+					"Voucher Date": "01/03/2022",
+					"Voucher Amount": -100,
+					"Category Name": "Food",
+					"Account Name": "No Account",
+				},
+			]),
+			"ACTIVITIES"
+		);
+		const arr = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as number[];
+		const file = new File([new Uint8Array(arr).buffer], "test.xlsx");
+		const result = await importHysabKytab(file, USER);
+
+		// Transaction imported, not skipped
+		const txns = await db.transactions.where("userId").equals(USER).toArray();
+		expect(txns).toHaveLength(1);
+		// An archived "No Account" account was auto-created
+		expect(result.autoCreated).toBe(1);
+		expect(result.autoCreatedAccounts).toContain("No Account");
+		const accounts = await db.accounts.where("userId").equals(USER).toArray();
+		const noAcc = accounts.find((a) => a.title === "No Account");
+		expect(noAcc).toBeDefined();
+		expect(noAcc!.isArchived).toBe(true);
+		expect(txns[0]!.accountId).toBe(noAcc!.id);
+	});
+
+	it("importHysabKytab_DeletedAccountActivity_AutoCreatesArchivedAccount", async () => {
+		// Accounts deleted from HK but referenced in old activities should be auto-created archived
+		const wb = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([{ Title: "Cash", "Opening Balance": 0 }]),
+			"ACCOUNT"
+		);
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([{ Title: "Food", "Category Type": "Expense" }]),
+			"CATEGORY"
+		);
+		XLSX.utils.book_append_sheet(
+			wb,
+			XLSX.utils.json_to_sheet([
+				{
+					"Voucher Type": "Expense",
+					"Voucher Date": "05/06/2019",
+					"Voucher Amount": -500,
+					"Category Name": "Food",
+					"Account Name": "Deleted Bank",
+				},
+			]),
+			"ACTIVITIES"
+		);
+		const arr = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as number[];
+		const file = new File([new Uint8Array(arr).buffer], "test.xlsx");
+		const result = await importHysabKytab(file, USER);
+
+		const txns = await db.transactions.where("userId").equals(USER).toArray();
+		expect(txns).toHaveLength(1);
+		expect(result.autoCreated).toBe(1);
+		const accounts = await db.accounts.where("userId").equals(USER).toArray();
+		const auto = accounts.find((a) => a.title === "Deleted Bank");
+		expect(auto).toBeDefined();
+		expect(auto!.isArchived).toBe(true);
+	});
+});
+
 

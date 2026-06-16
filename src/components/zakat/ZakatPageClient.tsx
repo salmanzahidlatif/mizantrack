@@ -33,7 +33,7 @@ interface ZakatPageClientProps {
 
 export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 	const config = useDbConfig(userId);
-	const referenceCurrency = config?.currency ?? "AED";
+	const referenceCurrency = config?.currency ?? "PKR";
 	const accounts = useAccounts(userId);
 
 	const allTransactions = useLiveQuery(

@@ -40,7 +40,7 @@ interface ReportsPageClientProps {
 
 export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 	const config = useDbConfig(userId);
-	const currency = config?.currency ?? "AED";
+	const currency = config?.currency ?? "PKR";
 	const fiscalYearStartMonth = config?.fiscalYearStartMonth ?? 7;
 
 	const accounts = useActiveAccounts(userId);

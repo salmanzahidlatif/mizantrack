@@ -12,7 +12,7 @@ interface DashboardPageClientProps {
 
 export function DashboardPageClient({ userId }: DashboardPageClientProps) {
 	const config = useDbConfig(userId);
-	const currency = config?.currency ?? "AED";
+	const currency = config?.currency ?? "PKR";
 
 	return (
 		<div className="space-y-5">

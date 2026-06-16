@@ -17,6 +17,8 @@ interface ImportResult {
 	categories: number;
 	transactions: number;
 	transfersPaired: number;
+	autoCreated: number;
+	autoCreatedAccounts: string[];
 }
 
 export function ImportPanel({ userId }: ImportPanelProps) {
@@ -97,6 +99,9 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 									{ label: "Categories imported", value: result.categories },
 									{ label: "Transactions imported", value: result.transactions },
 									{ label: "Transfers paired", value: result.transfersPaired },
+									...(result.autoCreated > 0
+										? [{ label: "Accounts auto-created", value: result.autoCreated }]
+										: []),
 								].map(({ label, value }) => (
 									<div key={label} className="flex justify-between px-4 py-2 text-sm">
 										<span className="text-muted-foreground">{label}</span>
@@ -105,8 +110,13 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 								))}
 							</div>
 							<p className="text-xs text-muted-foreground">
-								Re-importing the same file will not create duplicates.
+								Re-importing the same file is safe — transactions are deduplicated by row.
 							</p>
+							{result.autoCreatedAccounts?.length > 0 && (
+								<p className="text-xs text-amber-600 dark:text-amber-400">
+									Auto-created (archived): {result.autoCreatedAccounts.join(", ")}
+								</p>
+							)}
 						</div>
 					)}
 				</DialogContent>

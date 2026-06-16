@@ -60,13 +60,13 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 			if (!config) {
 				void db.dbConfig.put({
 					id: userId,
-					currency: "AED",
+					currency: "PKR",
 					fiscalYearStartMonth: 7,
 					firebaseConfig: "",
 					enabled: false,
 				});
 			}
-			setCurrency(config?.currency ?? "AED");
+			setCurrency(config?.currency ?? "PKR");
 			setFiscalMonth(config?.fiscalYearStartMonth ?? 7);
 			setGoldApiKey(config?.goldApiKey ?? "");
 			initialised.current = true;
@@ -78,7 +78,7 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 		saveTimer.current = setTimeout(() => {
 			void db.dbConfig
 				.update(userId, {
-					currency: newCurrency.toUpperCase() || "AED",
+					currency: newCurrency.toUpperCase() || "PKR",
 					fiscalYearStartMonth: newMonth,
 					goldApiKey: newGoldKey || undefined,
 				})
@@ -87,7 +87,7 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 						// Record doesn't exist yet — create it with safe defaults
 						return db.dbConfig.put({
 							id: userId,
-							currency: newCurrency.toUpperCase() || "AED",
+							currency: newCurrency.toUpperCase() || "PKR",
 							fiscalYearStartMonth: newMonth,
 							firebaseConfig: "",
 							enabled: false,
@@ -139,7 +139,7 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 						id="currency"
 						value={currency}
 						onChange={(e) => handleCurrencyChange(e.target.value)}
-						placeholder="AED"
+					placeholder="PKR"
 						maxLength={3}
 						className="uppercase"
 					/>
