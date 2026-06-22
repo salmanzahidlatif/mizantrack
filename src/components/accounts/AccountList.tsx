@@ -25,7 +25,7 @@ import type { Account } from "@/types";
 
 function AccountBalance({ balance, currency }: { balance: number | undefined; currency: string }) {
 	if (balance === undefined) return <span className="text-sm text-muted-foreground">…</span>;
-	return <CurrencyAmount amount={balance} currency={currency} colorized />;
+	return <CurrencyAmount amount={balance} currency={currency} colorized showNegativeSign />;
 }
 
 // ─── AccountCard ───────────────────────────────────────────────────────────

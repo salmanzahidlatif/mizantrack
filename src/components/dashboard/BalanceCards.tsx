@@ -23,7 +23,7 @@ function BalanceCard({ accountId, userId }: BalanceCardProps) {
 
 	return (
 		<div
-			className="flex min-w-[160px] flex-col gap-1 rounded-xl border border-border bg-card p-4"
+			className="flex min-w-40 flex-col gap-1 rounded-xl border border-border bg-card p-4"
 			style={account.color ? { borderLeftColor: account.color, borderLeftWidth: 3 } : undefined}>
 			<div className="flex items-center gap-1.5">
 				{account.icon && <span className="text-base leading-none">{account.icon}</span>}
@@ -33,7 +33,7 @@ function BalanceCard({ accountId, userId }: BalanceCardProps) {
 			{balance === undefined ? (
 				<div className="h-6 w-24 animate-pulse rounded bg-muted" />
 			) : (
-				<CurrencyAmount amount={balance} currency={account.currency} colorized />
+				<CurrencyAmount amount={balance} currency={account.currency} colorized showNegativeSign />
 			)}
 		</div>
 	);
@@ -51,7 +51,7 @@ export function BalanceCards({ userId }: BalanceCardsProps) {
 		return (
 			<div className="flex gap-3 overflow-x-auto pb-1">
 				{Array.from({ length: 3 }).map((_, i) => (
-					<SkeletonCard key={i} className="min-w-[160px]" />
+					<SkeletonCard key={i} className="min-w-40" />
 				))}
 			</div>
 		);
@@ -72,7 +72,7 @@ export function BalanceCards({ userId }: BalanceCardsProps) {
 	return (
 		<div className="flex gap-3 overflow-x-auto pb-1">
 			{activeAccounts.map((a) => (
-				<Link key={a.id} href="/accounts" className="flex-shrink-0">
+				<Link key={a.id} href="/accounts" className="shrink-0">
 					<BalanceCard accountId={a.id} userId={userId} />
 				</Link>
 			))}
