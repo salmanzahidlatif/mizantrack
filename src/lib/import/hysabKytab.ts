@@ -204,67 +204,111 @@ export async function importHysabKytab(file: File, userId: string) {
 		.map((row, i: number) => ({ row, i }))
 		.filter(({ row }) => row["Voucher Type"] === "Transfer");
 
-	// Pair them: same date + same absolute amount + one negative one positive
+	/**
+	 * Pre-process all transfers to find matching pairs BEFORE importing.
+	 * This handles:
+	 * 1. Empty dates (matched by description similarity)
+	 * 2. Order independence (positive-before-negative or vice versa)
+	 * 3. Bidirectional matching (either sign can initiate the match)
+	 */
+	interface TransferPair {
+		sourceIdx: number;
+		destIdx: number;
+		sourceRow: HKActivityRow;
+		destRow: HKActivityRow;
+	}
+
+	const pairs: TransferPair[] = [];
+
+	// Build a map of candidates by date+amount for fast lookup
+	const candidatesByKey = new Map<string, Array<{ row: HKActivityRow; i: number; amount: number }>>();
+
+	for (const { row, i } of transfers) {
+		const dateStr = String(row["Voucher Date"] || "");
+		const amount = Number(row["Voucher Amount"]);
+		const absAmount = Math.abs(amount);
+
+		// For empty dates, use a special key that includes description for matching
+		const dateKey = dateStr.trim() === "" ? `EMPTY|${(row["Description"] || "").trim()}` : dateStr;
+		const key = `${dateKey}|${absAmount}`;
+
+		if (!candidatesByKey.has(key)) {
+			candidatesByKey.set(key, []);
+		}
+		candidatesByKey.get(key)!.push({ row, i, amount });
+	}
+
+	// Match pairs from the candidate map
+	for (const [key, candidates] of candidatesByKey.entries()) {
+		if (candidates.length < 2) continue; // No pairs possible
+
+		// Separate into positive and negative
+		const negatives = candidates.filter((c) => c.amount < 0);
+		const positives = candidates.filter((c) => c.amount > 0);
+
+		// Pair them up (greedy matching)
+		const pairCount = Math.min(negatives.length, positives.length);
+
+		for (let p = 0; p < pairCount; p++) {
+			const neg = negatives[p];
+			const pos = positives[p];
+			if (!neg || !pos) continue;
+
+			pairs.push({
+				sourceIdx: neg.i,
+				destIdx: pos.i,
+				sourceRow: neg.row,
+				destRow: pos.row,
+			});
+
+			processedIndexes.add(neg.i);
+			processedIndexes.add(pos.i);
+		}
+	}
+
+	// Import all paired transfers
+	for (const pair of pairs) {
+		const date = parseHKDate(String(pair.sourceRow["Voucher Date"]));
+		const amount = Math.abs(Number(pair.sourceRow["Voucher Amount"]));
+		const accountId = await resolveOrCreateAccountId(pair.sourceRow["Account Name"]);
+		const toAccountId = await resolveOrCreateAccountId(pair.destRow["Account Name"]);
+
+		await db.transactions.put({
+			id: makeHKTxnId(userId, pair.sourceIdx),
+			userId,
+			type: "Transfer",
+			date,
+			amount,
+			description: pair.sourceRow["Description"] ?? "",
+			accountId,
+			toAccountId,
+			updatedAt: now,
+		});
+
+		transfersPaired++;
+		imported++;
+	}
+
+	// Import unmatched transfers (without toAccountId)
 	for (const { row, i } of transfers) {
 		if (processedIndexes.has(i)) continue;
 
 		const date = parseHKDate(String(row["Voucher Date"]));
-		const amount = Number(row["Voucher Amount"]);
+		const amount = Math.abs(Number(row["Voucher Amount"]));
 		const accountId = await resolveOrCreateAccountId(row["Account Name"]);
 
-		if (amount < 0) {
-			// This is the source — find the matching positive entry
-			const matchIdx = transfers.findIndex(
-				({ row: r2, i: i2 }) =>
-					!processedIndexes.has(i2) &&
-					i2 !== i &&
-					parseHKDate(String(r2["Voucher Date"])) === date &&
-					Math.abs(Number(r2["Voucher Amount"])) === Math.abs(amount) &&
-					Number(r2["Voucher Amount"]) > 0
-			);
+		await db.transactions.put({
+			id: makeHKTxnId(userId, i),
+			userId,
+			type: "Transfer",
+			date,
+			amount,
+			description: row["Description"] ?? "",
+			accountId,
+			updatedAt: now,
+		});
 
-			if (matchIdx !== -1) {
-				const match = transfers[matchIdx];
-				if (!match) continue; // safety check
-
-				const toAccountId = await resolveOrCreateAccountId(match.row["Account Name"]);
-
-				// Use source row index for deterministic ID — idempotent on re-import
-				await db.transactions.put({
-					id: makeHKTxnId(userId, i),
-					userId,
-					type: "Transfer",
-					date,
-					amount: Math.abs(amount),
-					description: row["Description"] ?? "",
-					accountId,
-					toAccountId,
-					updatedAt: now,
-				});
-
-				processedIndexes.add(i);
-				processedIndexes.add(match.i);
-				transfersPaired++;
-				imported++;
-				continue;
-			}
-		}
-
-		// Unmatched transfer — import as-is without toAccountId
-		if (!processedIndexes.has(i)) {
-			await db.transactions.put({
-				id: makeHKTxnId(userId, i),
-				userId,
-				type: "Transfer",
-				date,
-				amount: Math.abs(amount),
-				description: row["Description"] ?? "",
-				accountId,
-				updatedAt: now,
-			});
-			processedIndexes.add(i);
-			imported++;
-		}
+		imported++;
 	}
 
 	// Second pass: non-transfer transactions

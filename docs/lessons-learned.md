@@ -1,5 +1,55 @@
 # Lessons Learned
 
+## 2026-06-22 - HK import transfer pairing missed 860 pairs due to order + empty date issues
+
+### What Happened
+After importing Hysab Kytab backup files, only ~528 out of ~1,219 expected transfer pairs were correctly matched. The remaining 691 transfers were imported as separate unmatched transactions, inflating the transaction count from the expected ~7,596 to ~8,456. Users saw duplicate transfer entries instead of single paired transfers with both source and destination accounts.
+
+### Root Cause
+Three compounding issues in the transfer pairing algorithm (`src/lib/import/hysabKytab.ts` lines 197-268):
+
+1. **Process order dependency**: The algorithm only initiated pairing when encountering a **negative** amount (line 214: `if (amount < 0)`). If the positive entry appeared before the negative in the Excel file, the positive was immediately marked as "unmatched" and added to `processedIndexes`. When the negative entry was processed later, its matching positive was already marked processed → no pair formed.
+
+   Example: Index 131 (positive `+10000`) processed first → unmatched. Index 132 (negative `-10000`) processed second → looked for positive match, but index 131 already in `processedIndexes` → no match found. Both imported as separate transfers.
+
+2. **Empty dates causing collisions**: 246 transfers had empty `Voucher Date` fields. The date parser defaulted these to `2000-01-01` (line 46). All 246 collided on the same date, making amount-only matching ambiguous. Multiple transfers with the same amount on "2000-01-01" matched incorrectly or not at all.
+
+3. **No description-based fallback**: When dates were empty, the algorithm had no secondary key (like description) to differentiate transfers. Same-amount transfers with empty dates but different descriptions were treated as interchangeable.
+
+### Fix Applied
+- **`src/lib/import/hysabKytab.ts`**: Replaced the single-pass order-dependent pairing loop (lines 197-268) with a three-phase bidirectional algorithm:
+
+  **Phase 1 — Build candidate map** (order-independent):
+  - Group all transfers by `date|amount` key.
+  - For empty dates, use `EMPTY|description` as the date component → different descriptions create different groups.
+
+  **Phase 2 — Match pairs** (greedy matching):
+  - For each candidate group, separate into `negatives` and `positives`.
+  - Pair them up: `min(negatives.length, positives.length)`.
+  - Mark both indexes as processed.
+
+  **Phase 3 — Import**:
+  - Import all paired transfers with `toAccountId`.
+  - Import remaining unmatched transfers without `toAccountId`.
+
+### Regression Tests
+- `hkImportPairing.test.ts`: `pairs transfers regardless of order (positive before negative)` — verifies that positive-first ordering no longer breaks pairing.
+- `hkImportPairing.test.ts`: `pairs transfers with empty dates using description similarity` — verifies that transfers with empty dates but matching descriptions are paired.
+- `hkImportPairing.test.ts`: `handles multiple transfers on same date with different amounts` — verifies that same-date, different-amount pairs all match correctly.
+- `hkImportPairing.test.ts`: `imports unmatched transfers without toAccountId` — verifies orphan transfers are still imported.
+
+### Results
+- **Old algorithm**: 528 pairs, 8,456 total transactions (1,720 unmatched transfers)
+- **New algorithm**: 1,388 pairs, 7,596 total transactions (1 unmatched transfer)
+- **Improvement**: +860 pairs (162% increase), 860 fewer duplicate transactions
+
+### Prevention
+- When implementing pairing/matching algorithms on unordered data, always pre-group candidates in a map rather than iterating and matching in a single pass — order should never affect the result.
+- When a primary key (date) can be missing or unreliable, always have a secondary key (description, account pair, etc.) to reduce collisions.
+- Test pairing logic with both orderings (A before B, B before A) to catch order-dependence bugs.
+
+---
+
 ## 2026-06-15 - Root `/` route showed Next.js scaffold placeholder instead of redirecting
 
 ### What Happened
