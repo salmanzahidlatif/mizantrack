@@ -151,7 +151,6 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 							id="acc-balance"
 							type="number"
 							step="0.01"
-							min="0"
 							placeholder="0.00"
 							{...register("openingBalance")}
 						/>
