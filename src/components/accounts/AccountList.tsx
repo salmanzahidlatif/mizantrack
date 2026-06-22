@@ -1,7 +1,8 @@
 "use client";
 
+import { useLiveQuery } from "dexie-react-hooks";
 import { MoreVertical, Pencil, Archive, ArchiveRestore, Trash2, Plus } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
@@ -14,28 +15,28 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAccountBalance } from "@/hooks/useAccountBalance";
 import { db } from "@/lib/db/local";
 import { useUIStore } from "@/store/ui-store";
 
+import type { AccountSort } from "@/components/accounts/accountSort";
 import type { Account } from "@/types";
 
 // ─── AccountBalance ────────────────────────────────────────────────────────
 
-function AccountBalance({ account }: { account: Account }) {
-	const balance = useAccountBalance(account.id, account.userId);
+function AccountBalance({ balance, currency }: { balance: number | undefined; currency: string }) {
 	if (balance === undefined) return <span className="text-sm text-muted-foreground">…</span>;
-	return <CurrencyAmount amount={balance} currency={account.currency} colorized />;
+	return <CurrencyAmount amount={balance} currency={currency} colorized />;
 }
 
 // ─── AccountCard ───────────────────────────────────────────────────────────
 
 interface AccountCardProps {
 	account: Account;
+	balance: number | undefined;
 	onEdit: (id: string) => void;
 }
 
-function AccountCard({ account, onEdit }: AccountCardProps) {
+function AccountCard({ account, balance, onEdit }: AccountCardProps) {
 	const [confirming, setConfirming] = useState(false);
 
 	async function handleArchiveToggle() {
@@ -120,7 +121,7 @@ function AccountCard({ account, onEdit }: AccountCardProps) {
 
 			{/* Balance */}
 			<div className="mt-3 text-xl font-bold">
-				<AccountBalance account={account} />
+				<AccountBalance balance={balance} currency={account.currency} />
 			</div>
 
 			{account.isArchived && (
@@ -137,11 +138,50 @@ function AccountCard({ account, onEdit }: AccountCardProps) {
 interface AccountListProps {
 	accounts: Account[] | undefined;
 	showArchived: boolean;
+	sortBy: AccountSort;
+	userId: string;
 }
 
-export function AccountList({ accounts, showArchived }: AccountListProps) {
+export function AccountList({ accounts, showArchived, sortBy, userId }: AccountListProps) {
 	const openEditAccount = useUIStore((s) => s.openEditAccount);
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
+	const transactions = useLiveQuery(
+		() =>
+			db.transactions
+				.where("userId")
+				.equals(userId)
+				.filter((t) => !t.deletedAt)
+				.toArray(),
+		[userId]
+	);
+
+	const balanceByAccountId = useMemo(() => {
+		const map = new Map<string, number>();
+		if (!accounts) return map;
+
+		for (const account of accounts) {
+			map.set(account.id, account.openingBalance);
+		}
+
+		if (!transactions) return map;
+
+		for (const t of transactions) {
+			if (t.type === "Income") {
+				map.set(t.accountId, (map.get(t.accountId) ?? 0) + t.amount);
+			} else if (t.type === "Expense") {
+				map.set(t.accountId, (map.get(t.accountId) ?? 0) - t.amount);
+			} else if (t.type === "Transfer") {
+				map.set(t.accountId, (map.get(t.accountId) ?? 0) - t.amount);
+				if (t.toAccountId) {
+					map.set(t.toAccountId, (map.get(t.toAccountId) ?? 0) + t.amount);
+				}
+			}
+		}
+
+		return map;
+	}, [accounts, transactions]);
+
+	const hasCurrentBalances = transactions !== undefined;
 
 	if (accounts === undefined) {
 		return (
@@ -154,8 +194,26 @@ export function AccountList({ accounts, showArchived }: AccountListProps) {
 	}
 
 	const visible = showArchived ? accounts : accounts.filter((a) => !a.isArchived);
+	const sortedAccounts = [...visible].sort((a, b) => {
+		const balanceA =
+			hasCurrentBalances ? (balanceByAccountId.get(a.id) ?? a.openingBalance) : a.openingBalance;
+		const balanceB =
+			hasCurrentBalances ? (balanceByAccountId.get(b.id) ?? b.openingBalance) : b.openingBalance;
 
-	if (visible.length === 0) {
+		switch (sortBy) {
+			case "balance-asc":
+				return balanceA - balanceB || a.title.localeCompare(b.title);
+			case "title-asc":
+				return a.title.localeCompare(b.title);
+			case "updated-desc":
+				return b.updatedAt - a.updatedAt || a.title.localeCompare(b.title);
+			case "balance-desc":
+			default:
+				return balanceB - balanceA || a.title.localeCompare(b.title);
+		}
+	});
+
+	if (sortedAccounts.length === 0) {
 		return (
 			<EmptyState
 				title="No accounts yet"
@@ -167,14 +225,19 @@ export function AccountList({ accounts, showArchived }: AccountListProps) {
 
 	return (
 		<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-			{visible.map((account) => (
-				<AccountCard key={account.id} account={account} onEdit={openEditAccount} />
+			{sortedAccounts.map((account) => (
+				<AccountCard
+					key={account.id}
+					account={account}
+					balance={hasCurrentBalances ? balanceByAccountId.get(account.id) : undefined}
+					onEdit={openEditAccount}
+				/>
 			))}
 			{/* Add new card */}
 			<button
 				type="button"
 				onClick={openAddAccount}
-				className="flex min-h-[120px] items-center justify-center gap-2 rounded-xl border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary">
+				className="flex min-h-30 items-center justify-center gap-2 rounded-xl border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary">
 				<Plus className="h-4 w-4" />
 				Add Account
 			</button>
