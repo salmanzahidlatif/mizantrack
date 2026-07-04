@@ -52,6 +52,7 @@
 
 | Version | Date       | Author              | Changes                                   |
 |---------|------------|---------------------|-------------------------------------------|
+| 1.2     | 2026-07-04 | Salman Zahid Latif  | Added App Lock, Multi-Currency, UI/UX Polish feature design references |
 | 1.1     | 2026-05-31 | Salman Zahid Latif  | Added Feature Designs section; linked Cloud Sync Onboarding |
 | 1.0     | 2026-05-26 | Salman Zahid Latif  | Phase 1 & 2: Architecture + component design |
 
@@ -1003,3 +1004,6 @@ Sub-documents for individual features with their own PRD and design lifecycle:
 | Feature | PRD | Design |
 |---|---|---|
 | Cloud Sync Onboarding | [docs/cloud-sync-onboarding/prd.md](cloud-sync-onboarding/prd.md) | [docs/cloud-sync-onboarding/design.md](cloud-sync-onboarding/design.md) |
+| App Lock — PIN & Biometrics | [docs/app-lock/prd.md](app-lock/prd.md) | [docs/app-lock/design.md](app-lock/design.md) |
+| Multi-Currency & Country Management | [docs/multi-currency/prd.md](multi-currency/prd.md) | [docs/multi-currency/design.md](multi-currency/design.md) |
+| UI/UX Polish — Mobile-First Redesign | [docs/ui-ux-polish/prd.md](ui-ux-polish/prd.md) | [docs/ui-ux-polish/design.md](ui-ux-polish/design.md) |
