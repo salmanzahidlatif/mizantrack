@@ -1,6 +1,6 @@
 # Technical Design: UI/UX Polish — Mobile-First Visual Redesign
 
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 **Last Updated:** 2026-07-04  
 **Mode:** New Feature  
 **PRD Reference:** docs/ui-ux-polish/prd.md  
@@ -32,6 +32,7 @@
 
 | Version | Date       | Author             | Changes       |
 |---------|------------|--------------------|---------------|
+| 1.1     | 2026-07-04 | Salman Zahid Latif | Phase 2: exact CSS token values, button changes, skeleton component interfaces, SyncStatusBadge state machine, full modified-files checklist |
 | 1.0     | 2026-07-04 | Salman Zahid Latif | Phase 1 draft |
 
 ---
@@ -387,3 +388,164 @@ No changes to Vaul configuration are needed — the existing `Drawer` component 
 | OQ-03 | Skeleton timeout state (> 5s loading) | **Out of scope for v1** — infinite skeleton is acceptable |
 | F | Vaul drawer already animates adequately | **Assumed** — verify in device testing |
 | G | Tailwind v4 uses `@theme` block instead of `tailwind.config.ts` for custom values | **Verified** — confirmed by project setup |
+
+---
+
+## 12. Phase 2 — Detailed Component Interfaces
+
+### 12.1 Design Tokens (`src/app/globals.css` additions)
+
+```css
+@layer base {
+  :root {
+    /* Shadow elevation */
+    --shadow-card:    0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+    --shadow-overlay: 0 4px 16px rgba(0,0,0,.12), 0 2px 6px rgba(0,0,0,.06);
+    --shadow-modal:   0 16px 48px rgba(0,0,0,.18), 0 4px 16px rgba(0,0,0,.08);
+    /* Animation durations */
+    --anim-fast:   80ms;
+    --anim-normal: 200ms;
+    --anim-slow:   300ms;
+  }
+  .dark {
+    --shadow-card:    0 1px 3px rgba(0,0,0,.20), 0 1px 2px rgba(0,0,0,.12);
+    --shadow-overlay: 0 4px 16px rgba(0,0,0,.32), 0 2px 6px rgba(0,0,0,.16);
+    --shadow-modal:   0 16px 48px rgba(0,0,0,.44), 0 4px 16px rgba(0,0,0,.22);
+  }
+
+  /* Global touch optimisation */
+  button, a, [role="button"], [role="link"], [tabindex] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Minimum tap targets */
+  button, a[href], [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Reduced motion: disable all animations */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+```
+
+### 12.2 Tailwind v4 Custom Utilities (`src/app/globals.css` `@theme` block)
+
+```css
+@theme {
+  --shadow-card: var(--shadow-card);
+  --shadow-overlay: var(--shadow-overlay);
+  --shadow-modal: var(--shadow-modal);
+}
+```
+
+Usage in components: `className="shadow-card"`, `className="shadow-overlay"`, `className="shadow-modal"`.
+
+### 12.3 Button Component Changes (`src/components/ui/button.tsx`)
+
+Add to the `base` class in `cva`:
+
+```
+active:scale-95 transition-transform duration-75
+```
+
+Full base string becomes:
+```
+inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium
+ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2
+focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none
+disabled:opacity-50 active:scale-95 transition-transform duration-75
+[touch-action:manipulation] [-webkit-tap-highlight-color:transparent]
+```
+
+### 12.4 Skeleton Components
+
+**`src/components/shared/SkeletonBalance.tsx`**
+```typescript
+interface SkeletonBalanceProps {
+  count?: number;  // default 1; renders N skeleton cards in a row
+}
+export function SkeletonBalance({ count = 1 }: SkeletonBalanceProps): JSX.Element;
+// Each card: 160px min-width, matches BalanceCard exactly
+// 3 lines: title (w-24), currency label (w-12), amount (w-28)
+```
+
+**`src/components/shared/SkeletonTransactionRow.tsx`**
+```typescript
+interface SkeletonTransactionRowProps {
+  count?: number;  // default 5
+}
+export function SkeletonTransactionRow({ count = 5 }: SkeletonTransactionRowProps): JSX.Element;
+// Each row: icon circle (h-9 w-9) + two lines + amount on right
+```
+
+**`src/components/shared/SkeletonChart.tsx`**
+```typescript
+interface SkeletonChartProps {
+  height?: number;  // default 160
+}
+export function SkeletonChart({ height = 160 }: SkeletonChartProps): JSX.Element;
+// Title line + full-width rect at given height
+```
+
+### 12.5 `SyncStatusBadge` State Machine
+
+```typescript
+// src/components/layout/SyncStatusBadge.tsx
+
+type SyncBadgeState = "idle" | "syncing" | "success" | "error";
+
+// State transitions:
+// idle     → syncing  : useSyncStore.syncing becomes true
+// syncing  → success  : useSyncStore.syncing becomes false, error = null
+// syncing  → error    : useSyncStore.syncing becomes false, error ≠ null
+// success  → idle     : after 2000ms (setTimeout in useEffect)
+// error    → idle     : after 4000ms (toast is also shown via AppShell)
+
+// Visual per state:
+// idle:    <Cloud> icon + "Synced X mins ago" text (or "Never synced")
+// syncing: <Loader2 className="animate-spin"> icon
+// success: <Check> icon, text "Synced" — transitions to idle after 2s
+// error:   <CloudOff> icon (sync error surfaced as toast by AppShell)
+```
+
+### 12.6 `AppShell` Header and `BottomNav` Class Changes
+
+**Header** (`src/components/layout/AppShell.tsx`):
+```
+before: className="sticky top-0 z-50 border-b border-border bg-background"
+after:  className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm"
+```
+
+**BottomNav** (`src/components/layout/BottomNav.tsx`):
+```
+before: className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background"
+after:  className="fixed bottom-0 left-0 right-0 z-50 border-t border-border
+                   bg-background/80 backdrop-blur-sm
+                   pb-[env(safe-area-inset-bottom,0px)]"
+```
+
+### 12.7 Files Modified — Complete Checklist
+
+| File | Change |
+|---|---|
+| `src/app/globals.css` | Add CSS variables, touch rules, `@theme` block, `prefers-reduced-motion` |
+| `src/components/ui/button.tsx` | Add `active:scale-95 duration-75 [touch-action:manipulation]` to base cva class |
+| `src/components/layout/AppShell.tsx` | Glassmorphic header: `bg-background/80 backdrop-blur-sm` |
+| `src/components/layout/BottomNav.tsx` | Glassmorphic nav + safe area inset |
+| `src/components/transactions/TransactionRow.tsx` | Add `active:bg-muted/50 transition-colors duration-75` to row wrapper |
+| `src/components/accounts/AccountCard.tsx` | Add `shadow-card` |
+| `src/components/dashboard/BalanceCards.tsx` | Add `shadow-card` to card container |
+| `src/components/layout/SyncStatusBadge.tsx` | Implement `SyncBadgeState` machine per §12.5 |
+| `src/components/dashboard/BalanceCards.tsx` | Show `<SkeletonBalance>` when balance is `undefined` |
+| `src/components/transactions/TransactionList.tsx` | Show `<SkeletonTransactionRow count={5}>` when transactions is `undefined` |
+| `src/components/charts/TrendBarChart.tsx` | Show `<SkeletonChart>` when data is loading |
+| `src/components/shared/SkeletonBalance.tsx` | New file (§12.4) |
+| `src/components/shared/SkeletonTransactionRow.tsx` | New file (§12.4) |
+| `src/components/shared/SkeletonChart.tsx` | New file (§12.4) |

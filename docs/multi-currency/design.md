@@ -1,6 +1,6 @@
 # Technical Design: Multi-Currency & Country Management
 
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 **Last Updated:** 2026-07-04  
 **Mode:** New Feature  
 **PRD Reference:** docs/multi-currency/prd.md  
@@ -31,6 +31,7 @@
 
 | Version | Date       | Author             | Changes       |
 |---------|------------|--------------------|---------------|
+| 1.1     | 2026-07-04 | Salman Zahid Latif | Phase 2: detailed interfaces, currencies dataset, hook signatures, filter-store shape, showArchivedAccounts toggle |
 | 1.0     | 2026-07-04 | Salman Zahid Latif | Phase 1 draft |
 
 ---
@@ -406,3 +407,211 @@ sequenceDiagram
 | F | Active currency does not persist between sessions — resets to `enabledCurrencies[0]` on app open | **Decided** |
 | G | `enabledCurrencies` seeded from existing `currency` field on first migration | **Decided** |
 | H | Flag rendering = Unicode emoji (no flag library) | **Decided** — Windows flag limitation is acceptable |
+
+---
+
+## 11. Phase 2 — Detailed Component Interfaces
+
+### 11.1 `src/lib/currencies.ts`
+
+```typescript
+export interface CurrencyEntry {
+  code: string;     // ISO 4217 e.g. "PKR"
+  name: string;     // "Pakistani Rupee"
+  country: string;  // "Pakistan"
+  flag: string;     // "🇵🇰"
+}
+
+// ~180 entries covering all active ISO 4217 currencies
+export const CURRENCIES: CurrencyEntry[];
+
+// Key entries (non-exhaustive):
+// { code: "PKR", name: "Pakistani Rupee",   country: "Pakistan",      flag: "🇵🇰" }
+// { code: "AED", name: "UAE Dirham",         country: "United Arab Emirates", flag: "🇦🇪" }
+// { code: "USD", name: "US Dollar",          country: "United States",  flag: "🇺🇸" }
+// { code: "EUR", name: "Euro",               country: "European Union", flag: "🇪🇺" }
+// { code: "GBP", name: "British Pound",      country: "United Kingdom", flag: "🇬🇧" }
+// { code: "SAR", name: "Saudi Riyal",        country: "Saudi Arabia",   flag: "🇸🇦" }
+// { code: "INR", name: "Indian Rupee",       country: "India",          flag: "🇮🇳" }
+
+/**
+ * Case-insensitive search across code, name, and country.
+ * Returns entries where any field starts with or contains the query.
+ * Empty query returns all entries.
+ */
+export function searchCurrencies(query: string): CurrencyEntry[];
+
+/** Look up a single entry by ISO code. Returns undefined if not found. */
+export function getCurrencyByCode(code: string): CurrencyEntry | undefined;
+```
+
+### 11.2 `src/components/shared/CurrencyPicker.tsx`
+
+```typescript
+interface CurrencyPickerProps {
+  /** Currently selected ISO codes */
+  selected: string[];
+  /** Called when the selection changes */
+  onChange: (codes: string[]) => void;
+  /** If true, only one currency may be selected at a time (used in import wizard) */
+  singleSelect?: boolean;
+  /** Controlled open state (caller manages); omit for self-managed */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+/**
+ * Opens as a Sheet (mobile) or Dialog (desktop).
+ * Contains:
+ *   - Search <Input> at the top
+ *   - Scrollable list: flag + country + "(CODE)"
+ *   - Selected entries show a checkmark and float to top
+ *   - "Save" / "Done" button — disabled if selected.length === 0
+ *   - Validation: shows "Select at least one currency" if saving with 0 selected
+ */
+export function CurrencyPicker(props: CurrencyPickerProps): JSX.Element;
+```
+
+### 11.3 `src/components/layout/CurrencySelector.tsx`
+
+```typescript
+interface CurrencySelectorProps {
+  enabledCurrencies: string[];   // from dbConfig
+  activeCurrency: string;        // from filter-store
+  onChange: (code: string) => void;
+}
+
+/**
+ * Renders nothing when enabledCurrencies.length < 2.
+ * When ≥ 2 currencies: renders a pill dropdown in the AppShell header.
+ * Each option shows: flag emoji + ISO code (e.g. "🇵🇰 PKR")
+ * No "All" option — always selects a specific currency.
+ */
+export function CurrencySelector(props: CurrencySelectorProps): JSX.Element | null;
+```
+
+### 11.4 `useAccounts` Updated Signature
+
+```typescript
+// src/hooks/useAccounts.ts
+
+export interface AccountFilters {
+  currency?: string;        // when provided, filter account.currency === currency
+  showArchived?: boolean;   // default false — exclude isArchived accounts
+}
+
+/**
+ * Returns live Account[] from Dexie for the given userId.
+ * - Always excludes deletedAt records
+ * - currency filter: if provided, restricts to accounts with matching currency
+ * - showArchived: if false (default), excludes isArchived=true accounts
+ * Returns undefined while loading.
+ */
+export function useAccounts(
+  userId: string,
+  filters?: AccountFilters
+): Account[] | undefined;
+```
+
+### 11.5 `useTransactions` Updated Signature
+
+```typescript
+// src/hooks/useTransactions.ts
+
+export interface TransactionFilters {
+  accountId?: string;
+  categoryId?: string;
+  type?: TransactionType | "All";
+  from?: number;    // Unix ms
+  to?: number;      // Unix ms
+  search?: string;
+  currency?: string;  // NEW — restricts to transactions on accounts with this currency
+}
+
+/**
+ * When currency is provided, first resolves accountIds for accounts
+ * where account.currency === currency (including archived if showArchivedAccounts is true),
+ * then filters transactions to those accountIds.
+ * Transactions involving a Transfer toAccountId are also included if the
+ * destination account matches the currency filter.
+ */
+export function useTransactions(
+  userId: string,
+  filters?: TransactionFilters
+): Transaction[] | undefined;
+```
+
+### 11.6 `clearFirestoreForUser` Signature
+
+```typescript
+// src/lib/db/sync.ts (addition)
+
+export interface ClearResult {
+  deleted: number;     // total documents deleted
+  collections: Record<string, number>;  // per-collection counts
+}
+
+/**
+ * Batch-deletes all documents under /users/{userId}/ in the user's Firestore.
+ * Deletes: accounts, categories, transactions, settings/prefs
+ * After deletion: resets local syncMeta.lastSync to 0 so next sync re-uploads everything.
+ * Progress callback receives running total after each batch.
+ * Throws if Firestore is not configured or not reachable.
+ */
+export async function clearFirestoreForUser(
+  userId: string,
+  onProgress?: (deleted: number) => void
+): Promise<ClearResult>;
+```
+
+### 11.7 `importHysabKytab` Updated Signature
+
+The existing function gains a `targetCurrency` parameter:
+
+```typescript
+// src/lib/import/hysabKytab.ts
+
+/**
+ * @param targetCurrency  ISO code to use for all imported accounts.
+ *   If omitted, falls back to dbConfig.currency ?? "PKR" (existing behaviour).
+ *   ImportPanel passes this when user selects a currency in the import wizard.
+ */
+export async function importHysabKytab(
+  file: File,
+  userId: string,
+  targetCurrency?: string   // NEW optional param
+): Promise<ImportResult>;
+```
+
+### 11.8 `filter-store` Full Updated Shape
+
+```typescript
+// src/store/filter-store.ts
+
+interface FilterStore {
+  // --- existing ---
+  period: FilterPeriod;
+  accountId: string | null;
+  categoryId: string | null;
+  transactionType: TransactionType | "All";
+  searchQuery: string;
+  customRange: DateRange | null;
+  // --- new ---
+  activeCurrency: string;        // ISO code; initialised from dbConfig.enabledCurrencies[0]
+  showArchivedAccounts: boolean; // default false
+
+  // --- existing setters ---
+  setPeriod: (period: FilterPeriod) => void;
+  setAccountId: (id: string | null) => void;
+  setCategoryId: (id: string | null) => void;
+  setTransactionType: (type: TransactionType | "All") => void;
+  setSearchQuery: (q: string) => void;
+  setCustomRange: (range: DateRange | null) => void;
+  reset: () => void;
+  // --- new setters ---
+  setActiveCurrency: (code: string) => void;
+  setShowArchivedAccounts: (show: boolean) => void;
+}
+```
+
+**Initialisation of `activeCurrency`:** Because the store is created before Dexie has loaded, `activeCurrency` starts as `""` (empty string). `AppShell` reads `dbConfig.enabledCurrencies[0]` via `useDbConfig` and calls `setActiveCurrency()` once on mount if `activeCurrency` is empty. This is a one-time seed per session.

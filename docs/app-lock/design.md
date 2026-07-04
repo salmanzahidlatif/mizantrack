@@ -1,6 +1,6 @@
 # Technical Design: App Lock — PIN Code & Biometric Authentication
 
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 **Last Updated:** 2026-07-04  
 **Mode:** New Feature  
 **PRD Reference:** docs/app-lock/prd.md  
@@ -31,6 +31,7 @@
 
 | Version | Date       | Author             | Changes       |
 |---------|------------|--------------------|---------------|
+| 1.1     | 2026-07-04 | Salman Zahid Latif | Phase 2: detailed component interfaces, function signatures, forgot-PIN recovery flow |
 | 1.0     | 2026-07-04 | Salman Zahid Latif | Phase 1 draft |
 
 ---
@@ -417,3 +418,157 @@ sequenceDiagram
 | D | Settings sync: `biometricCredentialId` never synced | **Decided** — device-local only |
 | E | On new device: biometric re-enrollment prompted if `biometricEnabled = true` from sync | **Decided** |
 | F | Forgot PIN recovery = re-authenticate (Google/biometric) then reset PIN; no data loss | **Confirmed** |
+
+---
+
+## 11. Phase 2 — Detailed Component Interfaces
+
+### 11.1 `src/lib/pinCrypto.ts`
+
+```typescript
+/**
+ * Hash a 4-digit PIN string using SHA-256 (Web Crypto API).
+ * Returns lowercase hex string. Never call with plaintext outside this module.
+ */
+export async function hashPin(pin: string): Promise<string>;
+
+/**
+ * Compare a user-entered PIN against a stored SHA-256 hex hash.
+ * Returns true if match, false otherwise.
+ */
+export async function verifyPin(pin: string, storedHash: string): Promise<boolean>;
+```
+
+### 11.2 `src/lib/webAuthn.ts`
+
+```typescript
+/** True if WebAuthn is available in the current browser/PWA context. */
+export function isBiometricAvailable(): boolean;
+
+/**
+ * Register a new biometric credential for the user.
+ * Uses navigator.credentials.create() with platform authenticator.
+ * Returns Base64-encoded credentialId to store in dbConfig.
+ * Throws if user cancels or biometric unavailable.
+ */
+export async function registerBiometric(userId: string): Promise<string>;
+
+/**
+ * Authenticate using a previously registered biometric credential.
+ * Uses navigator.credentials.get() with the stored credentialId.
+ * Returns true on success, false if cancelled.
+ * Throws on hardware error.
+ */
+export async function authenticateBiometric(credentialId: string): Promise<boolean>;
+```
+
+### 11.3 `src/store/lock-store.ts`
+
+```typescript
+interface LockStore {
+  isLocked: boolean;
+  failedAttempts: number;
+  lockoutUntil: number | null;   // Unix ms; null = no lockout
+  graceTimerHandle: ReturnType<typeof setTimeout> | null; // internal
+
+  lock: () => void;
+  unlock: () => void;
+  recordFailedAttempt: () => void;  // increments; sets lockoutUntil after 5
+  resetAttempts: () => void;
+  startGraceTimer: (ms: number) => void;  // called on visibilitychange→hidden
+  cancelGraceTimer: () => void;
+}
+
+export const useLockStore: UseBoundStore<StoreApi<LockStore>>;
+```
+
+### 11.4 `src/components/layout/AppLockGuard.tsx`
+
+```typescript
+interface AppLockGuardProps {
+  userId: string;
+  children: React.ReactNode;
+}
+
+/**
+ * Mounts a visibilitychange listener.
+ * When page becomes hidden: starts 30s grace timer.
+ * When page becomes visible: if timer expired AND appLockEnabled=true, calls lock().
+ * Renders <LockScreen> as a full-viewport overlay when isLocked=true.
+ * All children remain mounted (DOM preserved) but hidden behind the overlay.
+ */
+export function AppLockGuard({ userId, children }: AppLockGuardProps): JSX.Element;
+```
+
+### 11.5 `src/components/layout/LockScreen.tsx`
+
+```typescript
+interface LockScreenProps {
+  userId: string;
+  onUnlock: () => void;  // called after successful PIN or biometric auth
+}
+
+/**
+ * Full-viewport overlay (z-index > AppShell header).
+ * Shows:
+ *   - App logo + user avatar at top
+ *   - 4 PIN dot indicators (filled as digits entered)
+ *   - Numeric pad (0-9 + backspace)
+ *   - "Use Face ID / Fingerprint" button (only if biometricEnabled AND isBiometricAvailable())
+ *   - "Forgot PIN" link
+ *   - Failed attempt counter (shown after first failure)
+ *   - Lockout countdown (replaces pad when failedAttempts >= 5)
+ */
+export function LockScreen({ userId, onUnlock }: LockScreenProps): JSX.Element;
+```
+
+### 11.6 `src/components/settings/AppLockSettings.tsx`
+
+```typescript
+interface AppLockSettingsProps {
+  userId: string;
+}
+
+/**
+ * Renders a Settings card with:
+ *   - "App Lock" toggle (enable/disable)
+ *   - "Set PIN" / "Change PIN" / "Remove PIN" actions (shown when lock enabled)
+ *   - "Use Face ID / Fingerprint" toggle (shown if isBiometricAvailable() AND PIN is set)
+ *   - Setup prompt card (shown when lock is disabled)
+ */
+export function AppLockSettings({ userId }: AppLockSettingsProps): JSX.Element;
+```
+
+### 11.7 `syncAll` Extension in `src/lib/db/sync.ts`
+
+New internal helper added alongside existing `syncCollection`:
+
+```typescript
+/**
+ * Push/pull the settings/prefs Firestore document.
+ * Path: /users/{userId}/settings/prefs
+ * Synced fields: pinHash, appLockEnabled, biometricEnabled, theme,
+ *                enabledCurrencies, fiscalYearStartMonth
+ * NOT synced: biometricCredentialId, firebaseConfig, goldApiKey, enabled
+ * Conflict resolution: last-write-wins on prefs.updatedAt
+ */
+async function syncSettingsPrefs(
+  userId: string,
+  firestore: Firestore
+): Promise<void>;
+```
+
+`syncAll()` calls `syncSettingsPrefs()` after all collection syncs complete. Return type unchanged: `SyncResult`.
+
+### 11.8 `DbConfig` Type Extension (`src/types/index.ts`)
+
+```typescript
+export interface DbConfig {
+  // ... existing fields ...
+  pinHash?: string;              // SHA-256 hex of 4-digit PIN
+  appLockEnabled: boolean;       // default false
+  biometricEnabled: boolean;     // flag only; default false
+  biometricCredentialId?: string; // Base64 WebAuthn credentialId — device-local, NOT synced
+  enabledCurrencies?: string[];  // added here too (see multi-currency design)
+}
+```
