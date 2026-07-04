@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 
 **Product:** MizanTrack — Personal Finance Tracker  
-**Version:** 1.1  
-**Date:** 2026-05-31  
+**Version:** 1.2  
+**Date:** 2026-07-04  
 **Owner:** Salman Zahid Latif  
 **Status:** Draft
 
@@ -27,6 +27,7 @@
 
 | Version | Date       | Author              | Changes                  |
 |---------|------------|---------------------|--------------------------|
+| 1.2     | 2026-07-04 | Salman Zahid Latif  | Added App Lock, Multi-Currency, and UI/UX Polish PRD references |
 | 1.1     | 2026-05-31 | Salman Zahid Latif  | Added Cloud Sync onboarding feature PRD reference |
 | 1.0     | 2026-05-26 | Salman Zahid Latif  | Initial draft            |
 
@@ -35,6 +36,9 @@
 ## Feature Documents
 
 - [Cloud Sync Onboarding Instructions PRD](cloud-sync-onboarding/prd.md)
+- [App Lock — PIN Code & Biometric Authentication PRD](app-lock/prd.md)
+- [Multi-Currency & Country Management PRD](multi-currency/prd.md)
+- [UI/UX Polish — Mobile-First Visual Redesign PRD](ui-ux-polish/prd.md)
 
 ---
 
