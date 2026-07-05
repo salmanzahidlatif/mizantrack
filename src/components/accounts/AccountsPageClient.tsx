@@ -61,7 +61,7 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 						</SelectContent>
 					</Select>
 					{hasArchived && (
-						<Button variant="outline" size="sm" onClick={() => setShowArchivedAccounts(!showArchivedAccounts)}>
+						<Button variant="outline" onClick={() => setShowArchivedAccounts(!showArchivedAccounts)}>
 							{showArchivedAccounts ? "Hide Archived" : "Show Archived"}
 						</Button>
 					)}
