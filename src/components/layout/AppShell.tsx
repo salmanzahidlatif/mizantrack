@@ -34,6 +34,7 @@ import {
 import { useAutoSync } from "@/hooks/useAutoSync";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { signOutAction } from "@/lib/actions/auth";
+import { db } from "@/lib/db/local";
 import { seedDefaultCategories } from "@/lib/db/seed";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
@@ -62,17 +63,45 @@ export function AppShell({ user, children }: AppShellProps) {
 	const syncError = useSyncStore((s) => s.error);
 	const config = useDbConfig(user?.id ?? "");
 	const { activeCurrency, setActiveCurrency } = useFilterStore();
+	const triggerSync = useSyncStore((s) => s.triggerSync);
+
+	/**
+	 * Handle currency switch from the header selector.
+	 * If the selected currency has no local accounts yet (e.g. first time on this
+	 * device) and Firebase sync is enabled, trigger a sync immediately so data
+	 * for that currency appears without waiting for the 5-min interval.
+	 */
+	async function handleCurrencyChange(code: string) {
+		setActiveCurrency(code);
+		if (!config?.enabled || !user?.id) return;
+		const accountCount = await db.accounts
+			.where("userId")
+			.equals(user.id)
+			.filter((a) => !a.deletedAt && a.currency === code)
+			.count();
+		if (accountCount === 0) {
+			void triggerSync(user.id);
+		}
+	}
 
 	useAutoSync(user?.id ?? "");
 
-	// Seed activeCurrency from dbConfig on first load
+	// Seed activeCurrency from dbConfig.
+	// Runs whenever config changes (including after a sync that pulls enabledCurrencies).
+	// Only overrides activeCurrency when it is empty OR when the current value is no longer
+	// in the enabled list (e.g. user had AED selected but synced a PKR-only config).
 	useEffect(() => {
-		if (!activeCurrency && config?.enabledCurrencies?.[0]) {
-			setActiveCurrency(config.enabledCurrencies[0]);
-		} else if (!activeCurrency && config?.currency) {
-			setActiveCurrency(config.currency);
+		const currencies = config?.enabledCurrencies;
+		const fallback = config?.currency;
+		if (!currencies?.length && !fallback) return; // still loading
+
+		const primary = currencies?.[0] ?? fallback ?? "PKR";
+		const isCurrentValid = currencies?.includes(activeCurrency);
+
+		if (!activeCurrency || !isCurrentValid) {
+			setActiveCurrency(primary);
 		}
-	}, [activeCurrency, config?.enabledCurrencies, config?.currency, setActiveCurrency]);
+	}, [config?.enabledCurrencies, config?.currency]); // intentionally omit activeCurrency — see comment above
 
 	// Show a toast whenever a sync error is set so the user is notified
 	// regardless of which page they are on.
@@ -104,7 +133,7 @@ export function AppShell({ user, children }: AppShellProps) {
 						<CurrencySelector
 							enabledCurrencies={config?.enabledCurrencies ?? (config?.currency ? [config.currency] : [])}
 							activeCurrency={activeCurrency}
-							onChange={setActiveCurrency}
+							onChange={(code) => { void handleCurrencyChange(code); }}
 						/>
 						<SyncStatusBadge />
 						<ThemeToggle />

@@ -153,7 +153,8 @@ async function syncSettingsPrefs(userId: string, firestore: Firestore): Promise<
 
 	const prefsRef = doc(firestore, `users/${userId}/settings`, "prefs");
 
-	const localUpdatedAt = (localConfig as unknown as Record<string, unknown>).prefsUpdatedAt as number | undefined ?? Date.now();
+	// On a fresh device prefsUpdatedAt is undefined — default to 0 so Firebase always wins.
+	const localUpdatedAt = (localConfig as unknown as Record<string, unknown>).prefsUpdatedAt as number | undefined ?? 0;
 
 	const remoteSnap = await getDoc(prefsRef);
 
