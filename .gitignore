@@ -44,4 +44,5 @@ next-env.d.ts
 .github/prompts
 .github/instructions
 /skills
-docs/HysabKytab-Data-2026-07-05.csv
+
+docs/*.csv
