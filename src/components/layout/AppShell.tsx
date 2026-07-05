@@ -61,15 +61,15 @@ interface AppShellProps {
 export function AppShell({ user, children }: AppShellProps) {
 	const pathname = usePathname();
 	const syncError = useSyncStore((s) => s.error);
+	const lastSyncResult = useSyncStore((s) => s.lastSyncResult);
 	const config = useDbConfig(user?.id ?? "");
 	const { activeCurrency, setActiveCurrency } = useFilterStore();
 	const triggerSync = useSyncStore((s) => s.triggerSync);
 
 	/**
 	 * Handle currency switch from the header selector.
-	 * If the selected currency has no local accounts yet (e.g. first time on this
-	 * device) and Firebase sync is enabled, trigger a sync immediately so data
-	 * for that currency appears without waiting for the 5-min interval.
+	 * If the selected currency has no local accounts yet and Firebase sync is
+	 * enabled, trigger a sync immediately.
 	 */
 	async function handleCurrencyChange(code: string) {
 		setActiveCurrency(code);
@@ -83,6 +83,37 @@ export function AppShell({ user, children }: AppShellProps) {
 			void triggerSync(user.id);
 		}
 	}
+
+	// After a sync that pulled accounts, if the active currency has no local
+	// accounts, auto-switch to the first currency that does so data is visible.
+	useEffect(() => {
+		if (!lastSyncResult?.synced || !lastSyncResult.tables?.accounts?.pulled || !user?.id) return;
+		if (lastSyncResult.tables.accounts.pulled === 0) return;
+
+		void (async () => {
+			const activeCount = await db.accounts
+				.where("userId")
+				.equals(user.id)
+				.filter((a) => !a.deletedAt && a.currency === activeCurrency)
+				.count();
+			if (activeCount > 0) return; // already showing data
+
+			// Find the first enabled currency that has accounts
+			const candidates = config?.enabledCurrencies ?? (config?.currency ? [config.currency] : []);
+			for (const code of candidates) {
+				const count = await db.accounts
+					.where("userId")
+					.equals(user.id)
+					.filter((a) => !a.deletedAt && a.currency === code)
+					.count();
+				if (count > 0) {
+					setActiveCurrency(code);
+					break;
+				}
+			}
+		})();
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [lastSyncResult]);
 
 	useAutoSync(user?.id ?? "");
 
