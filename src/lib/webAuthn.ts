@@ -15,15 +15,18 @@ export function isBiometricAvailable(): boolean {
 
 /**
  * Register a new biometric credential for the user.
+ * @param userId       Dexie userId (Google sub) — used as the opaque credential ID.
+ * @param userDisplay  Human-readable name shown in the OS passkey prompt (name/email).
  * Returns a Base64-encoded credentialId to store in dbConfig.
  * Throws if the user cancels or biometrics are unavailable.
  */
-export async function registerBiometric(userId: string): Promise<string> {
+export async function registerBiometric(userId: string, userDisplay?: string): Promise<string> {
 	if (!isBiometricAvailable()) {
 		throw new Error("WebAuthn is not available on this device.");
 	}
 
 	const challenge = crypto.getRandomValues(new Uint8Array(32));
+	const displayName = userDisplay || "MizanTrack User";
 
 	const credential = (await navigator.credentials.create({
 		publicKey: {
@@ -31,8 +34,8 @@ export async function registerBiometric(userId: string): Promise<string> {
 			rp: { name: "MizanTrack", id: window.location.hostname },
 			user: {
 				id: new TextEncoder().encode(userId),
-				name: userId,
-				displayName: "MizanTrack User",
+				name: displayName,
+				displayName,
 			},
 			pubKeyCredParams: [
 				{ type: "public-key", alg: -7 }, // ES256

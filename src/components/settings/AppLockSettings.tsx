@@ -16,11 +16,13 @@ const PIN_LENGTH = 4;
 
 interface AppLockSettingsProps {
 	userId: string;
+	/** User's name or email from Google, shown in the OS passkey dialog. */
+	userDisplay?: string | null;
 }
 
 type PinMode = "idle" | "set" | "change-current" | "change-new" | "change-confirm";
 
-export function AppLockSettings({ userId }: AppLockSettingsProps) {
+export function AppLockSettings({ userId, userDisplay }: AppLockSettingsProps) {
 	const config = useDbConfig(userId);
 	const [pinMode, setPinMode] = useState<PinMode>("idle");
 	const [pinInput, setPinInput] = useState("");
@@ -109,7 +111,7 @@ export function AppLockSettings({ userId }: AppLockSettingsProps) {
 	const handleToggleBiometric = async (enabled: boolean) => {
 		if (enabled) {
 			try {
-				const credentialId = await registerBiometric(userId);
+				const credentialId = await registerBiometric(userId, userDisplay ?? undefined);
 				await db.dbConfig.update(userId, { biometricEnabled: true, biometricCredentialId: credentialId });
 				toast.success("Biometric authentication enabled.");
 			} catch {

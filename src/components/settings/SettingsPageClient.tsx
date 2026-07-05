@@ -8,9 +8,10 @@ import { PreferencesForm } from "@/components/settings/PreferencesForm";
 
 interface SettingsPageClientProps {
 	userId: string;
+	userDisplay?: string | null;
 }
 
-export function SettingsPageClient({ userId }: SettingsPageClientProps) {
+export function SettingsPageClient({ userId, userDisplay }: SettingsPageClientProps) {
 	return (
 		<div className="space-y-5">
 			<div>
@@ -20,7 +21,7 @@ export function SettingsPageClient({ userId }: SettingsPageClientProps) {
 
 			<PreferencesForm userId={userId} />
 
-			<AppLockSettings userId={userId} />
+			<AppLockSettings userId={userId} userDisplay={userDisplay} />
 
 			<div className="grid gap-4 sm:grid-cols-2">
 				<ImportPanel userId={userId} />
