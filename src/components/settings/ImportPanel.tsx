@@ -6,6 +6,13 @@ import { toast } from "sonner";
 
 import { CurrencyPicker } from "@/components/shared/CurrencyPicker";
 import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { importHysabKytab } from "@/lib/import/hysabKytab";
 
@@ -119,6 +126,44 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 					if (!v) { setPendingFile(null); setCurrencyPickerOpen(false); }
 				}}
 			/>
+
+			{/* Import result dialog */}
+			<Dialog open={!!result} onOpenChange={() => setResult(null)}>
+				<DialogContent className="max-w-sm">
+					<DialogHeader>
+						<DialogTitle>Import Complete</DialogTitle>
+						<DialogDescription>Your Hysab Kytab data has been imported.</DialogDescription>
+					</DialogHeader>
+					{result && (
+						<div className="space-y-3 py-2">
+							<div className="divide-y divide-border rounded-lg border border-border">
+								{[
+									{ label: "Accounts imported", value: result.accounts },
+									{ label: "Categories imported", value: result.categories },
+									{ label: "Transactions imported", value: result.transactions },
+									{ label: "Transfers paired", value: result.transfersPaired },
+									...(result.autoCreated > 0
+										? [{ label: "Accounts auto-created", value: result.autoCreated }]
+										: []),
+								].map(({ label, value }) => (
+									<div key={label} className="flex justify-between px-4 py-2 text-sm">
+										<span className="text-muted-foreground">{label}</span>
+										<span className="font-medium">{value}</span>
+									</div>
+								))}
+							</div>
+							<p className="text-xs text-muted-foreground">
+								Re-importing the same file is safe — transactions are deduplicated by row.
+							</p>
+							{result.autoCreatedAccounts?.length > 0 && (
+								<p className="text-xs text-amber-600 dark:text-amber-400">
+									Auto-created (archived): {result.autoCreatedAccounts.join(", ")}
+								</p>
+							)}
+						</div>
+					)}
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }
