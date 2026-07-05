@@ -5,6 +5,7 @@ import { useMemo } from "react";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { useTransactions } from "@/hooks/useTransactions";
+import { useFilterStore } from "@/store/filter-store";
 
 interface MonthSummaryProps {
 	userId: string;
@@ -12,11 +13,19 @@ interface MonthSummaryProps {
 }
 
 export function MonthSummary({ userId, currency = "PKR" }: MonthSummaryProps) {
+	const { activeCurrency } = useFilterStore();
+	// Use the live currency selector if set, otherwise fall back to prop
+	const displayCurrency = activeCurrency || currency;
+
 	const now = new Date();
 	const from = startOfMonth(now).getTime();
 	const to = endOfMonth(now).getTime();
 
-	const transactions = useTransactions(userId, { from, to });
+	const transactions = useTransactions(userId, {
+		from,
+		to,
+		currency: activeCurrency || undefined,
+	});
 
 	const { income, expense, net } = useMemo(() => {
 		if (!transactions) return { income: 0, expense: 0, net: 0 };
@@ -42,12 +51,12 @@ export function MonthSummary({ userId, currency = "PKR" }: MonthSummaryProps) {
 	return (
 		<div className="grid grid-cols-3 gap-3">
 			{items.map(({ label, amount, variant }) => (
-				<div key={label} className="rounded-xl border border-border bg-card p-3 text-center">
+				<div key={label} className="rounded-xl border border-border/60 bg-card p-3 text-center shadow-[var(--shadow-card)]">
 					<p className="mb-1 text-xs text-muted-foreground">{label}</p>
 					{transactions === undefined ? (
 						<div className="mx-auto h-5 w-16 animate-pulse rounded bg-muted" />
 					) : (
-						<CurrencyAmount amount={amount} currency={currency} variant={variant} />
+			<CurrencyAmount amount={amount} currency={displayCurrency} variant={variant} />
 					)}
 				</div>
 			))}

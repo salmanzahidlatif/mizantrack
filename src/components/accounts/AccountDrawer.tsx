@@ -17,13 +17,14 @@ import {
 } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useDbConfig } from "@/hooks/useDbConfig";
+import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
 import { accountSchema, type AccountFormValues } from "@/lib/validations/account";
+import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
 import type { Account } from "@/types";
-
-const CURRENCY_SHORTCUTS = ["AED", "PKR", "USD", "EUR", "GBP", "SAR", "INR"];
 
 const COLOR_SWATCHES = [
 	"#6366f1", // indigo
@@ -42,6 +43,15 @@ interface AccountDrawerProps {
 
 export function AccountDrawer({ userId }: AccountDrawerProps) {
 	const { isAccountDrawerOpen, editAccountId, closeAccountDrawer } = useUIStore();
+	const { activeCurrency } = useFilterStore();
+	const config = useDbConfig(userId);
+
+	// Use activeCurrency from top selector; fall back to saved config currency
+	const defaultCurrency = activeCurrency || config?.currency || "PKR";
+	// Show the user's enabled currencies as quick-select pills
+	const currencyShortcuts = config?.enabledCurrencies?.length
+		? config.enabledCurrencies
+		: [defaultCurrency];
 
 	const {
 		register,
@@ -52,16 +62,20 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 		formState: { errors, isSubmitting },
 	} = useForm<AccountFormValues>({
 		resolver: zodResolver(accountSchema) as Resolver<AccountFormValues>,
-		defaultValues: { currency: "PKR", openingBalance: 0 },
+		defaultValues: { currency: defaultCurrency, openingBalance: 0 },
 	});
 
-	// Load existing account for editing
+	// Load existing account for editing; for new accounts seed with active currency
 	useEffect(() => {
 		if (!isAccountDrawerOpen) {
-			reset({ currency: "PKR", openingBalance: 0 });
+			reset({ currency: defaultCurrency, openingBalance: 0 });
 			return;
 		}
-		if (!editAccountId) return;
+		if (!editAccountId) {
+			// New account — auto-select the active currency
+			setValue("currency", defaultCurrency, { shouldValidate: false });
+			return;
+		}
 
 		void db.accounts.get(editAccountId).then((account: Account | undefined) => {
 			if (!account) return;
@@ -73,7 +87,7 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 				icon: account.icon,
 			});
 		});
-	}, [isAccountDrawerOpen, editAccountId, reset]);
+	}, [isAccountDrawerOpen, editAccountId, reset, defaultCurrency, setValue]);
 
 	async function onSubmit(values: AccountFormValues) {
 		const now = Date.now();
@@ -118,25 +132,30 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 					<div className="space-y-1.5">
 						<Label htmlFor="acc-currency">Currency *</Label>
 						<div className="mb-1 flex flex-wrap gap-1.5">
-							{CURRENCY_SHORTCUTS.map((c) => (
-								<button
-									key={c}
-									type="button"
-									onClick={() => setValue("currency", c, { shouldValidate: true })}
-									className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
-										watch("currency") === c
-											? "border-primary bg-primary text-primary-foreground"
-											: "border-border hover:border-primary"
-									}`}>
-									{c}
-								</button>
-							))}
+							{currencyShortcuts.map((c) => {
+								const entry = getCurrencyByCode(c);
+								return (
+									<button
+										key={c}
+										type="button"
+										onClick={() => setValue("currency", c, { shouldValidate: true })}
+										className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
+											watch("currency") === c
+												? "border-primary bg-primary text-primary-foreground"
+												: "border-border hover:border-primary"
+										}`}>
+										{entry?.flag && <span>{entry.flag}</span>}
+										{c}
+									</button>
+								);
+							})}
 						</div>
 						<Input
 							id="acc-currency"
-							placeholder="PKR"
+							placeholder={defaultCurrency}
 							maxLength={3}
 							className="uppercase"
+							hidden
 							{...register("currency")}
 						/>
 						{errors.currency && (

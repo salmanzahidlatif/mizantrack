@@ -270,12 +270,12 @@
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-001 | ISO 4217 Currency Dataset | 0.5d | Must | ⏳ TODO |
-| US-002 | DbConfig Extension + Migration | 0.5d | Must | ⏳ TODO |
-| US-003 | filter-store Extension | 0.5d | Must | ⏳ TODO |
-| US-004 | useAccounts Currency & Archived Filters | 0.5d | Must | ⏳ TODO |
-| US-005 | useTransactions Currency Filter | 1d | Must | ⏳ TODO |
-| US-010 | Clear Firebase Data | 1d | Must | ⏳ TODO |
+| US-001 | ISO 4217 Currency Dataset | 0.5d | Must | ✅ DONE |
+| US-002 | DbConfig Extension + Migration | 0.5d | Must | ✅ DONE |
+| US-003 | filter-store Extension | 0.5d | Must | ✅ DONE |
+| US-004 | useAccounts Currency & Archived Filters | 0.5d | Must | ✅ DONE |
+| US-005 | useTransactions Currency Filter | 1d | Must | ✅ DONE |
+| US-010 | Clear Firebase Data | 1d | Must | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 4d *(1d buffer for integration testing)*
 
@@ -285,10 +285,10 @@
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-007 | Currency Picker Component | 1.5d | Must | ⏳ TODO |
-| US-008 | Currency Selector in Header | 1d | Must | ⏳ TODO |
-| US-006 | HK Import Currency Prompt | 1d | Must | ⏳ TODO |
-| US-009 | Archived Accounts Toggle | 0.5d | Should | ⏳ TODO |
+| US-007 | Currency Picker Component | 1.5d | Must | ✅ DONE |
+| US-008 | Currency Selector in Header | 1d | Must | ✅ DONE |
+| US-006 | HK Import Currency Prompt | 1d | Must | ✅ DONE |
+| US-009 | Archived Accounts Toggle | 0.5d | Should | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 4d *(1d buffer for cross-feature integration, AppShell seed logic)*
 

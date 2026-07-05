@@ -9,6 +9,10 @@ interface FilterStore {
 	transactionType: TransactionType | "All";
 	searchQuery: string;
 	customRange: DateRange | null;
+	/** Active currency ISO code. Empty string = not yet seeded from dbConfig. */
+	activeCurrency: string;
+	/** Show archived accounts within the active currency. Default false. */
+	showArchivedAccounts: boolean;
 
 	setPeriod: (period: FilterPeriod) => void;
 	setAccountId: (accountId: string | null) => void;
@@ -16,6 +20,8 @@ interface FilterStore {
 	setTransactionType: (type: TransactionType | "All") => void;
 	setSearchQuery: (query: string) => void;
 	setCustomRange: (range: DateRange | null) => void;
+	setActiveCurrency: (code: string) => void;
+	setShowArchivedAccounts: (show: boolean) => void;
 	reset: () => void;
 }
 
@@ -26,6 +32,8 @@ const defaultState = {
 	transactionType: "All" as TransactionType | "All",
 	searchQuery: "",
 	customRange: null,
+	activeCurrency: "",
+	showArchivedAccounts: false,
 };
 
 export const useFilterStore = create<FilterStore>((set) => ({
@@ -37,5 +45,12 @@ export const useFilterStore = create<FilterStore>((set) => ({
 	setTransactionType: (transactionType) => set({ transactionType }),
 	setSearchQuery: (searchQuery) => set({ searchQuery }),
 	setCustomRange: (customRange) => set({ customRange }),
-	reset: () => set(defaultState),
+	setActiveCurrency: (activeCurrency) => set({ activeCurrency }),
+	setShowArchivedAccounts: (showArchivedAccounts) => set({ showArchivedAccounts }),
+	// reset clears per-page filters but NOT activeCurrency (currency context persists)
+	reset: () =>
+		set((state) => ({
+			...defaultState,
+			activeCurrency: state.activeCurrency,
+		})),
 }));

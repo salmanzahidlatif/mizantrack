@@ -11,17 +11,30 @@ export interface TransactionFilters {
 	from?: number; // Unix ms
 	to?: number; // Unix ms
 	search?: string;
+	/** When provided, restricts to transactions on accounts with this currency code. */
+	currency?: string;
 }
 
 export function useTransactions(
 	userId: string,
 	filters: TransactionFilters = {}
 ): Transaction[] | undefined {
-	const { accountId, categoryId, type, from, to, search } = filters;
+	const { accountId, categoryId, type, from, to, search, currency } = filters;
 
 	return useLiveQuery(
-		() =>
-			db.transactions
+		async () => {
+			// Resolve account IDs for the active currency filter (if any)
+			let currencyAccountIds: Set<string> | null = null;
+			if (currency) {
+				const accounts = await db.accounts
+					.where("userId")
+					.equals(userId)
+					.filter((a) => !a.deletedAt && a.currency === currency)
+					.primaryKeys();
+				currencyAccountIds = new Set(accounts as string[]);
+			}
+
+			const txns = await db.transactions
 				.where("userId")
 				.equals(userId)
 				.filter((t) => {
@@ -37,10 +50,17 @@ export function useTransactions(
 						const matchPlace = t.place?.toLowerCase().includes(q) ?? false;
 						if (!matchDesc && !matchPlace) return false;
 					}
+					if (currencyAccountIds) {
+						// Include if either accountId or toAccountId belongs to the active currency
+						const matchSrc = currencyAccountIds.has(t.accountId);
+						const matchDst = t.toAccountId ? currencyAccountIds.has(t.toAccountId) : false;
+						if (!matchSrc && !matchDst) return false;
+					}
 					return true;
 				})
-				.sortBy("date")
-				.then((txns) => txns.reverse()),
-		[userId, accountId, categoryId, type, from, to, search]
+				.sortBy("date");
+			return txns.reverse();
+		},
+		[userId, accountId, categoryId, type, from, to, search, currency]
 	);
 }

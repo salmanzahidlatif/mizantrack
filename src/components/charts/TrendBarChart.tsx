@@ -11,7 +11,9 @@ import {
 	YAxis,
 } from "recharts";
 
+import { SkeletonChart } from "@/components/shared/SkeletonChart";
 import { useMonthlySummary } from "@/hooks/useMonthlySummary";
+import { useFilterStore } from "@/store/filter-store";
 
 interface TrendChartProps {
 	userId: string;
@@ -19,14 +21,15 @@ interface TrendChartProps {
 }
 
 export function TrendChart({ userId, months = 6 }: TrendChartProps) {
-	const data = useMonthlySummary(userId, months);
+	const { activeCurrency } = useFilterStore();
+	const data = useMonthlySummary(userId, months, activeCurrency || undefined);
 
 	if (data === undefined) {
-		return <div className="h-56 w-full animate-pulse rounded-xl bg-muted" />;
+		return <SkeletonChart height={224} />;
 	}
 
 	return (
-		<div className="rounded-xl border border-border bg-card p-4">
+		<div className="rounded-xl border border-border/60 bg-card p-4 shadow-[var(--shadow-card)]">
 			<p className="mb-3 text-sm font-semibold">Income vs Expenses ({months}M)</p>
 			<ResponsiveContainer width="100%" height={200}>
 				<BarChart data={data} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>

@@ -50,7 +50,7 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 	}
 
 	return (
-		<div className="space-y-3 rounded-xl border border-border bg-card p-4">
+		<div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-[var(--shadow-card)]">
 			<div>
 				<h2 className="font-semibold">Export Data</h2>
 				<p className="mt-0.5 text-sm text-muted-foreground">

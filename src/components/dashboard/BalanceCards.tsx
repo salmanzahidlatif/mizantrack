@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
 import { useAccountBalance } from "@/hooks/useAccountBalance";
 import { useAccounts } from "@/hooks/useAccounts";
+import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
 interface BalanceCardProps {
@@ -23,17 +24,17 @@ function BalanceCard({ accountId, userId }: BalanceCardProps) {
 
 	return (
 		<div
-			className="flex min-w-40 flex-col gap-1 rounded-xl border border-border bg-card p-4"
+			className="flex min-w-44 flex-col gap-1.5 rounded-2xl border border-border/60 bg-card p-4 shadow-[var(--shadow-card)] transition-shadow hover:shadow-[var(--shadow-overlay)] active:scale-[0.98] active:shadow-[var(--shadow-card)] touch-manipulation"
 			style={account.color ? { borderLeftColor: account.color, borderLeftWidth: 3 } : undefined}>
 			<div className="flex items-center gap-1.5">
 				{account.icon && <span className="text-base leading-none">{account.icon}</span>}
-				<p className="truncate text-sm font-medium">{account.title}</p>
+				<p className="truncate text-sm font-semibold">{account.title}</p>
 			</div>
-			<p className="text-xs text-muted-foreground">{account.currency}</p>
+			<p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">{account.currency}</p>
 			{balance === undefined ? (
-				<div className="h-6 w-24 animate-pulse rounded bg-muted" />
+				<div className="h-7 w-28 animate-pulse rounded-lg bg-muted" />
 			) : (
-				<CurrencyAmount amount={balance} currency={account.currency} colorized showNegativeSign />
+				<CurrencyAmount amount={balance} currency={account.currency} colorized showNegativeSign className="text-xl font-bold" />
 			)}
 		</div>
 	);
@@ -44,7 +45,9 @@ interface BalanceCardsProps {
 }
 
 export function BalanceCards({ userId }: BalanceCardsProps) {
-	const accounts = useAccounts(userId);
+	const { activeCurrency } = useFilterStore();
+	// Filter accounts by the active currency context from the header selector
+	const accounts = useAccounts(userId, { currency: activeCurrency || undefined });
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
 
 	if (accounts === undefined) {

@@ -5,6 +5,8 @@ import {
 	doc,
 	query,
 	where,
+	getDoc,
+	setDoc,
 	getCountFromServer,
 	type Firestore,
 } from "firebase/firestore";
@@ -61,6 +63,10 @@ export async function syncAll(
 	}
 
 	await localDb.syncMeta.put({ id: "lastSync", timestamp: Date.now() });
+
+	// Sync settings/prefs document alongside financial data
+	await syncSettingsPrefs(userId, firestore);
+
 	return { synced: true, tables, totalPushed, totalPulled };
 }
 
@@ -126,8 +132,60 @@ async function syncCollection(
 	return { pushed, pulled };
 }
 
-export async function getFirestoreUsage(userId: string) {
-	const firestore = await getFirestoreForUser(userId);
+/** Fields synced to Firestore settings/prefs document. biometricCredentialId is intentionally excluded. */
+const SYNCED_PREFS_FIELDS = [
+	"pinHash",
+	"appLockEnabled",
+	"biometricEnabled",
+	"currency",
+	"enabledCurrencies",
+	"fiscalYearStartMonth",
+] as const;
+
+/**
+ * Push/pull the settings/prefs Firestore document.
+ * Path: /users/{userId}/settings/prefs
+ * Conflict resolution: last-write-wins on prefs.updatedAt
+ */
+async function syncSettingsPrefs(userId: string, firestore: Firestore): Promise<void> {
+	const localConfig = await localDb.dbConfig.get(userId);
+	if (!localConfig) return;
+
+	const prefsRef = doc(firestore, `users/${userId}/settings`, "prefs");
+
+	const localUpdatedAt = (localConfig as unknown as Record<string, unknown>).prefsUpdatedAt as number | undefined ?? Date.now();
+
+	const remoteSnap = await getDoc(prefsRef);
+
+	if (remoteSnap.exists()) {
+		const remote = remoteSnap.data() as Record<string, unknown>;
+		const remoteUpdatedAt = (remote.updatedAt as number | undefined) ?? 0;
+
+		if (remoteUpdatedAt > localUpdatedAt) {
+			// Pull remote → local
+			const patch: Partial<typeof localConfig> = {};
+			for (const field of SYNCED_PREFS_FIELDS) {
+				if (remote[field] !== undefined) {
+					(patch as Record<string, unknown>)[field] = remote[field];
+				}
+			}
+			if (Object.keys(patch).length > 0) {
+				await localDb.dbConfig.update(userId, patch);
+			}
+			return;
+		}
+	}
+
+	// Push local → remote
+	const prefs: Record<string, unknown> = { updatedAt: localUpdatedAt };
+	for (const field of SYNCED_PREFS_FIELDS) {
+		const val = (localConfig as unknown as Record<string, unknown>)[field];
+		if (val !== undefined) prefs[field] = val;
+	}
+	await setDoc(prefsRef, prefs, { merge: true });
+}
+
+export async function getFirestoreUsage(userId: string) {	const firestore = await getFirestoreForUser(userId);
 	if (!firestore) return null;
 
 	try {
@@ -153,4 +211,61 @@ export async function getFirestoreUsage(userId: string) {
 	} catch {
 		return null;
 	}
+}
+
+export interface ClearResult {
+	deleted: number;
+	collections: Record<string, number>;
+}
+
+/**
+ * Batch-delete all documents under /users/{userId}/ in the user's Firestore.
+ * Deletes: accounts, categories, transactions, settings/prefs.
+ * After deletion resets local syncMeta.lastSync to 0 so next sync re-uploads everything.
+ */
+export async function clearFirestoreForUser(
+	userId: string,
+	onProgress?: (deleted: number) => void
+): Promise<ClearResult> {
+	const firestore = await getFirestoreForUser(userId);
+	if (!firestore) throw new Error("Firebase not configured.");
+
+	const COLLECTIONS = ["accounts", "categories", "transactions"];
+	let totalDeleted = 0;
+	const collectionCounts: Record<string, number> = {};
+
+	for (const col of COLLECTIONS) {
+		const snap = await getDocs(collection(firestore, `users/${userId}/${col}`));
+		let count = 0;
+		for (let i = 0; i < snap.docs.length; i += 499) {
+			const chunk = snap.docs.slice(i, i + 499);
+			const batch = writeBatch(firestore);
+			chunk.forEach((d) => batch.delete(d.ref));
+			await batch.commit();
+			count += chunk.length;
+			totalDeleted += chunk.length;
+			onProgress?.(totalDeleted);
+		}
+		collectionCounts[col] = count;
+	}
+
+	// Delete settings/prefs document
+	try {
+		const prefsRef = doc(firestore, `users/${userId}/settings`, "prefs");
+		const prefsSnap = await getDoc(prefsRef);
+		if (prefsSnap.exists()) {
+			const batch = writeBatch(firestore);
+			batch.delete(prefsRef);
+			await batch.commit();
+			totalDeleted++;
+			collectionCounts["settings"] = 1;
+		}
+	} catch {
+		// Non-critical — continue
+	}
+
+	// Reset local sync timestamp so next sync re-uploads everything
+	await localDb.syncMeta.put({ id: "lastSync", timestamp: 0 });
+
+	return { deleted: totalDeleted, collections: collectionCounts };
 }

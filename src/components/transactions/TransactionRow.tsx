@@ -52,7 +52,7 @@ export function TransactionRow({ transaction, accounts, categories }: Transactio
 		<button
 			type="button"
 			onClick={() => openEditTransaction(transaction.id)}
-			className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50 active:bg-accent">
+			className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 active:bg-muted/70 touch-manipulation">
 			{/* Type icon */}
 			<div
 				className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconColor}`}>

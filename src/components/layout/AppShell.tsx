@@ -16,6 +16,8 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 import { BottomNav } from "@/components/layout/BottomNav";
+import { AppLockGuard } from "@/components/layout/AppLockGuard";
+import { CurrencySelector } from "@/components/layout/CurrencySelector";
 import { SyncStatusBadge } from "@/components/layout/SyncStatusBadge";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { TransactionDrawer } from "@/components/transactions/TransactionDrawer";
@@ -30,9 +32,11 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAutoSync } from "@/hooks/useAutoSync";
+import { useDbConfig } from "@/hooks/useDbConfig";
 import { signOutAction } from "@/lib/actions/auth";
 import { seedDefaultCategories } from "@/lib/db/seed";
 import { cn } from "@/lib/utils";
+import { useFilterStore } from "@/store/filter-store";
 import { useSyncStore } from "@/store/sync-store";
 import { toast } from "sonner";
 
@@ -56,8 +60,19 @@ interface AppShellProps {
 export function AppShell({ user, children }: AppShellProps) {
 	const pathname = usePathname();
 	const syncError = useSyncStore((s) => s.error);
+	const config = useDbConfig(user?.id ?? "");
+	const { activeCurrency, setActiveCurrency } = useFilterStore();
 
 	useAutoSync(user?.id ?? "");
+
+	// Seed activeCurrency from dbConfig on first load
+	useEffect(() => {
+		if (!activeCurrency && config?.enabledCurrencies?.[0]) {
+			setActiveCurrency(config.enabledCurrencies[0]);
+		} else if (!activeCurrency && config?.currency) {
+			setActiveCurrency(config.currency);
+		}
+	}, [activeCurrency, config?.enabledCurrencies, config?.currency, setActiveCurrency]);
 
 	// Show a toast whenever a sync error is set so the user is notified
 	// regardless of which page they are on.
@@ -74,6 +89,7 @@ export function AppShell({ user, children }: AppShellProps) {
 	}, [user?.id]);
 
 	return (
+		<AppLockGuard userId={user?.id ?? ""}>
 		<div className="flex h-screen flex-col overflow-hidden bg-background">
 			{/* Top header */}
 			<header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
@@ -85,6 +101,11 @@ export function AppShell({ user, children }: AppShellProps) {
 						<span className="text-sm font-semibold">Mizan Track</span>
 					</div>
 					<div className="flex items-center gap-2">
+						<CurrencySelector
+							enabledCurrencies={config?.enabledCurrencies ?? (config?.currency ? [config.currency] : [])}
+							activeCurrency={activeCurrency}
+							onChange={setActiveCurrency}
+						/>
 						<SyncStatusBadge />
 						<ThemeToggle />
 						<DropdownMenu>
@@ -93,7 +114,7 @@ export function AppShell({ user, children }: AppShellProps) {
 									variant="ghost"
 									className="relative h-8 w-8 cursor-pointer rounded-full p-0">
 									<Avatar className="h-8 w-8">
-										<AvatarImage src={user?.image ?? ""} alt={user?.name ?? ""} />
+										<AvatarImage src={user?.image ?? ""} alt={user?.name ?? ""} referrerPolicy="no-referrer" />
 										<AvatarFallback>{user?.name?.charAt(0).toUpperCase() ?? "U"}</AvatarFallback>
 									</Avatar>
 								</Button>
@@ -146,7 +167,7 @@ export function AppShell({ user, children }: AppShellProps) {
 							<DropdownMenuTrigger asChild>
 								<button className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-2 transition-colors hover:bg-accent">
 									<Avatar className="h-7 w-7">
-										<AvatarImage src={user?.image ?? ""} />
+										<AvatarImage src={user?.image ?? ""} referrerPolicy="no-referrer" />
 										<AvatarFallback>{user?.name?.charAt(0).toUpperCase() ?? "U"}</AvatarFallback>
 									</Avatar>
 									<div className="min-w-0 flex-1 text-left">
@@ -179,10 +200,11 @@ export function AppShell({ user, children }: AppShellProps) {
 			</div>
 
 			{/* Bottom nav + FAB — mobile */}
-			<BottomNav />
+			<BottomNav userImage={user?.image} userName={user?.name} />
 
 			{/* Global transaction drawer — FAB and all pages share this instance */}
 			<TransactionDrawer userId={user?.id ?? ""} />
 		</div>
+		</AppLockGuard>
 	);
 }

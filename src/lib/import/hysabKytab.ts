@@ -46,14 +46,14 @@ function parseHKDate(raw: string): number {
 	return new Date(2000, 0, 1).getTime();
 }
 
-export async function importHysabKytab(file: File, userId: string) {
+export async function importHysabKytab(file: File, userId: string, targetCurrency?: string) {
 	const buffer = await file.arrayBuffer();
 	const wb = XLSX.read(buffer);
 	const now = Date.now();
 
-	// Use the user's configured default currency; fall back to PKR if not set
+	// Use targetCurrency if provided (from import wizard), otherwise fall back to user config or PKR
 	const userConfig = await db.dbConfig.get(userId);
-	const defaultCurrency = userConfig?.currency ?? "PKR";
+	const defaultCurrency = targetCurrency ?? userConfig?.currency ?? "PKR";
 
 	// --- Accounts ---
 	const accountSheet = wb.Sheets["ACCOUNT"];

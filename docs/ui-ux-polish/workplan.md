@@ -71,7 +71,7 @@
 - [ ] `cursor-pointer` present on all interactive elements for desktop users
 
 **Design Reference:** §12.3, §7 of docs/ui-ux-polish/design.md  
-**Technical Notes:** Add `active:scale-95 transition-transform duration-75 [touch-action:manipulation] [-webkit-tap-highlight-color:transparent]` to `button.tsx` cva base class. Add `active:bg-muted/50 transition-colors duration-75` to `TransactionRow` wrapper div.  
+**Technical Notes:** Add `active:scale-95 transition-transform duration-75 touch-manipulation [-webkit-tap-highlight-color:transparent]` to `button.tsx` cva base class. Add `active:bg-muted/50 transition-colors duration-75` to `TransactionRow` wrapper div.  
 **Dependencies:** US-001  
 **Estimated Effort:** 0.5d  
 **Priority:** Must Have
@@ -212,11 +212,11 @@
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-001 | CSS Design Tokens & Global Touch Rules | 0.5d | Must | ⏳ TODO |
-| US-002 | Button & List Row Touch Feedback | 0.5d | Must | ⏳ TODO |
-| US-003 | Glassmorphic Header & Bottom Nav | 0.5d | Must | ⏳ TODO |
-| US-004 | Shadow System on Cards, Drawers & Dialogs | 0.5d | Must | ⏳ TODO |
-| US-007 | Sync Status Badge Animation | 0.5d | Must | ⏳ TODO |
+| US-001 | CSS Design Tokens & Global Touch Rules | 0.5d | Must | ✅ DONE |
+| US-002 | Button & List Row Touch Feedback | 0.5d | Must | ✅ DONE |
+| US-003 | Glassmorphic Header & Bottom Nav | 0.5d | Must | ✅ DONE |
+| US-004 | Shadow System on Cards, Drawers & Dialogs | 0.5d | Must | ✅ DONE |
+| US-007 | Sync Status Badge Animation | 0.5d | Must | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 2.5d *(remaining days for device testing on iPhone + Android)*
 
@@ -226,9 +226,9 @@
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-005 | Skeleton Loading Components | 0.5d | Must | ⏳ TODO |
-| US-006 | Wire Skeletons Into All Async Views | 1d | Must | ⏳ TODO |
-| US-008 | Tap Target Audit & Compliance | 0.5d | Should | ⏳ TODO |
+| US-005 | Skeleton Loading Components | 0.5d | Must | ✅ DONE |
+| US-006 | Wire Skeletons Into All Async Views | 1d | Must | ✅ DONE |
+| US-008 | Tap Target Audit & Compliance | 0.5d | Should | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 2d *(remaining days for cross-browser testing, `backdrop-filter` Android benchmark, and final visual polish)*
 

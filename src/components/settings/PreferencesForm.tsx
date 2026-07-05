@@ -4,6 +4,8 @@ import { Check } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useRef, useState } from "react";
 
+import { CurrencyPicker } from "@/components/shared/CurrencyPicker";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -14,6 +16,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useDbConfig } from "@/hooks/useDbConfig";
+import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
 
 const MONTHS = [
@@ -40,6 +43,8 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 	const { theme, setTheme } = useTheme();
 
 	const [currency, setCurrency] = useState("");
+	const [enabledCurrencies, setEnabledCurrencies] = useState<string[]>([]);
+	const [pickerOpen, setPickerOpen] = useState(false);
 	const [fiscalMonth, setFiscalMonth] = useState(7);
 	const [goldApiKey, setGoldApiKey] = useState("");
 	const [saved, setSaved] = useState(false);
@@ -67,27 +72,31 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 				});
 			}
 			setCurrency(config?.currency ?? "PKR");
+			setEnabledCurrencies(config?.enabledCurrencies ?? [config?.currency ?? "PKR"]);
 			setFiscalMonth(config?.fiscalYearStartMonth ?? 7);
 			setGoldApiKey(config?.goldApiKey ?? "");
 			initialised.current = true;
 		}
 	}, [config, userId]);
 
-	function scheduleSave(newCurrency: string, newMonth: number, newGoldKey: string) {
+	function scheduleSave(newCurrency: string, newMonth: number, newGoldKey: string, newEnabledCurrencies?: string[]) {
 		if (saveTimer.current) clearTimeout(saveTimer.current);
 		saveTimer.current = setTimeout(() => {
+			const cur = newCurrency.toUpperCase() || "PKR";
+			const enabled = newEnabledCurrencies ?? enabledCurrencies;
 			void db.dbConfig
 				.update(userId, {
-					currency: newCurrency.toUpperCase() || "PKR",
+					currency: cur,
+					enabledCurrencies: enabled.length > 0 ? enabled : [cur],
 					fiscalYearStartMonth: newMonth,
 					goldApiKey: newGoldKey || undefined,
 				})
 				.then((count) => {
 					if (count === 0) {
-						// Record doesn't exist yet — create it with safe defaults
 						return db.dbConfig.put({
 							id: userId,
-							currency: newCurrency.toUpperCase() || "PKR",
+							currency: cur,
+							enabledCurrencies: enabled.length > 0 ? enabled : [cur],
 							fiscalYearStartMonth: newMonth,
 							firebaseConfig: "",
 							enabled: false,
@@ -103,10 +112,11 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 		}, 500);
 	}
 
-	function handleCurrencyChange(value: string) {
-		const upper = value.toUpperCase().slice(0, 3);
-		setCurrency(upper);
-		scheduleSave(upper, fiscalMonth, goldApiKey);
+	function handleCurrencyChange(codes: string[]) {
+		const primary = codes[0] ?? "PKR";
+		setCurrency(primary);
+		setEnabledCurrencies(codes);
+		scheduleSave(primary, fiscalMonth, goldApiKey, codes);
 	}
 
 	function handleMonthChange(value: string) {
@@ -121,7 +131,7 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 	}
 
 	return (
-		<div className="space-y-4 rounded-xl border border-border bg-card p-4">
+		<div className="space-y-4 rounded-xl border border-border/60 bg-card p-4 shadow-[var(--shadow-card)]">
 			<div className="flex items-center justify-between">
 				<h2 className="font-semibold">Preferences</h2>
 				{saved && (
@@ -132,18 +142,29 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 			</div>
 
 			<div className="grid gap-4 sm:grid-cols-2">
-				{/* Default currency */}
+				{/* Currencies */}
 				<div className="space-y-1.5">
-					<Label htmlFor="currency">Default Currency</Label>
-					<Input
-						id="currency"
-						value={currency}
-						onChange={(e) => handleCurrencyChange(e.target.value)}
-					placeholder="PKR"
-						maxLength={3}
-						className="uppercase"
+					<Label>Currencies</Label>
+					<div className="flex flex-wrap gap-1.5">
+						{enabledCurrencies.map((code) => {
+							const entry = getCurrencyByCode(code);
+							return (
+								<span key={code} className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
+									{entry?.flag} {code}
+								</span>
+							);
+						})}
+					</div>
+					<Button variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="text-xs">
+						Manage Currencies
+					</Button>
+					<p className="text-xs text-muted-foreground">Primary currency used throughout the app.</p>
+					<CurrencyPicker
+						selected={enabledCurrencies}
+						onChange={handleCurrencyChange}
+						open={pickerOpen}
+						onOpenChange={setPickerOpen}
 					/>
-					<p className="text-xs text-muted-foreground">3-character ISO code (e.g. AED, USD, PKR)</p>
 				</div>
 
 				{/* Fiscal year start month */}

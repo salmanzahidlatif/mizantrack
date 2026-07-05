@@ -215,7 +215,7 @@ After:  className="fixed bottom-0 ... bg-background/80 backdrop-blur-sm border-t
 
 Add to the base variant classes:
 ```
-active:scale-95 transition-transform duration-[80ms] [touch-action:manipulation]
+active:scale-95 transition-transform duration-[80ms] touch-manipulation
 [-webkit-tap-highlight-color:transparent]
 ```
 
@@ -223,7 +223,7 @@ active:scale-95 transition-transform duration-[80ms] [touch-action:manipulation]
 
 Wrap tappable area:
 ```tsx
-<div className="active:bg-muted/50 transition-colors duration-[80ms] [touch-action:manipulation]">
+<div className="active:bg-muted/50 transition-colors duration-[80ms] touch-manipulation">
 ```
 
 ### Account / Balance Cards
@@ -461,7 +461,7 @@ inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm fon
 ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2
 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none
 disabled:opacity-50 active:scale-95 transition-transform duration-75
-[touch-action:manipulation] [-webkit-tap-highlight-color:transparent]
+touch-manipulation [-webkit-tap-highlight-color:transparent]
 ```
 
 ### 12.4 Skeleton Components
@@ -536,7 +536,7 @@ after:  className="fixed bottom-0 left-0 right-0 z-50 border-t border-border
 | File | Change |
 |---|---|
 | `src/app/globals.css` | Add CSS variables, touch rules, `@theme` block, `prefers-reduced-motion` |
-| `src/components/ui/button.tsx` | Add `active:scale-95 duration-75 [touch-action:manipulation]` to base cva class |
+| `src/components/ui/button.tsx` | Add `active:scale-95 duration-75 touch-manipulation` to base cva class |
 | `src/components/layout/AppShell.tsx` | Glassmorphic header: `bg-background/80 backdrop-blur-sm` |
 | `src/components/layout/BottomNav.tsx` | Glassmorphic nav + safe area inset |
 | `src/components/transactions/TransactionRow.tsx` | Add `active:bg-muted/50 transition-colors duration-75` to row wrapper |

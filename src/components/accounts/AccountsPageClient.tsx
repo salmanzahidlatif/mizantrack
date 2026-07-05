@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 import { AccountDrawer } from "@/components/accounts/AccountDrawer";
 import { AccountList } from "@/components/accounts/AccountList";
 import { accountSortOptions, type AccountSort } from "@/components/accounts/accountSort";
@@ -14,19 +12,28 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useAccounts } from "@/hooks/useAccounts";
+import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
+import { useState } from "react";
 
 interface AccountsPageClientProps {
 	userId: string;
 }
 
 export function AccountsPageClient({ userId }: AccountsPageClientProps) {
-	const accounts = useAccounts(userId);
-	const [showArchived, setShowArchived] = useState(false);
+	const { activeCurrency, showArchivedAccounts, setShowArchivedAccounts } = useFilterStore();
 	const [sortBy, setSortBy] = useState<AccountSort>("balance-desc");
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
 
-	const hasArchived = accounts?.some((a) => a.isArchived) ?? false;
+	// Respect active currency filter from global store
+	const accounts = useAccounts(userId, {
+		currency: activeCurrency || undefined,
+		showArchived: showArchivedAccounts,
+	});
+
+	// Also fetch archived count to show/hide toggle
+	const allAccounts = useAccounts(userId, { currency: activeCurrency || undefined, showArchived: true });
+	const hasArchived = allAccounts?.some((a) => a.isArchived) ?? false;
 
 	return (
 		<div className="space-y-4">
@@ -54,17 +61,17 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 						</SelectContent>
 					</Select>
 					{hasArchived && (
-						<Button variant="outline" size="sm" onClick={() => setShowArchived((v) => !v)}>
-							{showArchived ? "Hide Archived" : "Show Archived"}
+						<Button variant="outline" size="sm" onClick={() => setShowArchivedAccounts(!showArchivedAccounts)}>
+							{showArchivedAccounts ? "Hide Archived" : "Show Archived"}
 						</Button>
 					)}
-					<Button size="sm" onClick={openAddAccount}>
+					<Button onClick={openAddAccount}>
 						Add Account
 					</Button>
 				</div>
 			</div>
 
-			<AccountList accounts={accounts} showArchived={showArchived} sortBy={sortBy} userId={userId} />
+			<AccountList accounts={accounts} showArchived={showArchivedAccounts} sortBy={sortBy} userId={userId} />
 			<AccountDrawer userId={userId} />
 		</div>
 	);

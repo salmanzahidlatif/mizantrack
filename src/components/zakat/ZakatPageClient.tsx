@@ -22,6 +22,7 @@ import { useDbConfig } from "@/hooks/useDbConfig";
 import { db } from "@/lib/db/local";
 import { fetchGoldPrice } from "@/lib/goldPrice";
 import { exportZakatSummary } from "@/lib/zakatExport";
+import { useFilterStore } from "@/store/filter-store";
 
 const TOLA_TO_GRAMS = 11.664;
 const NISAB_GOLD_GRAMS = 85;
@@ -33,8 +34,9 @@ interface ZakatPageClientProps {
 
 export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 	const config = useDbConfig(userId);
-	const referenceCurrency = config?.currency ?? "PKR";
-	const accounts = useAccounts(userId);
+	const { activeCurrency } = useFilterStore();
+	const referenceCurrency = activeCurrency || config?.currency || "PKR";
+	const accounts = useAccounts(userId, { currency: activeCurrency || undefined });
 
 	const allTransactions = useLiveQuery(
 		() =>

@@ -1,5 +1,6 @@
 "use client";
 
+import { AppLockSettings } from "@/components/settings/AppLockSettings";
 import { ExportPanel } from "@/components/settings/ExportPanel";
 import { FirebaseSyncPanel } from "@/components/settings/FirebaseSyncPanel";
 import { ImportPanel } from "@/components/settings/ImportPanel";
@@ -18,6 +19,8 @@ export function SettingsPageClient({ userId }: SettingsPageClientProps) {
 			</div>
 
 			<PreferencesForm userId={userId} />
+
+			<AppLockSettings userId={userId} />
 
 			<div className="grid gap-4 sm:grid-cols-2">
 				<ImportPanel userId={userId} />

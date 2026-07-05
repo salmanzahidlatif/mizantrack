@@ -22,7 +22,9 @@ describe("HK Import - Actual Backup File Integration Test", () => {
 		await db.dbConfig.put({
 			id: userId,
 			currency: "PKR",
-			fiscalYearStartMonth: 7, // July (common for Pakistan)
+			fiscalYearStartMonth: 7,
+			firebaseConfig: "",
+			enabled: false,
 		});
 	});
 

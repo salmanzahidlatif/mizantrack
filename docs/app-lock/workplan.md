@@ -230,12 +230,12 @@
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-001 | PIN Crypto Module | 0.5d | Must | ⏳ TODO |
-| US-002 | Lock Store (Zustand) | 0.5d | Must | ⏳ TODO |
-| US-003 | App Lock Guard Component | 1d | Must | ⏳ TODO |
-| US-004 | Lock Screen PIN Pad | 1.5d | Must | ⏳ TODO |
-| US-005 | Forgot PIN — Re-Authentication | 1d | Must | ⏳ TODO |
-| US-006 | Biometric Authentication (WebAuthn) | 1.5d | Must | ⏳ TODO |
+| US-001 | PIN Crypto Module | 0.5d | Must | ✅ DONE |
+| US-002 | Lock Store (Zustand) | 0.5d | Must | ✅ DONE |
+| US-003 | App Lock Guard Component | 1d | Must | ✅ DONE |
+| US-004 | Lock Screen PIN Pad | 1.5d | Must | ✅ DONE |
+| US-005 | Forgot PIN — Re-Authentication | 1d | Must | ✅ DONE |
+| US-006 | Biometric Authentication (WebAuthn) | 1.5d | Must | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 6d *(slight overrun acceptable with AI — buffer used here)*
 
@@ -245,8 +245,8 @@
 
 | ID | Title | Effort | Priority | Status |
 |----|-------|--------|----------|--------|
-| US-007 | App Lock Settings Panel | 1d | Must | ⏳ TODO |
-| US-008 | Settings Sync Extension | 1d | Must | ⏳ TODO |
+| US-007 | App Lock Settings Panel | 1d | Must | ✅ DONE |
+| US-008 | Settings Sync Extension | 1d | Must | ✅ DONE |
 
 **Capacity:** 5d | **Committed:** 2d *(remaining days used for device testing, bug fixes, and E2E test)*
 

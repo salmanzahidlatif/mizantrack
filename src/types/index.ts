@@ -54,10 +54,17 @@ export interface DbConfig {
 	enabled: boolean;
 	currency: string; // user's default currency
 	fiscalYearStartMonth: number; // 1–12
-	// Gold price cache (US-025)
+	// Gold price cache
 	goldApiKey?: string;
 	lastGoldPricePerGram?: number;
 	lastGoldPriceFetchedAt?: number;
+	// App Lock
+	pinHash?: string; // SHA-256 hex of 4-digit PIN; absent = no PIN set
+	appLockEnabled?: boolean; // default false
+	biometricEnabled?: boolean; // flag only; default false
+	biometricCredentialId?: string; // Base64 WebAuthn credentialId; device-local, NOT synced
+	// Multi-currency
+	enabledCurrencies?: string[]; // ISO codes of active currencies; min 1
 }
 
 export interface SyncMeta {

@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useTransactions } from "@/hooks/useTransactions";
+import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
 interface RecentTransactionsProps {
@@ -14,8 +15,9 @@ interface RecentTransactionsProps {
 }
 
 export function RecentTransactions({ userId }: RecentTransactionsProps) {
-	const transactions = useTransactions(userId);
-	const accounts = useAccounts(userId);
+	const { activeCurrency } = useFilterStore();
+	const transactions = useTransactions(userId, { currency: activeCurrency || undefined });
+	const accounts = useAccounts(userId, { currency: activeCurrency || undefined });
 	const openEditTransaction = useUIStore((s) => s.openEditTransaction);
 	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 

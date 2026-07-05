@@ -90,7 +90,7 @@ function VirtualList({ parentRef, items, accounts, categories }: VirtualListProp
 	return (
 		<div
 			ref={parentRef}
-			className="overflow-auto rounded-xl border border-border bg-card"
+			className="overflow-auto rounded-xl border border-border/60 bg-card shadow-[var(--shadow-card)]"
 			style={{ maxHeight: "calc(100dvh - 200px)" }}>
 			<div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
 				{virtualizer.getVirtualItems().map((virtualRow) => {
