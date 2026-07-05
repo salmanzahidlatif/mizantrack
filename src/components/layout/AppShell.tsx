@@ -86,22 +86,23 @@ export function AppShell({ user, children }: AppShellProps) {
 
 	useAutoSync(user?.id ?? "");
 
-	// Seed activeCurrency from dbConfig.
-	// Runs whenever config changes (including after a sync that pulls enabledCurrencies).
-	// Only overrides activeCurrency when it is empty OR when the current value is no longer
-	// in the enabled list (e.g. user had AED selected but synced a PKR-only config).
+	// Validate / seed activeCurrency against enabledCurrencies from config.
+	// Runs whenever config changes (e.g. after sync pulls new settings from Firebase).
+	// - If activeCurrency is already valid → keep it (localStorage value wins)
+	// - If activeCurrency is empty or not in the enabled list → seed from config
 	useEffect(() => {
 		const currencies = config?.enabledCurrencies;
 		const fallback = config?.currency;
 		if (!currencies?.length && !fallback) return; // still loading
 
 		const primary = currencies?.[0] ?? fallback ?? "PKR";
-		const isCurrentValid = currencies?.includes(activeCurrency);
+		const isCurrentValid = currencies ? currencies.includes(activeCurrency) : activeCurrency === fallback;
 
 		if (!activeCurrency || !isCurrentValid) {
 			setActiveCurrency(primary);
 		}
-	}, [config?.enabledCurrencies, config?.currency]); // intentionally omit activeCurrency — see comment above
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [config?.enabledCurrencies, config?.currency]);
 
 	// Show a toast whenever a sync error is set so the user is notified
 	// regardless of which page they are on.
