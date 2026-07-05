@@ -72,11 +72,13 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 				});
 			}
 			setCurrency(config?.currency ?? "PKR");
-			setEnabledCurrencies(config?.enabledCurrencies ?? [config?.currency ?? "PKR"]);
 			setFiscalMonth(config?.fiscalYearStartMonth ?? 7);
 			setGoldApiKey(config?.goldApiKey ?? "");
 			initialised.current = true;
 		}
+		// Always sync enabledCurrencies from config so it reflects the latest
+		// value even after a Firebase sync that updates the currencies list.
+		setEnabledCurrencies(config?.enabledCurrencies ?? [config?.currency ?? "PKR"]);
 	}, [config, userId]);
 
 	function scheduleSave(newCurrency: string, newMonth: number, newGoldKey: string, newEnabledCurrencies?: string[]) {
