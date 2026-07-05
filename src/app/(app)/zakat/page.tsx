@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 
-import { ZakatPageClient } from "@/components/zakat/ZakatPageClient";
+import { ZakatPageClientEnhanced } from "@/components/zakat/ZakatPageClientEnhanced";
 import { auth } from "@/lib/auth";
 
 export default async function ZakatPage() {
 	const session = await auth();
 	if (!session?.user?.id) redirect("/login");
 
-	return <ZakatPageClient userId={session.user.id} />;
+	return <ZakatPageClientEnhanced userId={session.user.id} />;
 }

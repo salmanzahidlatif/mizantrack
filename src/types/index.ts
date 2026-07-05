@@ -10,6 +10,7 @@ export interface Account {
 	color?: string;
 	icon?: string;
 	isArchived: boolean;
+	accountType?: "asset" | "liability"; // Default: asset. Liability = loan you owe (reduces zakat)
 	updatedAt: number;
 	deletedAt?: number;
 }
@@ -93,3 +94,102 @@ export interface SyncStatus {
 	syncing: boolean;
 	error: string | null;
 }
+
+// ============================================================================
+// ZAKAT TYPES
+// ============================================================================
+
+export type GoldPurity = "21k" | "22k" | "24k";
+
+export interface GoldItem {
+	id: string;
+	userId: string;
+	title: string; // e.g., "Wedding Ring", "Necklace"
+	weight: number; // in grams
+	purity: GoldPurity;
+	purchaseDate?: number; // Unix ms
+	purchasePrice?: number; // Original cost (reference only)
+	notes?: string;
+	updatedAt: number;
+	deletedAt?: number;
+}
+
+export interface ZakatCalculation {
+	id: string;
+	userId: string;
+	islamicYear: string; // e.g., "1446-1447"
+	assessmentDate: number; // Unix ms - typically end of Sha'ban
+
+	// Configuration used
+	nisabStandard: "gold" | "silver";
+	goldPricePerGram: number;
+	silverPricePerGram?: number;
+	referenceCurrency: string;
+
+	// Gold holdings
+	totalGoldWeightGrams: number;
+	totalGoldValue: number;
+
+	// Account balances snapshot
+	accountBalances: {
+		accountId: string;
+		accountTitle: string;
+		balance: number;
+		currency: string;
+		exchangeRate: number;
+		zakatable: boolean;
+		accountType: "asset" | "liability";
+	}[];
+
+	// Results
+	totalZakatable: number;
+	nisabThreshold: number;
+	zakatObligation: number;
+	isLiable: boolean;
+
+	// Monthly minimum tracking (for the 12 Islamic months)
+	monthlyBalances?: {
+		month: string; // e.g., "Ramadan 1446"
+		gregorianDate: string; // e.g., "2024-04-10"
+		totalWealth: number;
+	}[];
+
+	createdAt: number;
+	updatedAt: number;
+	deletedAt?: number;
+}
+
+export interface ZakatPayment {
+	id: string;
+	userId: string;
+	calculationId?: string; // Link to ZakatCalculation
+	islamicYear: string; // e.g., "1446-1447"
+
+	date: number; // Unix ms - when paid
+	amount: number;
+	currency: string;
+	recipient?: string; // e.g., "Local Masjid", "Charity X"
+	notes?: string;
+
+	createdAt: number;
+	updatedAt: number;
+	deletedAt?: number;
+}
+
+// Islamic calendar months in zakat year order (Ramadan → Sha'ban)
+export const ISLAMIC_MONTHS = [
+	"Ramaḍān",
+	"Shawwāl",
+	"Zū al-Qaʿdah",
+	"Zū al-Ḥijjah",
+	"al-Muḥarram", // Year changes here
+	"Ṣafar",
+	"Rabīʿ al-ʾAwwal",
+	"Rabīʿ ath-Thānī",
+	"Jumādā al-ʾAwwal",
+	"Jumādā ath-Thāniyah",
+	"Rajab",
+	"Shaʿbān",
+] as const;
+
+export type IslamicMonth = (typeof ISLAMIC_MONTHS)[number];
