@@ -6,11 +6,25 @@ interface AccountLike {
 	providerAccountId?: string | null;
 }
 
+/**
+ * Regex that matches the UUID v4 format NextAuth uses as a fallback userId
+ * when `account.providerAccountId` is not pinned.
+ * e.g. "4459f110-d978-4cd9-9c59-1dad559fab79"
+ */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function resolveSessionUserId(token: TokenLike): string | null {
 	if (typeof token.sub !== "string") return null;
 
 	const trimmed = token.sub.trim();
-	return trimmed.length > 0 ? trimmed : null;
+	if (!trimmed) return null;
+
+	// UUID-format IDs are stale sessions from before the providerAccountId fix was deployed.
+	// Returning null forces `session.user.id = ""` → layout redirects to /login for a fresh
+	// sign-in, which will correctly pin token.sub = account.providerAccountId (Google numeric ID).
+	if (UUID_REGEX.test(trimmed)) return null;
+
+	return trimmed;
 }
 
 /**
