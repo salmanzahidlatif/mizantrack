@@ -46,3 +46,5 @@ next-env.d.ts
 /skills
 
 docs/*.csv
+docs/*.xlsx
+docs/*.xls
