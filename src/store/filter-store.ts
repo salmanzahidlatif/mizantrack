@@ -2,6 +2,14 @@ import { create } from "zustand";
 
 import type { FilterPeriod, TransactionType, DateRange } from "@/types";
 
+const ACTIVE_CURRENCY_KEY = "mizantrack:activeCurrency";
+
+/** Read persisted currency from localStorage (SSR-safe). */
+function readPersistedCurrency(): string {
+	if (typeof window === "undefined") return "";
+	return localStorage.getItem(ACTIVE_CURRENCY_KEY) ?? "";
+}
+
 interface FilterStore {
 	period: FilterPeriod;
 	accountId: string | null;
@@ -9,7 +17,7 @@ interface FilterStore {
 	transactionType: TransactionType | "All";
 	searchQuery: string;
 	customRange: DateRange | null;
-	/** Active currency ISO code. Empty string = not yet seeded from dbConfig. */
+	/** Active currency ISO code. Persisted to localStorage across app restarts. */
 	activeCurrency: string;
 	/** Show archived accounts within the active currency. Default false. */
 	showArchivedAccounts: boolean;
@@ -32,7 +40,8 @@ const defaultState = {
 	transactionType: "All" as TransactionType | "All",
 	searchQuery: "",
 	customRange: null,
-	activeCurrency: "",
+	// Restore last-used currency immediately on startup — no flash to wrong currency
+	activeCurrency: readPersistedCurrency(),
 	showArchivedAccounts: false,
 };
 
@@ -45,7 +54,13 @@ export const useFilterStore = create<FilterStore>((set) => ({
 	setTransactionType: (transactionType) => set({ transactionType }),
 	setSearchQuery: (searchQuery) => set({ searchQuery }),
 	setCustomRange: (customRange) => set({ customRange }),
-	setActiveCurrency: (activeCurrency) => set({ activeCurrency }),
+	setActiveCurrency: (activeCurrency) => {
+		// Persist to localStorage so the selection survives app close/reopen
+		if (typeof window !== "undefined") {
+			localStorage.setItem(ACTIVE_CURRENCY_KEY, activeCurrency);
+		}
+		set({ activeCurrency });
+	},
 	setShowArchivedAccounts: (showArchivedAccounts) => set({ showArchivedAccounts }),
 	// reset clears per-page filters but NOT activeCurrency (currency context persists)
 	reset: () =>
