@@ -45,6 +45,6 @@ next-env.d.ts
 .github/instructions
 /skills
 
-docs/*.csv
-docs/*.xlsx
-docs/*.xls
+*.csv
+*.xlsx
+*.xls
