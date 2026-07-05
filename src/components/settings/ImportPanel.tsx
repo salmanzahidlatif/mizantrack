@@ -92,7 +92,7 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 						</>
 					)}
 				</Button>
-				<span className="text-xs text-muted-foreground">.xlsx / .xls files</span>
+				<span className="text-xs text-muted-foreground">.xlsx / .xls / .csv</span>
 			</div>
 			<p className="text-xs text-muted-foreground">
 				Transaction dates are read from the sheet. If a date is missing or unreadable it defaults to 1 Jan 2000 so your recent history is unaffected.
@@ -102,7 +102,7 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 			<input
 				ref={fileRef}
 				type="file"
-				accept=".xlsx,.xls"
+				accept=".xlsx,.xls,.csv"
 				className="hidden"
 				onChange={(e) => {
 					void handleFile(e);

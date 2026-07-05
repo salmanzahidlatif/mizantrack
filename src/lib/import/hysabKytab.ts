@@ -46,14 +46,56 @@ function parseHKDate(raw: string): number {
 	return new Date(2000, 0, 1).getTime();
 }
 
+/** HK activity column that must be present for a CSV to be recognised as HK format. */
+const HK_CSV_SENTINEL = "Voucher Type";
+
+/**
+ * Detect whether a file is a CSV and, if so, whether it looks like an HK ACTIVITIES export.
+ * Returns true if the first row of the CSV contains the expected HK column.
+ */
+function isHKActivitiesCSV(wb: XLSX.WorkBook): boolean {
+	const sheetName = wb.SheetNames[0];
+	if (!sheetName) return false;
+	const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[sheetName] ?? {}, { header: 1 });
+	const headers = rows[0] as string[] | undefined;
+	return Array.isArray(headers) && headers.includes(HK_CSV_SENTINEL);
+}
+
 export async function importHysabKytab(file: File, userId: string, targetCurrency?: string) {
+	const isCsv = file.name.toLowerCase().endsWith(".csv") || file.type === "text/csv";
 	const buffer = await file.arrayBuffer();
-	const wb = XLSX.read(buffer);
+
+	// SheetJS can read CSV natively; for CSV we force type:"array" which is the same as XLSX
+	const wb = isCsv
+		? XLSX.read(new Uint8Array(buffer), { type: "array", raw: false })
+		: XLSX.read(buffer);
 	const now = Date.now();
 
 	// Use targetCurrency if provided (from import wizard), otherwise fall back to user config or PKR
 	const userConfig = await db.dbConfig.get(userId);
 	const defaultCurrency = targetCurrency ?? userConfig?.currency ?? "PKR";
+
+	// ── CSV path ──────────────────────────────────────────────────────────────
+	// A CSV has exactly one sheet. If it looks like HK ACTIVITIES data, we inject
+	// empty ACCOUNT and CATEGORY sheets so the rest of the function works unchanged.
+	// The resolveOrCreateAccountId helper will auto-create archived accounts for any
+	// account names referenced in the transactions.
+	if (isCsv) {
+		if (!isHKActivitiesCSV(wb)) {
+			throw new Error(
+				"CSV does not appear to be a Hysab Kytab activities export. " +
+				"The first row must contain column headers including \"Voucher Type\"."
+			);
+		}
+		// Rename the single CSV sheet to "ACTIVITIES" so the code below finds it.
+		const csvSheetName = wb.SheetNames[0]!;
+		wb.Sheets["ACTIVITIES"] = wb.Sheets[csvSheetName]!;
+		wb.SheetNames.push("ACTIVITIES");
+		// Inject empty ACCOUNT and CATEGORY sheets — accounts will be auto-created.
+		wb.Sheets["ACCOUNT"] = XLSX.utils.json_to_sheet([]);
+		wb.Sheets["CATEGORY"] = XLSX.utils.json_to_sheet([]);
+		wb.SheetNames.push("ACCOUNT", "CATEGORY");
+	}
 
 	// --- Accounts ---
 	const accountSheet = wb.Sheets["ACCOUNT"];
