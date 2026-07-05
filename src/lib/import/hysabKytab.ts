@@ -42,60 +42,60 @@ function parseHKDate(raw: string): number {
 		// @ts-ignore
 		return new Date(+m2[3], +m2[2] - 1, +m2[1]).getTime();
 	}
-	// Unrecognised format — fall back to 1 Jan 2000 so historical filters are not polluted
+	// Unrecognized format — fall back to 1 Jan 2000 so historical filters are not polluted
 	return new Date(2000, 0, 1).getTime();
 }
 
 /** HK activity column that must be present for a CSV to be recognised as HK format. */
 const HK_CSV_SENTINEL = "Voucher Type";
 
-/**
- * Detect whether a file is a CSV and, if so, whether it looks like an HK ACTIVITIES export.
- * Returns true if the first row of the CSV contains the expected HK column.
- */
-function isHKActivitiesCSV(wb: XLSX.WorkBook): boolean {
-	const sheetName = wb.SheetNames[0];
-	if (!sheetName) return false;
-	const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[sheetName] ?? {}, { header: 1 });
-	const headers = rows[0] as string[] | undefined;
-	return Array.isArray(headers) && headers.includes(HK_CSV_SENTINEL);
-}
-
 export async function importHysabKytab(file: File, userId: string, targetCurrency?: string) {
 	const isCsv = file.name.toLowerCase().endsWith(".csv") || file.type === "text/csv";
-	const buffer = await file.arrayBuffer();
 
-	// SheetJS can read CSV natively; for CSV we force type:"array" which is the same as XLSX
-	const wb = isCsv
-		? XLSX.read(new Uint8Array(buffer), { type: "array", raw: false })
-		: XLSX.read(buffer);
-	const now = Date.now();
+	let wb: XLSX.WorkBook;
 
-	// Use targetCurrency if provided (from import wizard), otherwise fall back to user config or PKR
-	const userConfig = await db.dbConfig.get(userId);
-	const defaultCurrency = targetCurrency ?? userConfig?.currency ?? "PKR";
-
-	// ── CSV path ──────────────────────────────────────────────────────────────
-	// A CSV has exactly one sheet. If it looks like HK ACTIVITIES data, we inject
-	// empty ACCOUNT and CATEGORY sheets so the rest of the function works unchanged.
-	// The resolveOrCreateAccountId helper will auto-create archived accounts for any
-	// account names referenced in the transactions.
 	if (isCsv) {
-		if (!isHKActivitiesCSV(wb)) {
-			throw new Error(
-				"CSV does not appear to be a Hysab Kytab activities export. " +
-				"The first row must contain column headers including \"Voucher Type\"."
-			);
+		// Read CSV as text so SheetJS handles encoding correctly.
+		// Strip UTF-8 BOM (0xFEFF) if present — it would otherwise corrupt the first column name.
+		let text = await file.text();
+		if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
+		wb = XLSX.read(text, { type: "string" });
+
+		// Validate: the first row must have a "Voucher Type" column
+		const firstSheet = wb.Sheets[wb.SheetNames[0] ?? ""];
+		if (firstSheet) {
+			const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { header: 1 });
+			const headers = rows[0] as unknown as unknown[];
+			if (!Array.isArray(headers) || !headers.some((h) => String(h).trim() === HK_CSV_SENTINEL)) {
+				throw new Error(
+					`CSV does not appear to be a Hysab Kytab activities export. ` +
+					`Expected a column named "${HK_CSV_SENTINEL}" in the first row.`
+				);
+			}
 		}
-		// Rename the single CSV sheet to "ACTIVITIES" so the code below finds it.
+
+		// Rename the CSV sheet to "ACTIVITIES" so the shared code path finds it.
 		const csvSheetName = wb.SheetNames[0]!;
-		wb.Sheets["ACTIVITIES"] = wb.Sheets[csvSheetName]!;
-		wb.SheetNames.push("ACTIVITIES");
-		// Inject empty ACCOUNT and CATEGORY sheets — accounts will be auto-created.
+		if (wb.Sheets[csvSheetName]) {
+			wb.Sheets["ACTIVITIES"] = wb.Sheets[csvSheetName]!;
+		}
+		// Inject empty ACCOUNT and CATEGORY sheets — accounts will be auto-created as archived.
 		wb.Sheets["ACCOUNT"] = XLSX.utils.json_to_sheet([]);
 		wb.Sheets["CATEGORY"] = XLSX.utils.json_to_sheet([]);
-		wb.SheetNames.push("ACCOUNT", "CATEGORY");
+		if (!wb.SheetNames.includes("ACTIVITIES")) wb.SheetNames.push("ACTIVITIES");
+		if (!wb.SheetNames.includes("ACCOUNT")) wb.SheetNames.push("ACCOUNT");
+		if (!wb.SheetNames.includes("CATEGORY")) wb.SheetNames.push("CATEGORY");
+	} else {
+		const buffer = await file.arrayBuffer();
+		wb = XLSX.read(buffer);
 	}
+
+	const now = Date.now();
+
+	// Use targetCurrency if provided (import wizard), otherwise fall back to user config or PKR
+	const userConfig = await db.dbConfig.get(userId);
+	const defaultCurrency = targetCurrency ?? userConfig?.currency ?? "PKR";
 
 	// --- Accounts ---
 	const accountSheet = wb.Sheets["ACCOUNT"];
