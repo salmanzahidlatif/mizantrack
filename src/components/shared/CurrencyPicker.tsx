@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -29,6 +29,17 @@ export function CurrencyPicker({
 	const [query, setQuery] = useState("");
 	const [localSelected, setLocalSelected] = useState<string[]>(selected);
 	const [error, setError] = useState<string | null>(null);
+
+	// Sync localSelected and reset search whenever the dialog opens.
+	// This is necessary because the dialog is fully controlled (no DialogTrigger),
+	// so useState(selected) only captures the value at mount — not subsequent opens.
+	useEffect(() => {
+		if (open) {
+			setLocalSelected(selected);
+			setQuery("");
+			setError(null);
+		}
+	}, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	const filtered = useMemo(() => searchCurrencies(query), [query]);
 
@@ -61,13 +72,8 @@ export function CurrencyPicker({
 		onOpenChange(false);
 	};
 
-	const handleOpen = (v: boolean) => {
-		if (v) setLocalSelected(selected);
-		onOpenChange(v);
-	};
-
 	return (
-		<Dialog open={open} onOpenChange={handleOpen}>
+		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="flex max-h-[85vh] max-w-md flex-col gap-0 p-0">
 				<DialogHeader className="px-4 pt-4">
 					<DialogTitle>{singleSelect ? "Select Currency" : "Select Currencies"}</DialogTitle>
