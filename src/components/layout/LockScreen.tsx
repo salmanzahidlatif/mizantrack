@@ -1,12 +1,12 @@
 "use client";
 
-import { KeyRound } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { FingerprintPattern, KeyRound } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useDbConfig } from "@/hooks/useDbConfig";
-import { authenticateBiometric, isBiometricAvailable } from "@/lib/webAuthn";
 import { verifyPin } from "@/lib/pinCrypto";
+import { authenticateBiometric, isBiometricAvailable } from "@/lib/webAuthn";
 import { useLockStore } from "@/store/lock-store";
 
 const PIN_LENGTH = 4;
@@ -24,6 +24,21 @@ export function LockScreen({ userId, onUnlock }: LockScreenProps) {
 	const [error, setError] = useState<string | null>(null);
 	const [countdown, setCountdown] = useState(0);
 	const [showForgotPin, setShowForgotPin] = useState(false);
+	const [isPrompting, setIsPrompting] = useState(false);
+	const [biometricDismissed, setBiometricDismissed] = useState(false);
+
+	// Guards so the automatic prompt fires exactly once per lock session, and so
+	// a manual tap can't stack a second OS prompt on top of an in-flight one.
+	const autoPromptedRef = useRef(false);
+	const promptInFlightRef = useRef(false);
+	const mountedRef = useRef(true);
+
+	useEffect(() => {
+		mountedRef.current = true;
+		return () => {
+			mountedRef.current = false;
+		};
+	}, []);
 
 	// Countdown timer for lockout
 	useEffect(() => {
@@ -42,30 +57,56 @@ export function LockScreen({ userId, onUnlock }: LockScreenProps) {
 		return () => clearInterval(id);
 	}, [lockoutUntil, resetAttempts]);
 
-	// Auto-trigger biometric on mount if enrolled
-	useEffect(() => {
-		if (
-			config?.biometricEnabled &&
-			config?.biometricCredentialId &&
-			isBiometricAvailable()
-		) {
-			void tryBiometric();
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	const isLockedOut = lockoutUntil !== null && Date.now() < lockoutUntil;
 
-	const tryBiometric = async () => {
-		if (!config?.biometricCredentialId) return;
+	// `config` is undefined until the Dexie live query resolves, so readiness has
+	// to be derived on every render rather than captured once on mount.
+	const biometricReady = Boolean(
+		config?.biometricEnabled && config?.biometricCredentialId && isBiometricAvailable()
+	);
+
+	const tryBiometric = useCallback(async () => {
+		const credentialId = config?.biometricCredentialId;
+		if (!credentialId || promptInFlightRef.current) return;
+
+		promptInFlightRef.current = true;
+		setIsPrompting(true);
+		setError(null);
+
 		try {
-			const ok = await authenticateBiometric(config.biometricCredentialId);
+			const ok = await authenticateBiometric(credentialId);
 			if (ok) {
 				resetAttempts();
 				onUnlock();
+				return;
 			}
+			// User dismissed the OS sheet — surface the manual retry affordance.
+			if (mountedRef.current) setBiometricDismissed(true);
 		} catch {
-			// Biometric failed — fall back to PIN silently
+			// Hardware error, or the browser refused an unprompted call (Safari
+			// requires user activation). Either way, fall back to the manual button.
+			if (mountedRef.current) setBiometricDismissed(true);
+		} finally {
+			promptInFlightRef.current = false;
+			if (mountedRef.current) setIsPrompting(false);
 		}
-	};
+	}, [config?.biometricCredentialId, resetAttempts, onUnlock]);
+
+	// Auto-trigger biometric as soon as the config has loaded and biometrics are
+	// enrolled. Runs once per lock session; if the user dismisses the OS prompt
+	// they can re-trigger it with the button on the keypad.
+	useEffect(() => {
+		if (autoPromptedRef.current) return;
+		if (config === undefined) return; // still loading
+		if (!biometricReady) {
+			autoPromptedRef.current = true;
+			return;
+		}
+		if (isLockedOut) return; // retry once the lockout countdown clears
+
+		autoPromptedRef.current = true;
+		void tryBiometric();
+	}, [config, biometricReady, isLockedOut, tryBiometric]);
 
 	const handleDigit = useCallback(
 		async (d: string) => {
@@ -91,7 +132,15 @@ export function LockScreen({ userId, onUnlock }: LockScreenProps) {
 				}
 			}
 		},
-		[digits, lockoutUntil, config?.pinHash, failedAttempts, recordFailedAttempt, resetAttempts, onUnlock]
+		[
+			digits,
+			lockoutUntil,
+			config?.pinHash,
+			failedAttempts,
+			recordFailedAttempt,
+			resetAttempts,
+			onUnlock,
+		]
 	);
 
 	const handleBackspace = () => {
@@ -99,10 +148,10 @@ export function LockScreen({ userId, onUnlock }: LockScreenProps) {
 		setError(null);
 	};
 
-	const isLockedOut = lockoutUntil !== null && Date.now() < lockoutUntil;
-
 	if (showForgotPin) {
-		return <ForgotPinSheet userId={userId} onDone={onUnlock} onBack={() => setShowForgotPin(false)} />;
+		return (
+			<ForgotPinSheet userId={userId} onDone={onUnlock} onBack={() => setShowForgotPin(false)} />
+		);
 	}
 
 	return (
@@ -113,7 +162,13 @@ export function LockScreen({ userId, onUnlock }: LockScreenProps) {
 					<KeyRound className="h-7 w-7 text-primary-foreground" />
 				</div>
 				<h1 className="text-xl font-semibold">MizanTrack</h1>
-				<p className="text-sm text-muted-foreground">Enter your PIN to continue</p>
+				<p className="text-sm text-muted-foreground">
+					{isPrompting
+						? "Waiting for Face ID / fingerprint…"
+						: biometricReady && biometricDismissed
+							? "Enter your PIN, or tap the fingerprint icon to retry."
+							: "Enter your PIN to continue"}
+				</p>
 			</div>
 
 			{/* PIN dots */}
@@ -148,35 +203,38 @@ export function LockScreen({ userId, onUnlock }: LockScreenProps) {
 						key={d}
 						onClick={() => void handleDigit(d)}
 						disabled={isLockedOut}
-						className="flex h-16 w-full items-center justify-center rounded-2xl border border-border bg-card text-2xl font-medium transition-colors active:bg-muted disabled:opacity-40 touch-manipulation"
-					>
+						className="flex h-16 w-full touch-manipulation items-center justify-center rounded-2xl border border-border bg-card text-2xl font-medium transition-colors active:bg-muted disabled:opacity-40">
 						{d}
 					</button>
 				))}
-				{/* Biometric button (bottom-left) */}
+				{/* Biometric button (bottom-left) — manual retry after the automatic prompt */}
 				<button
 					onClick={() => void tryBiometric()}
-					disabled={isLockedOut || !config?.biometricEnabled || !isBiometricAvailable()}
-					className="flex h-16 w-full items-center justify-center rounded-2xl border border-border bg-card text-xs text-muted-foreground transition-colors active:bg-muted disabled:invisible touch-manipulation"
-					aria-label="Use biometric"
-				>
-					{/* Face ID / fingerprint icon placeholder */}
-					<span className="text-xl">🔑</span>
+					disabled={isLockedOut || !biometricReady || isPrompting}
+					aria-busy={isPrompting}
+					className={`flex h-16 w-full touch-manipulation items-center justify-center rounded-2xl border bg-card transition-colors active:bg-muted ${
+						biometricReady ? "" : "invisible"
+					} ${
+						biometricDismissed && !isPrompting
+							? "border-primary text-primary"
+							: "border-border text-muted-foreground"
+					} disabled:opacity-40`}
+					aria-label="Unlock with Face ID or fingerprint"
+					title="Unlock with Face ID or fingerprint">
+					<FingerprintPattern className="h-7 w-7" />
 				</button>
 				<button
 					onClick={() => void handleDigit("0")}
 					disabled={isLockedOut}
-					className="flex h-16 w-full items-center justify-center rounded-2xl border border-border bg-card text-2xl font-medium transition-colors active:bg-muted disabled:opacity-40 touch-manipulation"
-				>
+					className="flex h-16 w-full touch-manipulation items-center justify-center rounded-2xl border border-border bg-card text-2xl font-medium transition-colors active:bg-muted disabled:opacity-40">
 					0
 				</button>
 				{/* Backspace */}
 				<button
 					onClick={handleBackspace}
 					disabled={isLockedOut || digits.length === 0}
-					className="flex h-16 w-full items-center justify-center rounded-2xl border border-border bg-card text-xl text-muted-foreground transition-colors active:bg-muted disabled:opacity-40 touch-manipulation"
-					aria-label="Backspace"
-				>
+					className="flex h-16 w-full touch-manipulation items-center justify-center rounded-2xl border border-border bg-card text-xl text-muted-foreground transition-colors active:bg-muted disabled:opacity-40"
+					aria-label="Backspace">
 					⌫
 				</button>
 			</div>
@@ -184,8 +242,7 @@ export function LockScreen({ userId, onUnlock }: LockScreenProps) {
 			{/* Forgot PIN */}
 			<button
 				onClick={() => setShowForgotPin(true)}
-				className="mt-6 text-sm text-muted-foreground underline-offset-4 hover:underline touch-manipulation"
-			>
+				className="mt-6 touch-manipulation text-sm text-muted-foreground underline-offset-4 hover:underline">
 				Forgot PIN?
 			</button>
 		</div>
@@ -240,9 +297,7 @@ function ForgotPinSheet({ userId, onDone, onBack }: ForgotPinSheetProps) {
 	};
 
 	const canUseBiometric =
-		config?.biometricEnabled &&
-		config?.biometricCredentialId &&
-		isBiometricAvailable();
+		config?.biometricEnabled && config?.biometricCredentialId && isBiometricAvailable();
 
 	return (
 		<div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-background px-6">
@@ -287,29 +342,31 @@ function ForgotPinSheet({ userId, onDone, onBack }: ForgotPinSheetProps) {
 								else setConfirmPin(val);
 								setPinError(null);
 							}}
-							className="w-full rounded-lg border border-border bg-background px-4 py-3 text-center text-2xl tracking-[1rem] focus:outline-none focus:ring-2 focus:ring-ring"
+							className="w-full rounded-lg border border-border bg-background px-4 py-3 text-center text-2xl tracking-[1rem] focus:ring-2 focus:ring-ring focus:outline-none"
 						/>
 						{step === "newpin" ? (
 							<Button
-								onClick={() => { if (newPin.length === PIN_LENGTH) setStep("confirm"); }}
+								onClick={() => {
+									if (newPin.length === PIN_LENGTH) setStep("confirm");
+								}}
 								disabled={newPin.length !== PIN_LENGTH}
-								className="w-full"
-							>
+								className="w-full">
 								Next
 							</Button>
 						) : (
 							<Button
 								onClick={() => void handleSavePin()}
 								disabled={confirmPin.length !== PIN_LENGTH}
-								className="w-full"
-							>
+								className="w-full">
 								Save New PIN
 							</Button>
 						)}
 					</div>
 				)}
 
-				<button onClick={onBack} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+				<button
+					onClick={onBack}
+					className="text-sm text-muted-foreground underline-offset-4 hover:underline">
 					← Back to PIN entry
 				</button>
 			</div>
