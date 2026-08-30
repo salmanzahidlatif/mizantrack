@@ -14,6 +14,7 @@ import {
 import { useAccounts } from "@/hooks/useAccounts";
 import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 interface AccountsPageClientProps {
@@ -21,9 +22,18 @@ interface AccountsPageClientProps {
 }
 
 export function AccountsPageClient({ userId }: AccountsPageClientProps) {
-	const { activeCurrency, showArchivedAccounts, setShowArchivedAccounts } = useFilterStore();
+	const router = useRouter();
+	const { activeCurrency, showArchivedAccounts, setShowArchivedAccounts, setAccountId } =
+		useFilterStore();
 	const [sortBy, setSortBy] = useState<AccountSort>("balance-desc");
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
+
+	function handleSelectAccount(accountId: string) {
+		// Select this account in the shared filter store (other filters like period,
+		// category, search stay as-is) and jump to Transactions to view its history.
+		setAccountId(accountId);
+		router.push("/transactions");
+	}
 
 	// Respect active currency filter from global store
 	const accounts = useAccounts(userId, {
@@ -71,7 +81,13 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 				</div>
 			</div>
 
-			<AccountList accounts={accounts} showArchived={showArchivedAccounts} sortBy={sortBy} userId={userId} />
+			<AccountList
+				accounts={accounts}
+				showArchived={showArchivedAccounts}
+				sortBy={sortBy}
+				userId={userId}
+				onSelectAccount={handleSelectAccount}
+			/>
 			<AccountDrawer userId={userId} />
 		</div>
 	);
