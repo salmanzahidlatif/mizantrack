@@ -20,7 +20,7 @@ interface SyncStore {
 	/**
 	 * Timestamp until which auto-sync should be suppressed.
 	 * Set to next-day midnight when resource-exhausted is returned.
-	 * Prevents the 5-minute interval from hammering a depleted quota.
+	 * Prevents the periodic interval from hammering a depleted quota.
 	 */
 	suppressAutoSyncUntil: number | null;
 
