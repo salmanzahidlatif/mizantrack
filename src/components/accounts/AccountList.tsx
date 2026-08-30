@@ -157,9 +157,16 @@ interface AccountListProps {
 	showArchived: boolean;
 	sortBy: AccountSort;
 	userId: string;
+	onSelectAccount: (id: string) => void;
 }
 
-export function AccountList({ accounts, showArchived, sortBy, userId }: AccountListProps) {
+export function AccountList({
+	accounts,
+	showArchived,
+	sortBy,
+	userId,
+	onSelectAccount,
+}: AccountListProps) {
 	const openEditAccount = useUIStore((s) => s.openEditAccount);
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
 	const transactions = useLiveQuery(
@@ -248,6 +255,7 @@ export function AccountList({ accounts, showArchived, sortBy, userId }: AccountL
 					account={account}
 					balance={hasCurrentBalances ? balanceByAccountId.get(account.id) : undefined}
 					onEdit={openEditAccount}
+					onSelect={onSelectAccount}
 				/>
 			))}
 			{/* Add new card */}
