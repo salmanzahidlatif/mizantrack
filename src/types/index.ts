@@ -73,6 +73,36 @@ export interface SyncMeta {
 	timestamp: number;
 }
 
+export interface DashboardStats {
+	id: string; // userId
+	updatedAt: number; // Unix ms
+	balances: Record<string, number>;
+	perCurrency: Record<
+		string,
+		{
+			monthIncome: number;
+			monthExpense: number;
+			trend: Array<{
+				month: string;
+				income: number;
+				expense: number;
+			}>;
+		}
+	>;
+	recent: Array<{
+		id: string;
+		type: "Expense" | "Income" | "Transfer";
+		date: number;
+		amount: number;
+		description?: string;
+		place?: string;
+		accountId: string;
+		accountTitle: string;
+		accountCurrency: string;
+		toAccountId?: string;
+	}>;
+}
+
 export type FilterPeriod =
 	| "today"
 	| "week"
