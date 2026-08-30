@@ -86,6 +86,50 @@ describe("parseFirebaseConfigJson", () => {
 		}
 	});
 
+	it("unquotedKeys_ReturnsValidTrue", () => {
+		// What non-technical users actually paste from the Firebase console's
+		// SDK snippet — unquoted keys, no `const ... =` wrapper.
+		const raw = `{
+  apiKey: "AIzaSyAO_TLuR9R8CVLAImFq5LHG24HRr_pZwg8",
+  authDomain: "mizantrack.firebaseapp.com",
+  projectId: "mizantrack",
+  storageBucket: "mizantrack.firebasestorage.app",
+  messagingSenderId: "1096019587661",
+  appId: "1:1096019587661:web:fbc6e3cb5ac587974b6204",
+  measurementId: "G-T38LDJGDCP"
+}`;
+		const result = parseFirebaseConfigJson(raw);
+		expect(result.valid).toBe(true);
+		if (result.valid) {
+			expect(result.value.apiKey).toBe("AIzaSyAO_TLuR9R8CVLAImFq5LHG24HRr_pZwg8");
+			expect(result.value.projectId).toBe("mizantrack");
+		}
+	});
+
+	it("jsVariableDeclarationWithSemicolon_ReturnsValidTrue", () => {
+		const raw = `const firebaseConfig = {
+  apiKey: 'key',
+  authDomain: 'x.firebaseapp.com',
+  projectId: 'proj',
+};`;
+		const result = parseFirebaseConfigJson(raw);
+		expect(result.valid).toBe(true);
+		if (result.valid) {
+			expect(result.value.apiKey).toBe("key");
+			expect(result.value.projectId).toBe("proj");
+		}
+	});
+
+	it("exportDefaultWithTrailingComma_ReturnsValidTrue", () => {
+		const raw = `export default {
+  apiKey: "key",
+  authDomain: "x.firebaseapp.com",
+  projectId: "proj",
+};`;
+		const result = parseFirebaseConfigJson(raw);
+		expect(result.valid).toBe(true);
+	});
+
 	it("fieldHints_OverrideZodMessages", () => {
 		const result = parseFirebaseConfigJson(
 			JSON.stringify({ authDomain: "x.firebaseapp.com", projectId: "proj" })

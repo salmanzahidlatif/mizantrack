@@ -41,13 +41,13 @@ describe("accountSchema", () => {
 		expect(result.success).toBe(false);
 	});
 
-	it("rejects negative opening balance", () => {
+	it("accepts negative opening balance (e.g. a liability/debt account)", () => {
 		const result = accountSchema.safeParse({
 			title: "Test",
 			currency: "AED",
 			openingBalance: -100,
 		});
-		expect(result.success).toBe(false);
+		expect(result.success).toBe(true);
 	});
 
 	it("accepts zero opening balance", () => {

@@ -23,6 +23,8 @@ vi.mock("firebase/firestore", () => ({
 	writeBatch: vi.fn(),
 	doc: vi.fn((_db: unknown, ...segments: string[]) => ({ path: segments.join("/") })),
 	getDocs: vi.fn(),
+	getDoc: vi.fn(),
+	setDoc: vi.fn(),
 	query: vi.fn(),
 	where: vi.fn(),
 }));
@@ -113,6 +115,9 @@ describe("syncAll — strip undefined fields", () => {
 		vi.mocked(firestore.writeBatch).mockReturnValue(mockBatch as unknown as ReturnType<typeof firestore.writeBatch>);
 		// Return empty snapshot for pull step
 		vi.mocked(firestore.getDocs).mockResolvedValue({ docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>);
+		vi.mocked(firestore.getDoc).mockResolvedValue({
+			exists: () => false,
+		} as unknown as Awaited<ReturnType<typeof firestore.getDoc>>);
 		vi.mocked(firestore.query).mockReturnValue({} as unknown as ReturnType<typeof firestore.query>);
 		vi.mocked(firestore.where).mockReturnValue({} as unknown as ReturnType<typeof firestore.where>);
 		vi.mocked(firestore.collection).mockReturnValue({} as unknown as ReturnType<typeof firestore.collection>);
@@ -205,6 +210,9 @@ describe("syncAll — progress counts", () => {
 		vi.mocked(firestore.getDocs).mockResolvedValue(
 			{ docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>
 		);
+		vi.mocked(firestore.getDoc).mockResolvedValue({
+			exists: () => false,
+		} as unknown as Awaited<ReturnType<typeof firestore.getDoc>>);
 		vi.mocked(firestore.query).mockReturnValue({} as unknown as ReturnType<typeof firestore.query>);
 		vi.mocked(firestore.where).mockReturnValue({} as unknown as ReturnType<typeof firestore.where>);
 		vi.mocked(firestore.collection).mockReturnValue(
