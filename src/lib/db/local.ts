@@ -5,6 +5,7 @@ import type {
 	Category,
 	Transaction,
 	DbConfig,
+	DashboardStats,
 	SyncMeta,
 	GoldItem,
 	ZakatCalculation,
@@ -17,6 +18,7 @@ class MizanTrackDB extends Dexie {
 	transactions!: Table<Transaction>;
 	dbConfig!: Table<DbConfig>;
 	syncMeta!: Table<SyncMeta>;
+	dashboardStats!: Table<DashboardStats>;
 	goldItems!: Table<GoldItem>;
 	zakatCalculations!: Table<ZakatCalculation>;
 	zakatPayments!: Table<ZakatPayment>;
@@ -40,6 +42,20 @@ class MizanTrackDB extends Dexie {
 				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt",
 			dbConfig: "id",
 			syncMeta: "id",
+			goldItems: "id, userId, purity, updatedAt, deletedAt",
+			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
+			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
+		});
+
+		// Version 3: Add precomputed dashboard analytics cache
+		this.version(3).stores({
+			accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt",
+			categories: "id, userId, type, updatedAt, deletedAt",
+			transactions:
+				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt",
+			dbConfig: "id",
+			syncMeta: "id",
+			dashboardStats: "id, updatedAt",
 			goldItems: "id, userId, purity, updatedAt, deletedAt",
 			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
 			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
