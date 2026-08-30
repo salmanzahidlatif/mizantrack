@@ -1,20 +1,22 @@
 import {
 	collection,
-	getDocs,
-	writeBatch,
 	doc,
-	query,
-	where,
+	getDocs,
 	getDoc,
-	setDoc,
 	getCountFromServer,
+	query,
+	setDoc,
 	type Firestore,
+	writeBatch,
+	where,
 } from "firebase/firestore";
+
+import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 
 import { getFirestoreForUser } from "./firebase";
 import { db as localDb } from "./local";
 
-import type { Account, Category, Transaction } from "@/types";
+import type { Account, Category, DashboardStats, Transaction } from "@/types";
 
 type SyncableTable = "accounts" | "categories" | "transactions";
 type SyncableRecord = Account | Category | Transaction;
@@ -53,19 +55,29 @@ export async function syncAll(
 	const tables = {} as Record<SyncableTable, SyncTableResult>;
 	let totalPushed = 0;
 	let totalPulled = 0;
+	let pulledCoreChanges = false;
 
 	for (const table of ["accounts", "categories", "transactions"] as SyncableTable[]) {
 		const result = await syncCollection(userId, table, lastSync, firestore);
 		tables[table] = result;
 		totalPushed += result.pushed;
 		totalPulled += result.pulled;
+		if (result.pulled > 0) pulledCoreChanges = true;
 		onProgress?.({ table, ...result, totalPushed, totalPulled });
 	}
 
 	await localDb.syncMeta.put({ id: "lastSync", timestamp: Date.now() });
 
-	// Sync settings/prefs document alongside financial data
+	// Fixed doc-level sync cost after the 3 collection loops:
+	// - settings/prefs: 1 read + up to 1 write
+	// - analytics/dashboard: 1 read
+	// No per-field reads/writes are introduced here.
 	await syncSettingsPrefs(userId, firestore);
+	await syncDashboardStats(userId, firestore);
+
+	if (pulledCoreChanges) {
+		scheduleAnalyticsRecompute(userId);
+	}
 
 	return { synced: true, tables, totalPushed, totalPulled };
 }
@@ -186,6 +198,21 @@ async function syncSettingsPrefs(userId: string, firestore: Firestore): Promise<
 	await setDoc(prefsRef, prefs, { merge: true });
 }
 
+async function syncDashboardStats(userId: string, firestore: Firestore): Promise<void> {
+	const analyticsRef = doc(firestore, `users/${userId}/analytics`, "dashboard");
+	const remoteSnap = await getDoc(analyticsRef);
+	if (!remoteSnap.exists()) return;
+
+	const remote = remoteSnap.data() as DashboardStats;
+	const local = await localDb.dashboardStats.get(userId);
+	const localUpdatedAt = local?.updatedAt ?? 0;
+	const remoteUpdatedAt = remote.updatedAt ?? 0;
+
+	if (remoteUpdatedAt > localUpdatedAt) {
+		await localDb.dashboardStats.put({ ...remote, id: userId });
+	}
+}
+
 export async function getFirestoreUsage(userId: string) {	const firestore = await getFirestoreForUser(userId);
 	if (!firestore) return null;
 
@@ -221,7 +248,7 @@ export interface ClearResult {
 
 /**
  * Batch-delete all documents under /users/{userId}/ in the user's Firestore.
- * Deletes: accounts, categories, transactions, settings/prefs.
+ * Deletes: accounts, categories, transactions, settings/prefs, analytics/dashboard.
  * After deletion resets local syncMeta.lastSync to 0 so next sync re-uploads everything.
  */
 export async function clearFirestoreForUser(
@@ -252,14 +279,20 @@ export async function clearFirestoreForUser(
 
 	// Delete settings/prefs document
 	try {
-		const prefsRef = doc(firestore, `users/${userId}/settings`, "prefs");
-		const prefsSnap = await getDoc(prefsRef);
-		if (prefsSnap.exists()) {
+		const docsToDelete = [
+			{ key: "settings", ref: doc(firestore, `users/${userId}/settings`, "prefs") },
+			{ key: "analytics", ref: doc(firestore, `users/${userId}/analytics`, "dashboard") },
+		];
+
+		for (const { key, ref } of docsToDelete) {
+			const snap = await getDoc(ref);
+			if (!snap.exists()) continue;
+
 			const batch = writeBatch(firestore);
-			batch.delete(prefsRef);
+			batch.delete(ref);
 			await batch.commit();
 			totalDeleted++;
-			collectionCounts["settings"] = 1;
+			collectionCounts[key] = 1;
 		}
 	} catch {
 		// Non-critical — continue
