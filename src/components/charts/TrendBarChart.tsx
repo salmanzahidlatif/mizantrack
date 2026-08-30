@@ -15,14 +15,18 @@ import { SkeletonChart } from "@/components/shared/SkeletonChart";
 import { useMonthlySummary } from "@/hooks/useMonthlySummary";
 import { useFilterStore } from "@/store/filter-store";
 
+import type { DashboardStats } from "@/types";
+
 interface TrendChartProps {
-	userId: string;
+	userId?: string;
 	months?: number;
+	stats?: DashboardStats;
 }
 
-export function TrendChart({ userId, months = 6 }: TrendChartProps) {
+export function TrendChart({ userId, months = 6, stats }: TrendChartProps) {
 	const { activeCurrency } = useFilterStore();
-	const data = useMonthlySummary(userId, months, activeCurrency || undefined);
+	const liveData = useMonthlySummary(userId ?? "", months, activeCurrency || undefined);
+	const data = stats?.perCurrency[activeCurrency || ""]?.trend ?? liveData;
 
 	if (data === undefined) {
 		return <SkeletonChart height={224} />;

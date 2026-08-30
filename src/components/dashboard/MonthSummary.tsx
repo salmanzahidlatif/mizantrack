@@ -1,42 +1,27 @@
 "use client";
 
-import { endOfMonth, startOfMonth } from "date-fns";
-import { useMemo } from "react";
-
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
-import { useTransactions } from "@/hooks/useTransactions";
 import { useFilterStore } from "@/store/filter-store";
 
+import type { DashboardStats } from "@/types";
+
 interface MonthSummaryProps {
-	userId: string;
 	currency?: string;
+	stats?: DashboardStats;
 }
 
-export function MonthSummary({ userId, currency = "PKR" }: MonthSummaryProps) {
+export function MonthSummary({ currency = "PKR", stats }: MonthSummaryProps) {
 	const { activeCurrency } = useFilterStore();
 	// Use the live currency selector if set, otherwise fall back to prop
 	const displayCurrency = activeCurrency || currency;
-
-	const now = new Date();
-	const from = startOfMonth(now).getTime();
-	const to = endOfMonth(now).getTime();
-
-	const transactions = useTransactions(userId, {
-		from,
-		to,
-		currency: activeCurrency || undefined,
-	});
-
-	const { income, expense, net } = useMemo(() => {
-		if (!transactions) return { income: 0, expense: 0, net: 0 };
-		let inc = 0;
-		let exp = 0;
-		for (const t of transactions) {
-			if (t.type === "Income") inc += t.amount;
-			else if (t.type === "Expense") exp += t.amount;
-		}
-		return { income: inc, expense: exp, net: inc - exp };
-	}, [transactions]);
+	const bucket = stats?.perCurrency[activeCurrency || ""] ?? {
+		monthIncome: 0,
+		monthExpense: 0,
+		trend: [],
+	};
+	const income = bucket.monthIncome;
+	const expense = bucket.monthExpense;
+	const net = income - expense;
 
 	const items = [
 		{ label: "Income", amount: income, variant: "positive" as const },
@@ -53,10 +38,10 @@ export function MonthSummary({ userId, currency = "PKR" }: MonthSummaryProps) {
 			{items.map(({ label, amount, variant }) => (
 				<div key={label} className="rounded-xl border border-border/60 bg-card p-3 text-center shadow-[var(--shadow-card)]">
 					<p className="mb-1 text-xs text-muted-foreground">{label}</p>
-					{transactions === undefined ? (
+					{stats === undefined ? (
 						<div className="mx-auto h-5 w-16 animate-pulse rounded bg-muted" />
 					) : (
-			<CurrencyAmount amount={amount} currency={displayCurrency} variant={variant} />
+						<CurrencyAmount amount={amount} currency={displayCurrency} variant={variant} />
 					)}
 				</div>
 			))}

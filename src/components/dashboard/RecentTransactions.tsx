@@ -5,23 +5,21 @@ import { format } from "date-fns";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
-import { useAccounts } from "@/hooks/useAccounts";
-import { useTransactions } from "@/hooks/useTransactions";
 import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
+import type { DashboardStats } from "@/types";
+
 interface RecentTransactionsProps {
-	userId: string;
+	stats?: DashboardStats;
 }
 
-export function RecentTransactions({ userId }: RecentTransactionsProps) {
+export function RecentTransactions({ stats }: RecentTransactionsProps) {
 	const { activeCurrency } = useFilterStore();
-	const transactions = useTransactions(userId, { currency: activeCurrency || undefined });
-	const accounts = useAccounts(userId, { currency: activeCurrency || undefined });
 	const openEditTransaction = useUIStore((s) => s.openEditTransaction);
 	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 
-	if (transactions === undefined || accounts === undefined) {
+	if (stats === undefined) {
 		return (
 			<div className="space-y-2">
 				{Array.from({ length: 4 }).map((_, i) => (
@@ -31,7 +29,9 @@ export function RecentTransactions({ userId }: RecentTransactionsProps) {
 		);
 	}
 
-	const recent = transactions.slice(0, 10);
+	const recent = stats.recent
+		.filter((txn) => !activeCurrency || txn.accountCurrency === activeCurrency)
+		.slice(0, 10);
 
 	if (recent.length === 0) {
 		return (
@@ -46,7 +46,6 @@ export function RecentTransactions({ userId }: RecentTransactionsProps) {
 	return (
 		<div className="rounded-xl border border-border bg-card">
 			{recent.map((txn, idx) => {
-				const account = accounts.find((a) => a.id === txn.accountId);
 				const label = txn.description ?? txn.place ?? txn.type;
 				const isLast = idx === recent.length - 1;
 
@@ -61,12 +60,12 @@ export function RecentTransactions({ userId }: RecentTransactionsProps) {
 						<div className="min-w-0">
 							<p className="truncate text-sm font-medium">{label}</p>
 							<p className="text-xs text-muted-foreground">
-								{format(new Date(txn.date), "d MMM")} · {account?.title ?? "—"}
+								{format(new Date(txn.date), "d MMM")} · {txn.accountTitle}
 							</p>
 						</div>
 						<CurrencyAmount
 							amount={txn.type === "Expense" ? -txn.amount : txn.amount}
-							currency={account?.currency ?? ""}
+							currency={txn.accountCurrency}
 							colorized
 							variant={txn.type === "Transfer" ? "transfer" : undefined}
 						/>
