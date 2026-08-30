@@ -1,6 +1,7 @@
 "use client";
 
 import { FingerprintPattern, KeyRound } from "lucide-react";
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -158,8 +159,12 @@ export function LockScreen({ userId, onUnlock }: LockScreenProps) {
 		<div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-background px-6">
 			{/* Logo + title */}
 			<div className="mb-8 flex flex-col items-center gap-2">
-				<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary">
-					<KeyRound className="h-7 w-7 text-primary-foreground" />
+				<div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-primary">
+					<Image src="/icon-192.png" alt="MizanTrack" width={56} height={56} unoptimized />
+					{/* Lock badge — signals this is the app-lock screen without replacing the brand mark */}
+					<span className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-secondary shadow-sm">
+						<KeyRound className="h-3.5 w-3.5 text-secondary-foreground" />
+					</span>
 				</div>
 				<h1 className="text-xl font-semibold">MizanTrack</h1>
 				<p className="text-sm text-muted-foreground">
