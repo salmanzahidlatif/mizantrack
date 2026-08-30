@@ -12,25 +12,55 @@ const TREND_MONTHS = 6;
 export const ALL_CURRENCIES_KEY = "ALL";
 
 /**
+ * Deep-removes any `undefined` values from an object/array (Firestore's
+ * `setDoc` rejects fields with `undefined`, only `null` or omission is
+ * allowed). Used to clean stale cached `DashboardStats` records that were
+ * computed by an older version of `computeDashboardStats` before optional
+ * fields were properly omitted.
+ */
+function stripUndefinedDeep<T>(value: T): T {
+	if (Array.isArray(value)) {
+		return value.map((item) => stripUndefinedDeep(item)) as unknown as T;
+	}
+
+	if (value !== null && typeof value === "object") {
+		const result: Record<string, unknown> = {};
+		for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+			if (val === undefined) continue;
+			result[key] = stripUndefinedDeep(val);
+		}
+		return result as T;
+	}
+
+	return value;
+}
+
+/**
  * Normalizes a `DashboardStats` object so `perCurrency` never has an empty
  * string key. Older cached records (computed before `ALL_CURRENCIES_KEY` was
  * introduced) may still have `perCurrency[""]` — Firestore's `setDoc` throws
  * "Document fields must not be empty" if pushed as-is. Safe to call on any
  * `DashboardStats`, including already-normalized ones (no-op in that case).
+ * Also strips any stray `undefined` values left over from older cached
+ * records (Firestore rejects those too, with "Unsupported field value").
  */
 export function sanitizeDashboardStats(stats: DashboardStats): DashboardStats {
-	if (!Object.prototype.hasOwnProperty.call(stats.perCurrency, "")) return stats;
+	let result = stats;
 
-	const { "": allCurrencies, ...rest } = stats.perCurrency;
-	if (!allCurrencies) return { ...stats, perCurrency: rest };
+	if (Object.prototype.hasOwnProperty.call(stats.perCurrency, "")) {
+		const { "": allCurrencies, ...rest } = stats.perCurrency;
+		result = allCurrencies
+			? {
+					...stats,
+					perCurrency: {
+						...rest,
+						[ALL_CURRENCIES_KEY]: rest[ALL_CURRENCIES_KEY] ?? allCurrencies,
+					},
+				}
+			: { ...stats, perCurrency: rest };
+	}
 
-	return {
-		...stats,
-		perCurrency: {
-			...rest,
-			[ALL_CURRENCIES_KEY]: rest[ALL_CURRENCIES_KEY] ?? allCurrencies,
-		},
-	};
+	return stripUndefinedDeep(result);
 }
 
 type TrendItem = DashboardStats["perCurrency"][string]["trend"][number];
