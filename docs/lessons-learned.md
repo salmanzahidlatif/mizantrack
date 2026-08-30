@@ -1,5 +1,33 @@
 # Lessons Learned
 
+## 2026-08-30 - `useLiveQuery(...get())` returning `undefined` does not mean "cache missing"
+
+### What Happened
+While wiring the dashboard analytics cache, the first implementation idea was to trigger a recompute whenever `useLiveQuery(() => db.dashboardStats.get(userId))` returned `undefined`.
+
+### Root Cause
+For Dexie live queries, `undefined` is ambiguous: it can mean either **still loading** or **record not found**. Treating it as "missing row" would fire unnecessary cold-start recomputes on every first render, even when a cache row already existed.
+
+### Fix Applied
+`DashboardPageClient` now does a one-shot `db.dashboardStats.get(userId)` check inside an effect. Only a truly missing row triggers the immediate recompute fallback; the live query remains responsible for reactive rendering.
+
+### Prevention
+- Never infer "record absent" purely from a live-query `undefined`
+- When you must distinguish loading vs missing, pair the live query with a direct one-shot Dexie read
+
+## 2026-08-30 - Auto Google sign-in needs a per-tab anti-loop guard
+
+### What Happened
+Adding automatic Google OAuth redirect on the login page would have created a bad loop: if the user backed out of Google's account chooser or denied consent, landing back on `/login` would instantly redirect them straight back to Google again.
+
+### Fix Applied
+- **`src/components/auth/AutoGoogleSignIn.tsx`**: set `sessionStorage["mizantrack:auto-google-signin-attempted"] = "1"` immediately before the first automatic `next-auth/react` `signIn("google")` call.
+- Subsequent visits to `/login` in the same tab skip the automatic redirect, but the visible "Continue with Google" button still works for manual retry.
+
+### Prevention
+- Any automatic auth redirect must include a client-side loop breaker when the identity provider can bounce the user back to the same login route.
+- Use `sessionStorage` rather than a persistent store so the guard resets with a new tab/session.
+
 ## 2026-06-22 - HK import transfer pairing missed 860 pairs due to order + empty date issues
 
 ### What Happened

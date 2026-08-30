@@ -1,7 +1,7 @@
 # Technical Design: MizanTrack
 
-**Document Version:** 1.1  
-**Last Updated:** 2026-05-31  
+**Document Version:** 1.3  
+**Last Updated:** 2026-08-30  
 **Mode:** New Project  
 **PRD Reference:** docs/prd.md  
 **Target Stack:** Next.js 16 · TypeScript · Dexie.js · Firebase Firestore · NextAuth v5 · Zustand · shadcn/ui · Tailwind CSS v4
@@ -52,6 +52,7 @@
 
 | Version | Date       | Author              | Changes                                   |
 |---------|------------|---------------------|-------------------------------------------|
+| 1.3     | 2026-08-30 | Copilot             | Added dashboard analytics cache, sync pull/push flow, and Firestore call-volume notes |
 | 1.2     | 2026-07-04 | Salman Zahid Latif  | Added App Lock, Multi-Currency, UI/UX Polish feature design references |
 | 1.1     | 2026-05-31 | Salman Zahid Latif  | Added Feature Designs section; linked Cloud Sync Onboarding |
 | 1.0     | 2026-05-26 | Salman Zahid Latif  | Phase 1 & 2: Architecture + component design |
@@ -334,6 +335,25 @@ useEffect on mount:
   cleanup: removeEventListener
 ```
 
+### 5.3.1 Dashboard Analytics Cache
+
+Dashboard reads now come from a precomputed `dashboardStats` Dexie row instead of repeated full-table live aggregations. Each user gets one cached object containing:
+
+- `balances` keyed by `accountId`
+- `perCurrency[""]` for the all-currency dashboard
+- `perCurrency[ISO]` for every currency present in non-deleted accounts
+- `recent` as the top 20 non-deleted transactions with denormalized account title/currency
+
+Flow:
+
+1. Account and transaction writes schedule `scheduleAnalyticsRecompute(userId)`.
+2. The scheduler debounces for ~800ms per user, then reads accounts + transactions once and computes balances, current-month totals, 6-month trend buckets, and recent transactions in memory.
+3. The result is stored locally in Dexie `dashboardStats`.
+4. If Firebase is configured, the same recompute performs exactly one best-effort `setDoc(/users/{userId}/analytics/dashboard)` push.
+5. `syncAll` performs one `getDoc` pull of `/users/{userId}/analytics/dashboard`; newer remote cache wins via `updatedAt`, letting a second device render immediately while its own recompute catches up.
+
+This keeps Dexie as the source of truth and turns the dashboard hot path into a single cached-row read.
+
 ### 5.4 State Layer (Zustand)
 
 **Directory:** `src/store/` (currently empty — to be created)
@@ -464,7 +484,7 @@ Computed in `useAccountBalance` hook via `useLiveQuery`. Never stored.
 
 ### 6.2 IndexedDB Schema (Dexie)
 
-Current schema in `src/lib/db/local.ts` — **no changes required for v1.0**.
+Current schema in `src/lib/db/local.ts` now includes the dashboard cache in schema version 3.
 
 ```
 accounts:      id, userId, isArchived, updatedAt, deletedAt
@@ -472,18 +492,27 @@ categories:    id, userId, type, updatedAt, deletedAt
 transactions:  id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt
 dbConfig:      id (userId)
 syncMeta:      id
+dashboardStats:id, updatedAt
 ```
 
-**Compound index consideration:** For the transaction list with heavy filtering (userId + date range + accountId), Dexie's `.where().and()` chain performs adequately up to ~100k records. A compound index `[userId+date]` would improve date-range queries. Add in `version(2)` migration when benchmarks show degradation.
+Dexie migration rule: **only additive changes**. Every schema change increments the version and re-lists all stores. `dashboardStats` was added additively in `version(3)`; existing stores and indexes were preserved unchanged.
 
 ### 6.3 Firestore Schema
 
-Data path: `/users/{userId}/{collection}/{docId}`
+Data paths:
 
-- Collections: `accounts`, `categories`, `transactions`
-- Documents: identical shape to Dexie records (same TypeScript types)
-- Security rules enforce `request.auth.uid == userId` (documented in README)
-- `dbConfig` and `syncMeta` are **local-only** — never synced to Firestore
+- `/users/{userId}/accounts/{accountId}`
+- `/users/{userId}/categories/{categoryId}`
+- `/users/{userId}/transactions/{transactionId}`
+- `/users/{userId}/settings/prefs`
+- `/users/{userId}/analytics/dashboard`
+
+Notes:
+
+- `accounts`, `categories`, and `transactions` remain identical in shape to Dexie records
+- `settings/prefs` sync stays bounded to 1 read + up to 1 write per sync cycle
+- `analytics/dashboard` adds 1 read to `syncAll`; writes happen only on debounced recompute after real local mutations
+- `dbConfig` and `syncMeta` remain **local-only**
 
 ### 6.4 State Shape (Zustand)
 
@@ -541,6 +570,7 @@ interface SyncStore {
 sequenceDiagram
   participant Browser
   participant Middleware as Edge Middleware
+  participant Login as /login Client UI
   participant NextAuth as NextAuth API Route
   participant Google as Google OAuth
 
@@ -548,7 +578,9 @@ sequenceDiagram
   Middleware->>Middleware: Check session cookie
   alt No session
     Middleware-->>Browser: 302 → /login
-    Browser->>NextAuth: POST /api/auth/signin/google
+    Browser->>Login: Render login page
+    Login->>Login: On mount, set sessionStorage auto-sign-in guard
+    Login->>NextAuth: POST /api/auth/signin/google
     NextAuth->>Google: OAuth redirect
     Google-->>NextAuth: Auth code callback
     NextAuth->>NextAuth: Exchange code for tokens
@@ -557,6 +589,8 @@ sequenceDiagram
     Middleware-->>Browser: 200 pass-through
   end
 ```
+
+The `/login` page still performs its authenticated-user redirect on the server via `auth()`. For unauthenticated users, a small client component auto-triggers `signIn("google")` on first mount and stores a per-tab `sessionStorage` flag so a cancelled Google flow does not immediately re-trigger in a loop. The visible "Continue with Google" button always remains available as a manual retry path.
 
 ### 7.2 Transaction Create Flow
 
@@ -734,6 +768,24 @@ With 10k–100k imported HK transactions, a naive DOM render is unusable. Option
 Recharts renders SVG. For monthly aggregations feeding charts, pre-aggregate in the hook before passing to chart:
 - `useMonthlySummary(userId, months)` — aggregates by month client-side from Dexie live query
 - Memoize with `useMemo` on the transactions array reference
+
+### Dashboard Analytics Cache
+
+Before this optimization, opening `/dashboard` triggered:
+
+- one full transactions scan per account card balance
+- one full scan for month summary
+- one full scan for recent transactions
+- one full scan for the 6-month trend
+
+After the cache, the dashboard reads one `dashboardStats` row plus the lightweight `accounts` query used for card metadata and filtering.
+
+Firestore volume also improves at the product level:
+
+- **Before:** auto-sync attempted every 5 minutes = 12 periodic sync attempts/hour/tab, even while hidden
+- **After:** auto-sync attempts every 15 minutes = 4/hour while visible, 0/hour while hidden
+
+The new analytics feature adds only **1 extra read per sync cycle** and **1 write per actual recompute**, not per dashboard view.
 
 ---
 

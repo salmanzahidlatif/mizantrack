@@ -1,8 +1,8 @@
 # Work Plan: MizanTrack
 
-**Version:** 1.0  
-**Last Updated:** 2026-05-26  
-**Status:** ✅ ALL 29 STORIES COMPLETE — All 6 Sprints Done (113 tests passing)  
+**Version:** 1.1  
+**Last Updated:** 2026-08-30  
+**Status:** ✅ ALL 29 STORIES COMPLETE — All 6 Sprints Done (201 tests passing, 1 integration test skipped when fixture is absent)  
 **PRD Reference:** docs/prd.md  
 **Design Reference:** docs/design.md
 
@@ -461,6 +461,12 @@ Commit: `640b218`
 **Status: ✅ COMPLETE (2026-05-26)**  
 Files: `src/components/dashboard/RecentTransactions.tsx`, `src/components/charts/TrendBarChart.tsx`, `src/hooks/useMonthlySummary.ts`  
 Commit: `640b218`
+
+**Post-release optimization (2026-08-30): Dashboard analytics cache**
+- Added Dexie `dashboardStats` cache in schema v3 with precomputed balances, month totals, 6-month trend, and recent transactions.
+- Dashboard now reads cached analytics instead of recomputing against the full local transactions table on every open.
+- Sync pulls `/users/{userId}/analytics/dashboard` once per cycle for warm cache on second devices.
+- Auto-sync interval increased from 5 minutes to 15 minutes and skips hidden tabs to reduce Firestore free-tier usage.
 
 ---
 
