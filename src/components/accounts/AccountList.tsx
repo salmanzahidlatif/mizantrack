@@ -35,9 +35,10 @@ interface AccountCardProps {
 	account: Account;
 	balance: number | undefined;
 	onEdit: (id: string) => void;
+	onSelect: (id: string) => void;
 }
 
-function AccountCard({ account, balance, onEdit }: AccountCardProps) {
+function AccountCard({ account, balance, onEdit, onSelect }: AccountCardProps) {
 	const [confirming, setConfirming] = useState(false);
 
 	async function handleArchiveToggle() {
@@ -65,7 +66,16 @@ function AccountCard({ account, balance, onEdit }: AccountCardProps) {
 
 	return (
 		<div
-			className="relative rounded-xl border border-border bg-card p-4 transition-shadow hover:shadow-sm"
+			role="button"
+			tabIndex={0}
+			onClick={() => onSelect(account.id)}
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault();
+					onSelect(account.id);
+				}
+			}}
+			className="relative cursor-pointer rounded-xl border border-border bg-card p-4 transition-shadow hover:shadow-sm"
 			style={{
 				borderLeftColor: account.color ?? undefined,
 				borderLeftWidth: account.color ? 3 : undefined,
@@ -84,7 +94,11 @@ function AccountCard({ account, balance, onEdit }: AccountCardProps) {
 
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
-						<Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
+						<Button
+							variant="ghost"
+							size="icon"
+							className="h-7 w-7 shrink-0"
+							onClick={(e) => e.stopPropagation()}>
 							<MoreVertical className="h-4 w-4" />
 							<span className="sr-only">Account options</span>
 						</Button>
