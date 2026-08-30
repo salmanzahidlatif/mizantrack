@@ -8,15 +8,17 @@ import {
 	BarChart3,
 	Settings,
 	LogOut,
+	Lock,
 	Moon,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
+import { toast } from "sonner";
 
-import { BottomNav } from "@/components/layout/BottomNav";
 import { AppLockGuard } from "@/components/layout/AppLockGuard";
+import { BottomNav } from "@/components/layout/BottomNav";
 import { CurrencySelector } from "@/components/layout/CurrencySelector";
 import { SyncStatusBadge } from "@/components/layout/SyncStatusBadge";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
@@ -38,8 +40,9 @@ import { db } from "@/lib/db/local";
 import { seedDefaultCategories } from "@/lib/db/seed";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
+import { useLockStore } from "@/store/lock-store";
 import { useSyncStore } from "@/store/sync-store";
-import { toast } from "sonner";
+
 
 import type { Session } from "next-auth";
 
@@ -117,6 +120,9 @@ export function AppShell({ user, children }: AppShellProps) {
 
 	useAutoSync(user?.id ?? "");
 
+	const canLock = Boolean(config?.appLockEnabled && config?.pinHash);
+	const handleLockNow = () => useLockStore.getState().lock();
+
 	// Validate / seed activeCurrency against enabledCurrencies from config.
 	// Runs whenever config changes (e.g. after sync pulls new settings from Firebase).
 	// - If activeCurrency is already valid → keep it (localStorage value wins)
@@ -188,6 +194,12 @@ export function AppShell({ user, children }: AppShellProps) {
 									</div>
 								</DropdownMenuLabel>
 								<DropdownMenuSeparator />
+								{canLock && (
+									<DropdownMenuItem onSelect={handleLockNow} className="gap-2">
+										<Lock className="h-4 w-4" />
+										Lock now
+									</DropdownMenuItem>
+								)}
 								<DropdownMenuItem asChild>
 									<form action={signOutAction}>
 										<button
@@ -239,6 +251,15 @@ export function AppShell({ user, children }: AppShellProps) {
 								</button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent side="top" align="start" className="w-56">
+								{canLock && (
+									<>
+										<DropdownMenuItem onSelect={handleLockNow} className="gap-2">
+											<Lock className="h-4 w-4" />
+											Lock now
+										</DropdownMenuItem>
+										<DropdownMenuSeparator />
+									</>
+								)}
 								<DropdownMenuItem asChild>
 									<form action={signOutAction}>
 										<button
