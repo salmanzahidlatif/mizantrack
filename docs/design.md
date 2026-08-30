@@ -1,6 +1,6 @@
 # Technical Design: MizanTrack
 
-**Document Version:** 1.3  
+**Document Version:** 1.4  
 **Last Updated:** 2026-08-30  
 **Mode:** New Project  
 **PRD Reference:** docs/prd.md  
@@ -52,6 +52,7 @@
 
 | Version | Date       | Author              | Changes                                   |
 |---------|------------|---------------------|-------------------------------------------|
+| 1.4     | 2026-08-30 | Copilot             | Switched syncMeta from one global watermark to per-table watermarks to avoid redundant re-push after partial sync failure |
 | 1.3     | 2026-08-30 | Copilot             | Added dashboard analytics cache, sync pull/push flow, and Firestore call-volume notes |
 | 1.2     | 2026-07-04 | Salman Zahid Latif  | Added App Lock, Multi-Currency, UI/UX Polish feature design references |
 | 1.1     | 2026-05-31 | Salman Zahid Latif  | Added Feature Designs section; linked Cloud Sync Onboarding |
@@ -300,7 +301,7 @@ graph LR
 | `useTransactions(userId, filters)` | `Transaction[]` live | compound filter (account, category, type, date range) |
 | `useAccountBalance(accountId)` | `number` live | opening + sum of txns |
 | `useDbConfig(userId)` | `DbConfig \| undefined` live | `db.dbConfig.get(userId)` |
-| `useSyncMeta()` | `SyncMeta \| undefined` live | `db.syncMeta.get('lastSync')` |
+| `useSyncMeta()` | `SyncMeta \| undefined` live | derived latest timestamp across `lastSync:{table}` rows, falling back to legacy `lastSync` |
 
 **Mutation pattern — all mutations follow this structure:**
 
@@ -321,6 +322,9 @@ No optimistic updates needed — Dexie writes are synchronous from the UI's pers
 Already implemented. Key behaviors:
 - `getFirestoreForUser(userId)` — lazy-initializes per-user Firebase app from stored config; cached in module-level Map
 - `syncAll(userId)` — bidirectional sync for accounts, categories, transactions; last-write-wins on `updatedAt`
+- `syncMeta` now stores **per-table watermarks**: `lastSync:accounts`, `lastSync:categories`, `lastSync:transactions`
+- Each table falls back to the legacy global `lastSync` row only until its own per-table row exists, avoiding a duplicate full-history resync for existing users
+- Each table watermark advances immediately after that table's push+pull succeeds, so if a later table fails (for example due to Firestore quota exhaustion) already-finished tables are not redundantly re-pushed on retry
 - Batches writes in chunks of 499 (Firestore limit is 500 per batch)
 - Returns `{ synced: boolean, reason? }` for UI feedback
 
@@ -385,7 +389,7 @@ This keeps Dexie as the source of truth and turns the dashboard hot path into a 
 | State | Type | Purpose |
 |---|---|---|
 | `syncing` | `boolean` | Spinner state |
-| `lastSync` | `number \| null` | Timestamp from syncMeta |
+| `lastSync` | `number \| null` | Last successful sync time stored in Zustand for UI feedback |
 | `error` | `string \| null` | Last sync error message |
 | `triggerSync` | `() => Promise<void>` | Action: calls syncAll + updates state |
 
@@ -617,7 +621,7 @@ sequenceDiagram
     Hooks-->>Drawer: Close drawer (success)
     Hooks-->>User: TransactionList + BalanceCards update reactively
     Note over Sync: Next online event or manual trigger
-    Sync->>Dexie: Query records where updatedAt > lastSync
+    Sync->>Dexie: Query records where updatedAt > lastSync:table
     Sync->>Sync: Push to Firestore
   end
 ```
@@ -640,13 +644,16 @@ sequenceDiagram
   else sync enabled
     SyncHook->>SyncStore: setSyncing(true)
     SyncHook->>SyncLib: syncAll(userId)
-    SyncLib->>Dexie: Query changed since lastSync
-    SyncLib->>Firestore: writeBatch (push local changes)
-    SyncLib->>Firestore: getDocs where updatedAt > lastSync (pull)
-    loop For each remote record
-      SyncLib->>Dexie: Compare updatedAt, put if remote is newer
+    loop For each core table (accounts, categories, transactions)
+      SyncLib->>Dexie: Read lastSync:table (fallback to legacy lastSync once)
+      SyncLib->>Dexie: Query changed since lastSync:table
+      SyncLib->>Firestore: writeBatch (push local changes)
+      SyncLib->>Firestore: getDocs where updatedAt > lastSync:table (pull)
+      loop For each remote record
+        SyncLib->>Dexie: Compare updatedAt, put if remote is newer
+      end
+      SyncLib->>Dexie: syncMeta.put({ id: lastSync:table, timestamp: syncStartedAt })
     end
-    SyncLib->>Dexie: syncMeta.put({ lastSync: Date.now() })
     SyncLib-->>SyncHook: { synced: true }
     SyncHook->>SyncStore: setSyncing(false), setLastSync(ts)
     SyncStore-->>Browser: SyncStatusBadge updates

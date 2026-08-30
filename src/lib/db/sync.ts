@@ -11,6 +11,7 @@ import {
 	where,
 } from "firebase/firestore";
 
+import { sanitizeDashboardStats } from "@/lib/analytics/computeDashboardStats";
 import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 
 import { getFirestoreForUser } from "./firebase";
@@ -20,6 +21,29 @@ import type { Account, Category, DashboardStats, Transaction } from "@/types";
 
 type SyncableTable = "accounts" | "categories" | "transactions";
 type SyncableRecord = Account | Category | Transaction;
+
+export const FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT = 20_000;
+export const FIRESTORE_FREE_TIER_DAILY_READ_LIMIT = 50_000;
+export const CORE_SYNC_TABLES = ["accounts", "categories", "transactions"] as const;
+
+function formatFirestoreLimit(limit: number): string {
+	return new Intl.NumberFormat("en-US").format(limit);
+}
+
+export const FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE =
+	`Sync failed: Firestore daily quota exceeded. Free tier allows ${formatFirestoreLimit(FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT)} writes and ${formatFirestoreLimit(FIRESTORE_FREE_TIER_DAILY_READ_LIMIT)} reads per day. Sync will resume tomorrow.`;
+
+function getPerTableSyncKey(table: SyncableTable): string {
+	return `lastSync:${table}`;
+}
+
+async function getTableLastSync(table: SyncableTable): Promise<number> {
+	const perTableMeta = await localDb.syncMeta.get(getPerTableSyncKey(table));
+	if (perTableMeta) return perTableMeta.timestamp;
+
+	const legacyMeta = await localDb.syncMeta.get("lastSync");
+	return legacyMeta?.timestamp ?? 0;
+}
 
 export interface SyncTableResult {
 	pushed: number;
@@ -49,16 +73,16 @@ export async function syncAll(
 	const firestore = await getFirestoreForUser(userId);
 	if (!firestore) return { synced: false, reason: "no-config", totalPushed: 0, totalPulled: 0 };
 
-	const meta = await localDb.syncMeta.get("lastSync");
-	const lastSync = meta?.timestamp ?? 0;
-
 	const tables = {} as Record<SyncableTable, SyncTableResult>;
 	let totalPushed = 0;
 	let totalPulled = 0;
 	let pulledCoreChanges = false;
 
-	for (const table of ["accounts", "categories", "transactions"] as SyncableTable[]) {
+	for (const table of CORE_SYNC_TABLES) {
+		const syncStartedAt = Date.now();
+		const lastSync = await getTableLastSync(table);
 		const result = await syncCollection(userId, table, lastSync, firestore);
+		await localDb.syncMeta.put({ id: getPerTableSyncKey(table), timestamp: syncStartedAt });
 		tables[table] = result;
 		totalPushed += result.pushed;
 		totalPulled += result.pulled;
@@ -66,11 +90,9 @@ export async function syncAll(
 		onProgress?.({ table, ...result, totalPushed, totalPulled });
 	}
 
-	await localDb.syncMeta.put({ id: "lastSync", timestamp: Date.now() });
-
 	// Fixed doc-level sync cost after the 3 collection loops:
 	// - settings/prefs: 1 read + up to 1 write
-	// - analytics/dashboard: 1 read
+	// - analytics/dashboard: 1 read + up to 1 write
 	// No per-field reads/writes are introduced here.
 	await syncSettingsPrefs(userId, firestore);
 	await syncDashboardStats(userId, firestore);
@@ -200,25 +222,32 @@ async function syncSettingsPrefs(userId: string, firestore: Firestore): Promise<
 
 async function syncDashboardStats(userId: string, firestore: Firestore): Promise<void> {
 	const analyticsRef = doc(firestore, `users/${userId}/analytics`, "dashboard");
-	const remoteSnap = await getDoc(analyticsRef);
-	if (!remoteSnap.exists()) return;
-
-	const remote = remoteSnap.data() as DashboardStats;
 	const local = await localDb.dashboardStats.get(userId);
-	const localUpdatedAt = local?.updatedAt ?? 0;
-	const remoteUpdatedAt = remote.updatedAt ?? 0;
+	const remoteSnap = await getDoc(analyticsRef);
 
-	if (remoteUpdatedAt > localUpdatedAt) {
-		await localDb.dashboardStats.put({ ...remote, id: userId });
+	if (remoteSnap.exists()) {
+		const remote = remoteSnap.data() as DashboardStats;
+		const localUpdatedAt = local?.updatedAt ?? 0;
+		const remoteUpdatedAt = remote.updatedAt ?? 0;
+
+		if (remoteUpdatedAt > localUpdatedAt) {
+			await localDb.dashboardStats.put(sanitizeDashboardStats({ ...remote, id: userId }));
+			return;
+		}
+	}
+
+	if (local) {
+		await setDoc(analyticsRef, sanitizeDashboardStats(local));
 	}
 }
 
-export async function getFirestoreUsage(userId: string) {	const firestore = await getFirestoreForUser(userId);
+export async function getFirestoreUsage(userId: string) {
+	const firestore = await getFirestoreForUser(userId);
 	if (!firestore) return null;
 
 	try {
 		const counts = await Promise.all(
-			["transactions", "accounts", "categories"].map(async (col) => {
+			CORE_SYNC_TABLES.map(async (col) => {
 				const snap = await getCountFromServer(collection(firestore, `users/${userId}/${col}`));
 				return { col, count: snap.data().count };
 			})
@@ -249,7 +278,7 @@ export interface ClearResult {
 /**
  * Batch-delete all documents under /users/{userId}/ in the user's Firestore.
  * Deletes: accounts, categories, transactions, settings/prefs, analytics/dashboard.
- * After deletion resets local syncMeta.lastSync to 0 so next sync re-uploads everything.
+ * After deletion resets local syncMeta watermarks to 0 so next sync re-uploads everything.
  */
 export async function clearFirestoreForUser(
 	userId: string,
@@ -258,11 +287,10 @@ export async function clearFirestoreForUser(
 	const firestore = await getFirestoreForUser(userId);
 	if (!firestore) throw new Error("Firebase not configured.");
 
-	const COLLECTIONS = ["accounts", "categories", "transactions"];
 	let totalDeleted = 0;
 	const collectionCounts: Record<string, number> = {};
 
-	for (const col of COLLECTIONS) {
+	for (const col of CORE_SYNC_TABLES) {
 		const snap = await getDocs(collection(firestore, `users/${userId}/${col}`));
 		let count = 0;
 		for (let i = 0; i < snap.docs.length; i += 499) {
@@ -298,8 +326,11 @@ export async function clearFirestoreForUser(
 		// Non-critical — continue
 	}
 
-	// Reset local sync timestamp so next sync re-uploads everything
-	await localDb.syncMeta.put({ id: "lastSync", timestamp: 0 });
+	// Reset both legacy and per-table watermarks so next sync re-uploads everything.
+	await localDb.syncMeta.bulkPut([
+		{ id: "lastSync", timestamp: 0 },
+		...CORE_SYNC_TABLES.map((table) => ({ id: getPerTableSyncKey(table), timestamp: 0 })),
+	]);
 
 	return { deleted: totalDeleted, collections: collectionCounts };
 }

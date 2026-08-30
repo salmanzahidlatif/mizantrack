@@ -1,5 +1,22 @@
 # Lessons Learned
 
+## 2026-08-30 - One shared sync watermark can silently burn Firestore quota after partial failure
+
+### What Happened
+`syncAll` originally used one global `syncMeta.lastSync` timestamp for accounts, categories, and transactions, and only advanced it after all three tables finished. If a large sync hit Firestore `resource-exhausted` partway through transactions, the whole run threw before the watermark moved.
+
+### Root Cause
+That meant the next retry reused the same stale watermark for every table. Accounts and categories, which had already synced successfully, were treated as "changed since lastSync" again and re-pushed unnecessarily. On a free-tier Firebase project, those duplicate writes burn the same daily quota that the app needs to finish the remaining backlog.
+
+### Fix Applied
+- `src/lib/db/sync.ts` now stores per-table watermarks in Dexie `syncMeta` using `lastSync:accounts`, `lastSync:categories`, and `lastSync:transactions`.
+- Each table falls back to the legacy `lastSync` row only until its own per-table row exists, so existing users do not pay for a wasteful full-history resync.
+- Each table watermark is written immediately after that table's push+pull succeeds, so a later failure only retries the unfinished table.
+
+### Prevention
+- Never share one retry watermark across independently syncable collections when partial success is possible.
+- When migrating watermark keys, always preserve a fallback path from the legacy key; resetting everyone to `0` would cause the exact duplicate-cost resync this change is meant to avoid.
+
 ## 2026-08-30 - `useLiveQuery(...get())` returning `undefined` does not mean "cache missing"
 
 ### What Happened

@@ -9,7 +9,12 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/lib/db/local";
-import { getFirestoreUsage, syncAll } from "@/lib/db/sync";
+import {
+	CORE_SYNC_TABLES,
+	FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE,
+	getFirestoreUsage,
+	syncAll,
+} from "@/lib/db/sync";
 import { useSyncStore } from "@/store/sync-store";
 // Mock the firebase module so tests don't need a real Firebase project
 vi.mock("@/lib/db/firebase", () => ({
@@ -28,6 +33,47 @@ vi.mock("firebase/firestore", () => ({
 	query: vi.fn(),
 	where: vi.fn(),
 }));
+
+function createEmptyFirestoreMocks() {
+	const mockCommit = vi.fn().mockResolvedValue(undefined);
+	const mockSet = vi.fn();
+
+	return {
+		mockCommit,
+		mockSet,
+		batch: { set: mockSet, commit: mockCommit },
+	};
+}
+
+async function configureEmptySyncMocks() {
+	const { getFirestoreForUser } = await import("@/lib/db/firebase");
+	const firestore = await import("firebase/firestore");
+	const { batch, mockCommit, mockSet } = createEmptyFirestoreMocks();
+
+	vi.mocked(getFirestoreForUser).mockResolvedValue(
+		{} as Awaited<ReturnType<typeof getFirestoreForUser>>
+	);
+	vi.mocked(firestore.writeBatch).mockReturnValue(
+		batch as unknown as ReturnType<typeof firestore.writeBatch>
+	);
+	vi.mocked(firestore.getDocs).mockResolvedValue(
+		{ docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>
+	);
+	vi.mocked(firestore.getDoc).mockResolvedValue({
+		exists: () => false,
+	} as unknown as Awaited<ReturnType<typeof firestore.getDoc>>);
+	vi.mocked(firestore.query).mockImplementation(((ref: unknown) => ref) as typeof firestore.query);
+	vi.mocked(firestore.where).mockReturnValue({} as unknown as ReturnType<typeof firestore.where>);
+	vi.mocked(firestore.collection).mockImplementation(
+		((_db: unknown, path: string) => ({ path })) as typeof firestore.collection
+	);
+
+	return { firestore, mockCommit, mockSet };
+}
+
+beforeEach(() => {
+	vi.clearAllMocks();
+});
 
 describe("getFirestoreUsage", () => {
 	it("getFirestoreUsage_NoConfig_ReturnsNull", async () => {
@@ -79,7 +125,7 @@ describe("syncAll — strip undefined fields", () => {
 
 	beforeEach(async () => {
 		await db.transactions.where("userId").equals(USER_ID).delete();
-		await db.syncMeta.delete("lastSync");
+		await db.syncMeta.bulkDelete(["lastSync", ...CORE_SYNC_TABLES.map((table) => `lastSync:${table}`)]);
 	});
 
 	it("syncAll_TransactionWithUndefinedCategoryId_DoesNotPassUndefinedToFirestore", async () => {
@@ -99,11 +145,11 @@ describe("syncAll — strip undefined fields", () => {
 			// categoryId intentionally absent (as imported from HK)
 		});
 
-		const mockCommit = vi.fn().mockResolvedValue(undefined);
 		const capturedDocs: Record<string, unknown>[] = [];
-		const mockSet = vi.fn((ref: unknown, data: unknown) => {
+		const mockSet = vi.fn((_ref: unknown, data: unknown) => {
 			capturedDocs.push(data as Record<string, unknown>);
 		});
+		const mockCommit = vi.fn().mockResolvedValue(undefined);
 		const mockBatch = { set: mockSet, commit: mockCommit };
 
 		const { getFirestoreForUser } = await import("@/lib/db/firebase");
@@ -136,6 +182,250 @@ describe("syncAll — strip undefined fields", () => {
 	});
 });
 
+describe("syncAll — per-table watermarks", () => {
+	const USER_ID = "sync-watermark-test-user";
+
+	beforeEach(async () => {
+		await db.accounts.where("userId").equals(USER_ID).delete();
+		await db.categories.where("userId").equals(USER_ID).delete();
+		await db.transactions.where("userId").equals(USER_ID).delete();
+		await db.syncMeta.bulkDelete(["lastSync", ...CORE_SYNC_TABLES.map((table) => `lastSync:${table}`)]);
+	});
+
+	it("syncAll_PartialFailure_DoesNotRepushSucceededTablesOnRetry", async () => {
+		await db.accounts.put({
+			id: "acc-1",
+			userId: USER_ID,
+			title: "Cash",
+			openingBalance: 0,
+			currency: "PKR",
+			isArchived: false,
+			updatedAt: 1_000,
+		});
+		await db.categories.put({
+			id: "cat-1",
+			userId: USER_ID,
+			title: "Food",
+			type: "Expense",
+			updatedAt: 1_000,
+		});
+		await db.transactions.put({
+			id: "txn-1",
+			userId: USER_ID,
+			type: "Expense",
+			date: 1_000,
+			amount: 100,
+			accountId: "acc-1",
+			categoryId: "cat-1",
+			updatedAt: 1_000,
+		});
+
+		const { getFirestoreForUser } = await import("@/lib/db/firebase");
+		const firestore = await import("firebase/firestore");
+		const firstAttemptWrites: Record<string, number> = {
+			accounts: 0,
+			categories: 0,
+			transactions: 0,
+		};
+		const secondAttemptWrites: Record<string, number> = {
+			accounts: 0,
+			categories: 0,
+			transactions: 0,
+		};
+		let attempt = 1;
+		const batchState = new WeakMap<object, { table: keyof typeof firstAttemptWrites; writes: number }>();
+
+		vi.mocked(getFirestoreForUser).mockResolvedValue(
+			{} as Awaited<ReturnType<typeof getFirestoreForUser>>
+		);
+		vi.mocked(firestore.collection).mockImplementation(
+			((_db: unknown, path: string) => ({ path })) as typeof firestore.collection
+		);
+		vi.mocked(firestore.query).mockImplementation(((ref: unknown) => ref) as typeof firestore.query);
+		vi.mocked(firestore.where).mockReturnValue({} as unknown as ReturnType<typeof firestore.where>);
+		vi.mocked(firestore.getDocs).mockResolvedValue(
+			{ docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>
+		);
+		vi.mocked(firestore.getDoc).mockResolvedValue({
+			exists: () => false,
+		} as unknown as Awaited<ReturnType<typeof firestore.getDoc>>);
+		vi.mocked(firestore.doc).mockImplementation(((_db: unknown, ...segments: string[]) => ({
+			path: segments.join("/"),
+		})) as typeof firestore.doc);
+		vi.mocked(firestore.writeBatch).mockImplementation((() => {
+			const batch = {
+				set: vi.fn((ref: { path: string }) => {
+					const [, , tableSegment] = ref.path.split("/");
+					if (!tableSegment) {
+						throw new Error(`Unexpected Firestore path: ${ref.path}`);
+					}
+					const table = tableSegment as keyof typeof firstAttemptWrites;
+					const current = batchState.get(batch);
+					if (current) {
+						current.writes += 1;
+					} else {
+						batchState.set(batch, { table, writes: 1 });
+					}
+				}),
+				commit: vi.fn(async () => {
+					const current = batchState.get(batch);
+					if (!current) return;
+					const writes = current.writes;
+					if (attempt === 1) {
+						firstAttemptWrites[current.table] = (firstAttemptWrites[current.table] ?? 0) + writes;
+						if (current.table === "transactions") {
+							throw Object.assign(new Error("Quota exceeded."), {
+								code: "resource-exhausted",
+								name: "FirebaseError",
+							});
+						}
+					} else {
+						secondAttemptWrites[current.table] = (secondAttemptWrites[current.table] ?? 0) + writes;
+					}
+				}),
+			};
+			return batch as unknown as ReturnType<typeof firestore.writeBatch>;
+		}) as typeof firestore.writeBatch);
+
+		await expect(syncAll(USER_ID)).rejects.toMatchObject({ code: "resource-exhausted" });
+		expect(firstAttemptWrites).toEqual({ accounts: 1, categories: 1, transactions: 1 });
+		expect(await db.syncMeta.get("lastSync:accounts")).toBeTruthy();
+		expect(await db.syncMeta.get("lastSync:categories")).toBeTruthy();
+		expect(await db.syncMeta.get("lastSync:transactions")).toBeUndefined();
+
+		attempt = 2;
+		await syncAll(USER_ID);
+
+		expect(secondAttemptWrites).toEqual({ accounts: 0, categories: 0, transactions: 1 });
+	});
+
+	it("syncAll_LegacyGlobalLastSync_SeedsPerTableWatermarksWithoutMassResync", async () => {
+		const legacyLastSync = 5_000;
+		await db.syncMeta.put({ id: "lastSync", timestamp: legacyLastSync });
+		await db.accounts.put({
+			id: "acc-old",
+			userId: USER_ID,
+			title: "Old Cash",
+			openingBalance: 0,
+			currency: "PKR",
+			isArchived: false,
+			updatedAt: legacyLastSync - 100,
+		});
+		await db.categories.put({
+			id: "cat-old",
+			userId: USER_ID,
+			title: "Old Food",
+			type: "Expense",
+			updatedAt: legacyLastSync - 100,
+		});
+		await db.transactions.put({
+			id: "txn-old",
+			userId: USER_ID,
+			type: "Expense",
+			date: legacyLastSync - 100,
+			amount: 50,
+			accountId: "acc-old",
+			categoryId: "cat-old",
+			updatedAt: legacyLastSync - 100,
+		});
+
+		const { mockSet } = await configureEmptySyncMocks();
+
+		await syncAll(USER_ID);
+
+		expect(mockSet).not.toHaveBeenCalled();
+		for (const table of CORE_SYNC_TABLES) {
+			const meta = await db.syncMeta.get(`lastSync:${table}`);
+			expect(meta?.timestamp).toBeGreaterThanOrEqual(legacyLastSync);
+		}
+	});
+});
+
+describe("syncAll — dashboard stats sync", () => {
+	const USER_ID = "sync-dashboard-stats-test-user";
+
+	beforeEach(async () => {
+		await db.dashboardStats.delete(USER_ID);
+	});
+
+	it("syncAll_LocalDashboardStatsWithMissingRemote_PushesStatsToFirestore", async () => {
+		const localStats = {
+			id: USER_ID,
+			updatedAt: 10_000,
+			balances: { "acc-1": 123 },
+			perCurrency: {
+				PKR: {
+					monthIncome: 100,
+					monthExpense: 50,
+					trend: [],
+				},
+			},
+			recent: [],
+		};
+		await db.dashboardStats.put(localStats);
+
+		const { firestore } = await configureEmptySyncMocks();
+		const setDocSpy = vi.mocked(firestore.setDoc).mockResolvedValue(undefined);
+
+		await syncAll(USER_ID);
+
+		expect(setDocSpy).toHaveBeenCalledWith(
+			expect.objectContaining({ path: `users/${USER_ID}/analytics/dashboard` }),
+			localStats
+		);
+	});
+
+	it("syncAll_RemoteDashboardStatsNewerThanLocal_PullsStatsWithoutRepushing", async () => {
+		await db.dashboardStats.put({
+			id: USER_ID,
+			updatedAt: 5_000,
+			balances: { "acc-1": 10 },
+			perCurrency: {
+				PKR: {
+					monthIncome: 10,
+					monthExpense: 5,
+					trend: [],
+				},
+			},
+			recent: [],
+		});
+
+		const remoteStats = {
+			id: USER_ID,
+			updatedAt: 9_000,
+			balances: { "acc-1": 999 },
+			perCurrency: {
+				PKR: {
+					monthIncome: 200,
+					monthExpense: 100,
+					trend: [],
+				},
+			},
+			recent: [],
+		};
+
+		const { firestore } = await configureEmptySyncMocks();
+		vi.mocked(firestore.getDoc).mockImplementation(async (ref: { path?: string }) => {
+			if (ref.path === `users/${USER_ID}/analytics/dashboard`) {
+				return {
+					exists: () => true,
+					data: () => remoteStats,
+				} as unknown as Awaited<ReturnType<typeof firestore.getDoc>>;
+			}
+
+			return {
+				exists: () => false,
+			} as unknown as Awaited<ReturnType<typeof firestore.getDoc>>;
+		});
+		const setDocSpy = vi.mocked(firestore.setDoc).mockResolvedValue(undefined);
+
+		await syncAll(USER_ID);
+
+		expect(await db.dashboardStats.get(USER_ID)).toEqual(remoteStats);
+		expect(setDocSpy).not.toHaveBeenCalled();
+	});
+});
+
 // ─── triggerSync: error code handling ────────────────────────────────────────
 
 describe("triggerSync — error code messages", () => {
@@ -157,7 +447,7 @@ describe("triggerSync — error code messages", () => {
 
 		const { syncing, error } = useSyncStore.getState();
 		expect(syncing).toBe(false);
-		expect(error).toContain("quota exceeded");
+		expect(error).toBe(FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE);
 	});
 
 	it("triggerSync_PermissionDenied_SurfacesFriendlyPermissionMessage", async () => {
@@ -195,29 +485,8 @@ describe("syncAll — progress counts", () => {
 		// After a successful sync, lastSyncResult in the store must reflect the
 		// pushed/pulled counts returned by syncAll.
 		const { getFirestoreForUser } = await import("@/lib/db/firebase");
-		const firestore = await import("firebase/firestore");
-
-		vi.mocked(getFirestoreForUser).mockResolvedValue(
-			{} as Awaited<ReturnType<typeof getFirestoreForUser>>
-		);
-
-		const mockCommit = vi.fn().mockResolvedValue(undefined);
-		const mockSet = vi.fn();
-		vi.mocked(firestore.writeBatch).mockReturnValue({
-			set: mockSet,
-			commit: mockCommit,
-		} as unknown as ReturnType<typeof firestore.writeBatch>);
-		vi.mocked(firestore.getDocs).mockResolvedValue(
-			{ docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>
-		);
-		vi.mocked(firestore.getDoc).mockResolvedValue({
-			exists: () => false,
-		} as unknown as Awaited<ReturnType<typeof firestore.getDoc>>);
-		vi.mocked(firestore.query).mockReturnValue({} as unknown as ReturnType<typeof firestore.query>);
-		vi.mocked(firestore.where).mockReturnValue({} as unknown as ReturnType<typeof firestore.where>);
-		vi.mocked(firestore.collection).mockReturnValue(
-			{} as unknown as ReturnType<typeof firestore.collection>
-		);
+		vi.mocked(getFirestoreForUser).mockReset();
+		await configureEmptySyncMocks();
 
 		useSyncStore.setState({ syncing: false, error: null, lastSync: null, lastSyncResult: null });
 

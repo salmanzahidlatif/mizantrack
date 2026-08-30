@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { syncAll } from "@/lib/db/sync";
+import { FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE, syncAll } from "@/lib/db/sync";
 
 import type { SyncResult } from "@/lib/db/sync";
 
@@ -65,8 +65,7 @@ export const useSyncStore = create<SyncStore>((set) => ({
 			if (code === "permission-denied") {
 				message = "Sync failed: permission denied. Check your Firestore security rules.";
 			} else if (code === "resource-exhausted") {
-				message =
-					"Sync failed: Firestore daily quota exceeded. Free tier allows 20k writes and 50k reads per day. Sync will resume tomorrow.";
+				message = FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE;
 				// Suppress auto-sync until midnight to avoid hammering the quota
 				suppressAutoSyncUntil = nextMidnightMs();
 			} else {

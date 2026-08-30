@@ -14,6 +14,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { useDbConfig } from "@/hooks/useDbConfig";
+import { FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT } from "@/lib/db/sync";
 import { importHysabKytab } from "@/lib/import/hysabKytab";
 
 interface ImportPanelProps {
@@ -29,6 +30,14 @@ interface ImportResult {
 	autoCreatedAccounts: string[];
 }
 
+// Only surface the quota note once an import is large enough to consume a
+// meaningful chunk of the 20,000-write free tier in a single follow-up sync.
+const IMPORT_SYNC_QUOTA_NOTE_THRESHOLD = 2_000;
+
+function formatCount(value: number): string {
+	return new Intl.NumberFormat("en-US").format(value);
+}
+
 export function ImportPanel({ userId }: ImportPanelProps) {
 	const config = useDbConfig(userId);
 	const enabledCurrencies = config?.enabledCurrencies ?? (config?.currency ? [config.currency] : ["PKR"]);
@@ -40,6 +49,14 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 	const [pendingFile, setPendingFile] = useState<File | null>(null);
 	const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
 	const [selectedCurrency, setSelectedCurrency] = useState<string>("PKR");
+	const totalImportedRecords = result
+		? result.accounts + result.categories + result.transactions
+		: 0;
+	const showQuotaNote = totalImportedRecords >= IMPORT_SYNC_QUOTA_NOTE_THRESHOLD;
+	const quotaPercent = Math.min(
+		100,
+		Math.round((totalImportedRecords / FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT) * 100)
+	);
 
 	async function runImport(file: File, targetCurrency?: string) {
 		setImporting(true);
@@ -155,6 +172,16 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 							<p className="text-xs text-muted-foreground">
 								Re-importing the same file is safe — transactions are deduplicated by row.
 							</p>
+							{showQuotaNote && (
+								<p className="text-xs text-muted-foreground">
+									This import created {formatCount(totalImportedRecords)} records. Your next
+									sync will push up to {formatCount(totalImportedRecords)} documents to
+									Firebase — that&apos;s about {quotaPercent}% of the daily{" "}
+									{formatCount(FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT)}-write free-tier
+									limit. If it&apos;s a lot, syncing may take more than one day; that&apos;s
+									expected and safe.
+								</p>
+							)}
 							{result.autoCreatedAccounts?.length > 0 && (
 								<p className="text-xs text-amber-600 dark:text-amber-400">
 									Auto-created (archived): {result.autoCreatedAccounts.join(", ")}

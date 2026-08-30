@@ -1,6 +1,7 @@
 "use client";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
+import { ALL_CURRENCIES_KEY } from "@/lib/analytics/computeDashboardStats";
 import { useFilterStore } from "@/store/filter-store";
 
 import type { DashboardStats } from "@/types";
@@ -14,7 +15,7 @@ export function MonthSummary({ currency = "PKR", stats }: MonthSummaryProps) {
 	const { activeCurrency } = useFilterStore();
 	// Use the live currency selector if set, otherwise fall back to prop
 	const displayCurrency = activeCurrency || currency;
-	const bucket = stats?.perCurrency[activeCurrency || ""] ?? {
+	const bucket = stats?.perCurrency[activeCurrency || ALL_CURRENCIES_KEY] ?? {
 		monthIncome: 0,
 		monthExpense: 0,
 		trend: [],

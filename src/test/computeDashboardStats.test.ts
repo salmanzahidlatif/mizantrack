@@ -3,7 +3,7 @@ import "fake-indexeddb/auto";
 import { format, startOfMonth, subMonths } from "date-fns";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { computeDashboardStats } from "@/lib/analytics/computeDashboardStats";
+import { ALL_CURRENCIES_KEY, computeDashboardStats } from "@/lib/analytics/computeDashboardStats";
 import { db } from "@/lib/db/local";
 
 const USER_ID = "dashboard-cache-user";
@@ -99,7 +99,7 @@ describe("computeDashboardStats", () => {
 		const stats = await computeDashboardStats(USER_ID);
 		const currentLabel = format(now, "MMM yy");
 		const previousLabel = format(subMonths(now, 1), "MMM yy");
-		const allCurrencies = stats.perCurrency[""];
+		const allCurrencies = stats.perCurrency[ALL_CURRENCIES_KEY];
 		const pkr = stats.perCurrency.PKR;
 		const usd = stats.perCurrency.USD;
 

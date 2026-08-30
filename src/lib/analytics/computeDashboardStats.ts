@@ -6,6 +6,33 @@ import type { Account, DashboardStats, Transaction } from "@/types";
 
 const TREND_MONTHS = 6;
 
+// Firestore rejects empty-string field names (`setDoc` errors with
+// "Document fields must not be empty"), so the "all currencies combined"
+// bucket in `perCurrency` must use a non-empty sentinel key instead of "".
+export const ALL_CURRENCIES_KEY = "ALL";
+
+/**
+ * Normalizes a `DashboardStats` object so `perCurrency` never has an empty
+ * string key. Older cached records (computed before `ALL_CURRENCIES_KEY` was
+ * introduced) may still have `perCurrency[""]` — Firestore's `setDoc` throws
+ * "Document fields must not be empty" if pushed as-is. Safe to call on any
+ * `DashboardStats`, including already-normalized ones (no-op in that case).
+ */
+export function sanitizeDashboardStats(stats: DashboardStats): DashboardStats {
+	if (!Object.prototype.hasOwnProperty.call(stats.perCurrency, "")) return stats;
+
+	const { "": allCurrencies, ...rest } = stats.perCurrency;
+	if (!allCurrencies) return { ...stats, perCurrency: rest };
+
+	return {
+		...stats,
+		perCurrency: {
+			...rest,
+			[ALL_CURRENCIES_KEY]: rest[ALL_CURRENCIES_KEY] ?? allCurrencies,
+		},
+	};
+}
+
 type TrendItem = DashboardStats["perCurrency"][string]["trend"][number];
 
 interface AggregateState {
@@ -101,7 +128,7 @@ export async function computeDashboardStats(userId: string): Promise<DashboardSt
 	}
 
 	const aggregates = new Map<string, AggregateState>();
-	aggregates.set("", createAggregateState(now, null));
+	aggregates.set(ALL_CURRENCIES_KEY, createAggregateState(now, null));
 	for (const [currency, accountIds] of currencyAccountIds.entries()) {
 		aggregates.set(currency, createAggregateState(now, accountIds));
 	}
@@ -137,17 +164,20 @@ export async function computeDashboardStats(userId: string): Promise<DashboardSt
 		.map((transaction) => {
 			const account = accountById.get(transaction.accountId);
 
+			// Firestore's setDoc() rejects any field whose value is `undefined`
+			// (it requires the key to be omitted entirely instead), so optional
+			// fields must only be included when actually present.
 			return {
 				id: transaction.id,
 				type: transaction.type,
 				date: transaction.date,
 				amount: transaction.amount,
-				description: transaction.description,
-				place: transaction.place,
+				...(transaction.description !== undefined && { description: transaction.description }),
+				...(transaction.place !== undefined && { place: transaction.place }),
 				accountId: transaction.accountId,
 				accountTitle: account?.title ?? "—",
 				accountCurrency: account?.currency ?? "",
-				toAccountId: transaction.toAccountId,
+				...(transaction.toAccountId !== undefined && { toAccountId: transaction.toAccountId }),
 			};
 		});
 
