@@ -1,6 +1,7 @@
 import { v4 as uuid, v5 as uuidv5 } from "uuid";
 import * as XLSX from "xlsx";
 
+import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
 
 import type { HKAccountRow, HKActivityRow, HKCategoryRow } from "./types";
@@ -97,8 +98,6 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 			isArchived: isClosed,
 			updatedAt: now,
 		});
-
-		console.debug(`[HK Import] Account: "${rawTitle}" → "${cleanTitle}" (${isClosed ? "archived" : "active"}, opening: ${row["Opening Balance"]})`);
 	}
 
 	// --- Categories ---
@@ -188,7 +187,6 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 				isArchived: true,
 				updatedAt: now,
 			});
-			console.debug(`[HK Import] Auto-created archived account: "${cleanTitle}"`);
 		}
 		autoCreatedAccounts.add(cleanTitle);
 		return id;
@@ -224,12 +222,13 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 	const candidatesByKey = new Map<string, Array<{ row: HKActivityRow; i: number; amount: number }>>();
 
 	for (const { row, i } of transfers) {
-		const dateStr = String(row["Voucher Date"] || "");
+		const dateStr = String(row["Voucher Date"] ?? "");
 		const amount = Number(row["Voucher Amount"]);
 		const absAmount = Math.abs(amount);
 
 		// For empty dates, use a special key that includes description for matching
-		const dateKey = dateStr.trim() === "" ? `EMPTY|${(row["Description"] || "").trim()}` : dateStr;
+		const dateKey =
+			dateStr.trim() === "" ? `EMPTY|${String(row["Description"] ?? "").trim()}` : dateStr;
 		const key = `${dateKey}|${absAmount}`;
 
 		if (!candidatesByKey.has(key)) {
@@ -239,7 +238,7 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 	}
 
 	// Match pairs from the candidate map
-	for (const [key, candidates] of candidatesByKey.entries()) {
+	for (const [_key, candidates] of candidatesByKey.entries()) {
 		if (candidates.length < 2) continue; // No pairs possible
 
 		// Separate into positive and negative
@@ -320,7 +319,7 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 
 		const accountId = await resolveOrCreateAccountId(row["Account Name"]);
 		const resolvedCategoryId = categoryMap.get(row["Category Name"] ?? "");
-		const resolvedPlace = row["Place"] || undefined;
+		const resolvedPlace = row["Place"] ?? undefined;
 
 		const tx: Transaction = {
 			id: makeHKTxnId(userId, i),
@@ -341,10 +340,13 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 		};
 
 		if (row["Travel Currency Symbol"]) {
+			const travelRate = Number(row["Travel Currency Rate"]);
+			const travelAmount = Number(row["Travel Currency Amount"]);
+
 			tx.travelCurrency = {
 				symbol: row["Travel Currency Symbol"],
-				rate: Number(row["Travel Currency Rate"]) || 0,
-				amount: Number(row["Travel Currency Amount"]) || 0,
+				rate: Number.isFinite(travelRate) ? travelRate : 0,
+				amount: Number.isFinite(travelAmount) ? travelAmount : 0,
 				location: row["Travel Location"] ?? "",
 			};
 		}
@@ -356,7 +358,7 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 	if (autoCreatedAccounts.size > 0) {
 		console.warn("[HK Import] Auto-created archived accounts for missing/deleted names:", [...autoCreatedAccounts]);
 	}
-	console.info(`[HK Import] Done — accounts: ${accRows.length}, categories: ${catRows.length}, imported: ${imported}, transfers paired: ${transfersPaired}, auto-created: ${autoCreatedAccounts.size}`);
+	scheduleAnalyticsRecompute(userId);
 
 	return {
 		accounts: accRows.length,
@@ -367,4 +369,3 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 		autoCreatedAccounts: [...autoCreatedAccounts],
 	};
 }
-
