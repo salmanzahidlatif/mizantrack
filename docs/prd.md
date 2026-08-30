@@ -403,7 +403,7 @@ A floating action button (FAB) on mobile anchored above the bottom bar opens the
 ### 6.2 Key Screens
 
 #### Login
-- Centered card with MizanTrack logo (Arabic م mark), app name, tagline
+- Centered card with MizanTrack app icon, app name, tagline
 - Single "Continue with Google" button with Google icon
 - No form fields; no password entry
 
