@@ -6,7 +6,7 @@ import { LockScreen } from "@/components/layout/LockScreen";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useLockStore } from "@/store/lock-store";
 
-const GRACE_PERIOD_MS = 30_000; // 30 seconds
+const GRACE_PERIOD_MS = 5 * 60_000; // 5 minutes — grace window before switching tabs/apps triggers the lock screen
 const LAST_HIDDEN_KEY = "mizantrack:lastHidden";
 
 interface AppLockGuardProps {
