@@ -5,6 +5,7 @@ import { ExportPanel } from "@/components/settings/ExportPanel";
 import { FirebaseSyncPanel } from "@/components/settings/FirebaseSyncPanel";
 import { ImportPanel } from "@/components/settings/ImportPanel";
 import { PreferencesForm } from "@/components/settings/PreferencesForm";
+import { ResetLocalDataPanel } from "@/components/settings/ResetLocalDataPanel";
 
 interface SettingsPageClientProps {
 	userId: string;
@@ -29,6 +30,8 @@ export function SettingsPageClient({ userId, userDisplay }: SettingsPageClientPr
 			</div>
 
 			<FirebaseSyncPanel userId={userId} />
+
+			<ResetLocalDataPanel userId={userId} />
 		</div>
 	);
 }
