@@ -4,8 +4,17 @@ import { db } from "./db/local";
 
 import type { DateRange } from "@/types";
 
-export async function exportToExcel(userId: string, range: DateRange) {
-	const [accounts, categories, transactions] = await Promise.all([
+export interface ExportOptions {
+	/** Only export accounts/transactions in this currency. */
+	currency: string;
+	/** If false, only non-archived accounts are included in the ACCOUNT sheet (and their transactions). Archived accounts are always still resolvable so their transactions are never orphaned. */
+	includeArchivedAccounts: boolean;
+}
+
+export async function exportToExcel(userId: string, range: DateRange, options: ExportOptions) {
+	const { currency, includeArchivedAccounts } = options;
+
+	const [allAccounts, categories, allTransactions] = await Promise.all([
 		db.accounts
 			.where("userId")
 			.equals(userId)
@@ -23,8 +32,27 @@ export async function exportToExcel(userId: string, range: DateRange) {
 			.toArray(),
 	]);
 
-	const accMap = new Map(accounts.map((a) => [a.id, a.title]));
+	// Every non-deleted account is resolvable for transaction lookups (even if
+	// archived and excluded from the ACCOUNT sheet below) — this avoids ever
+	// silently blanking out a transaction's "Account Name" column.
+	const accMap = new Map(allAccounts.map((a) => [a.id, a.title]));
 	const catMap = new Map(categories.map((c) => [c.id, c.title]));
+
+	// Accounts actually listed in the ACCOUNT sheet: filtered by currency, and
+	// by active-only vs. all (archived included) per the user's choice.
+	const accountsInCurrency = allAccounts.filter(
+		(a) => a.currency === currency && (includeArchivedAccounts || !a.isArchived)
+	);
+	const accountIdsInCurrency = new Set(accountsInCurrency.map((a) => a.id));
+
+	// A transaction belongs to this export if its source account (or, for
+	// transfers, either the source or destination account) is in the selected
+	// currency — this keeps both legs of a same-currency transfer together.
+	const transactions = allTransactions.filter((t) => {
+		const sourceInCurrency = accountIdsInCurrency.has(t.accountId);
+		const destInCurrency = Boolean(t.toAccountId) && accountIdsInCurrency.has(t.toAccountId!);
+		return sourceInCurrency || destInCurrency;
+	});
 
 	const actRows = transactions.map((t) => ({
 		"Voucher Type": t.type,
@@ -47,8 +75,8 @@ export async function exportToExcel(userId: string, range: DateRange) {
 	XLSX.utils.book_append_sheet(
 		wb,
 		XLSX.utils.json_to_sheet(
-			accounts.map((a) => ({
-				Title: a.title,
+			accountsInCurrency.map((a) => ({
+				Title: a.isArchived ? `${a.title} (Closed)` : a.title,
 				"Opening Balance": a.openingBalance,
 				"Balance Amount": 0,
 				"Closing Balance": 0,
@@ -68,5 +96,5 @@ export async function exportToExcel(userId: string, range: DateRange) {
 		"CATEGORY"
 	);
 
-	XLSX.writeFile(wb, `mizantrack-export-${Date.now()}.xlsx`);
+	XLSX.writeFile(wb, `mizantrack-export-${currency}-${Date.now()}.xlsx`);
 }

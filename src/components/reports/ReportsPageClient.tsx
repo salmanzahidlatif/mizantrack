@@ -75,7 +75,7 @@ export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 	async function handleExport() {
 		setExporting(true);
 		try {
-			await exportToExcel(userId, exportRange);
+			await exportToExcel(userId, exportRange, { currency, includeArchivedAccounts: true });
 		} catch {
 			toast.error("Export failed. Please try again.");
 		} finally {
