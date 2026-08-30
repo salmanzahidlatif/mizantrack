@@ -81,6 +81,12 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 			// Reset cached Firestore instance so new config is picked up
 			await resetFirestoreForUser(userId);
 			toast.success("Sync config saved.");
+			// Connect immediately instead of leaving the user waiting until they
+			// separately hit "Sync Now" — this is what actually makes Firebase
+			// "just work" the moment a valid config is saved with sync enabled.
+			if (enabled) {
+				void triggerSync(userId);
+			}
 		} catch {
 			toast.error("Failed to save config.");
 		} finally {
