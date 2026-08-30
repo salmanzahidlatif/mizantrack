@@ -15,6 +15,7 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
 import { useUIStore } from "@/store/ui-store";
 
@@ -44,6 +45,7 @@ function AccountCard({ account, balance, onEdit }: AccountCardProps) {
 			isArchived: !account.isArchived,
 			updatedAt: Date.now(),
 		});
+		scheduleAnalyticsRecompute(account.userId);
 		toast.success(account.isArchived ? "Account restored" : "Account archived");
 	}
 
@@ -56,6 +58,7 @@ function AccountCard({ account, balance, onEdit }: AccountCardProps) {
 			deletedAt: Date.now(),
 			updatedAt: Date.now(),
 		});
+		scheduleAnalyticsRecompute(account.userId);
 		toast.success("Account deleted");
 		setConfirming(false);
 	}

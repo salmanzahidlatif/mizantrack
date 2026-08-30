@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { useActiveAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
+import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
 import { transactionSchema, type TransactionFormValues } from "@/lib/validations/transaction";
 import { useUIStore } from "@/store/ui-store";
@@ -128,9 +129,11 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 
 		if (editTransactionId) {
 			await db.transactions.update(editTransactionId, payload);
+			scheduleAnalyticsRecompute(userId);
 			toast.success("Transaction updated");
 		} else {
 			await db.transactions.put({ id: uuidv4(), ...payload });
+			scheduleAnalyticsRecompute(userId);
 			toast.success("Transaction recorded");
 		}
 		closeTransactionDrawer();
@@ -147,6 +150,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 			deletedAt: Date.now(),
 			updatedAt: Date.now(),
 		});
+		scheduleAnalyticsRecompute(userId);
 		toast.success("Transaction deleted");
 		closeTransactionDrawer();
 	}

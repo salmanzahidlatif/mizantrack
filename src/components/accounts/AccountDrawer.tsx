@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDbConfig } from "@/hooks/useDbConfig";
+import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
 import { accountSchema, type AccountFormValues } from "@/lib/validations/account";
@@ -47,7 +48,7 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 	const config = useDbConfig(userId);
 
 	// Use activeCurrency from top selector; fall back to saved config currency
-	const defaultCurrency = activeCurrency || config?.currency || "PKR";
+	const defaultCurrency = activeCurrency !== "" ? activeCurrency : (config?.currency ?? "PKR");
 	// Show the user's enabled currencies as quick-select pills
 	const currencyShortcuts = config?.enabledCurrencies?.length
 		? config.enabledCurrencies
@@ -93,6 +94,7 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 		const now = Date.now();
 		if (editAccountId) {
 			await db.accounts.update(editAccountId, { ...values, updatedAt: now });
+			scheduleAnalyticsRecompute(userId);
 			toast.success("Account updated");
 		} else {
 			await db.accounts.put({
@@ -102,6 +104,7 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 				updatedAt: now,
 				...values,
 			});
+			scheduleAnalyticsRecompute(userId);
 			toast.success("Account created");
 		}
 		closeAccountDrawer();
