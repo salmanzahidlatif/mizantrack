@@ -241,6 +241,64 @@ async function syncDashboardStats(userId: string, firestore: Firestore): Promise
 	}
 }
 
+export interface SyncBackupTableCount {
+	table: SyncableTable;
+	local: number;
+	remote: number;
+	pending: number;
+}
+
+export interface SyncBackupCounts {
+	tables: SyncBackupTableCount[];
+	totalLocal: number;
+	totalRemote: number;
+	totalPending: number;
+}
+
+/**
+ * Compares local (non-deleted) record counts against remote Firestore document
+ * counts per table, so the UI can show "X of Y backed up" / "Z left to sync".
+ * Remote count is a proxy for "already backed up" — a record only counts as
+ * pending if it exists locally but the remote collection is smaller overall
+ * (exact per-record diffing would require reading every doc, which we avoid
+ * here to keep this cheap — it only uses aggregate getCountFromServer reads).
+ */
+export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCounts | null> {
+	const firestore = await getFirestoreForUser(userId);
+	if (!firestore) return null;
+
+	try {
+		const tables = await Promise.all(
+			CORE_SYNC_TABLES.map(async (table): Promise<SyncBackupTableCount> => {
+				const [localCount, remoteSnap] = await Promise.all([
+					localDb[table]
+						.where("userId")
+						.equals(userId)
+						.and((r: SyncableRecord) => !r.deletedAt)
+						.count(),
+					getCountFromServer(collection(firestore, `users/${userId}/${table}`)),
+				]);
+				const remoteCount = remoteSnap.data().count;
+				return {
+					table,
+					local: localCount,
+					remote: remoteCount,
+					pending: Math.max(0, localCount - remoteCount),
+				};
+			})
+		);
+
+		return {
+			tables,
+			totalLocal: tables.reduce((sum, t) => sum + t.local, 0),
+			totalRemote: tables.reduce((sum, t) => sum + t.remote, 0),
+			totalPending: tables.reduce((sum, t) => sum + t.pending, 0),
+		};
+	} catch {
+		return null;
+	}
+}
+
 export async function getFirestoreUsage(userId: string) {
 	const firestore = await getFirestoreForUser(userId);
 	if (!firestore) return null;
