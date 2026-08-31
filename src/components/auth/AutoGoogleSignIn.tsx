@@ -3,37 +3,19 @@
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
 import { signIn } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export const AUTO_GOOGLE_SIGNIN_STORAGE_KEY = "mizantrack:auto-google-signin-attempted";
-
-async function redirectToGoogle({ markAutoAttempted, onPendingChange }: { markAutoAttempted: boolean; onPendingChange: (pending: boolean) => void }) {
-	if (markAutoAttempted) {
-		sessionStorage.setItem(AUTO_GOOGLE_SIGNIN_STORAGE_KEY, "1");
-	}
-
-	onPendingChange(true);
-
-	try {
-		await signIn("google", { redirectTo: "/dashboard" });
-	} catch {
-		onPendingChange(false);
-	}
-}
-
 export function AutoGoogleSignIn() {
 	const [isRedirecting, setIsRedirecting] = useState(false);
 
-	useEffect(() => {
-		if (sessionStorage.getItem(AUTO_GOOGLE_SIGNIN_STORAGE_KEY)) return;
-		void redirectToGoogle({ markAutoAttempted: true, onPendingChange: setIsRedirecting });
-	}, []);
-
 	const handleManualSignIn = () => {
-		void redirectToGoogle({ markAutoAttempted: false, onPendingChange: setIsRedirecting });
+		setIsRedirecting(true);
+		signIn("google", { redirectTo: "/dashboard" }).catch(() => {
+			setIsRedirecting(false);
+		});
 	};
 
 	return (
