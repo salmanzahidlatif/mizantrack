@@ -48,7 +48,7 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 	return (
 		<div className="space-y-4">
 			{/* Header */}
-			<div className="flex items-center justify-between gap-2">
+			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 				<div>
 					<h1 className="text-2xl font-bold">Accounts</h1>
 					{accounts !== undefined && (
@@ -57,9 +57,9 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 						</p>
 					)}
 				</div>
-				<div className="flex items-center gap-2">
+				<div className="flex flex-wrap items-center gap-2">
 					<Select value={sortBy} onValueChange={(v) => setSortBy(v as AccountSort)}>
-						<SelectTrigger className="h-8 w-44">
+						<SelectTrigger className="h-8 w-36 sm:w-44">
 							<SelectValue placeholder="Sort by" />
 						</SelectTrigger>
 						<SelectContent>
@@ -71,11 +71,14 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 						</SelectContent>
 					</Select>
 					{hasArchived && (
-						<Button variant="outline" onClick={() => setShowArchivedAccounts(!showArchivedAccounts)}>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => setShowArchivedAccounts(!showArchivedAccounts)}>
 							{showArchivedAccounts ? "Hide Archived" : "Show Archived"}
 						</Button>
 					)}
-					<Button onClick={openAddAccount}>
+					<Button size="sm" onClick={openAddAccount}>
 						Add Account
 					</Button>
 				</div>
