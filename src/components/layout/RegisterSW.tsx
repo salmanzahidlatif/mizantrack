@@ -61,12 +61,41 @@ export default function RegisterSW() {
 			if (reg.waiting && navigator.serviceWorker.controller) {
 				notifyUpdate();
 			}
+
+			// The browser only re-fetches sw.js on its own for full top-level navigations.
+			// Since this is an SPA (client-side routing within the app never triggers that),
+			// a tab left open on one page would never learn about a new deploy unless we
+			// actively ask. reg.update() forces a byte-for-byte re-check of /sw.js against
+			// the network, which is what actually surfaces new deploys while the app is open.
+			const checkForUpdate = () => {
+				void reg.update();
+			};
+
+			// Poll periodically...
+			const intervalId = setInterval(checkForUpdate, 60_000);
+			// ...and also check immediately whenever the tab regains focus/visibility,
+			// which is the moment users are most likely to expect a fresh version.
+			const handleVisibility = () => {
+				if (document.visibilityState === "visible") checkForUpdate();
+			};
+			document.addEventListener("visibilitychange", handleVisibility);
+			window.addEventListener("focus", checkForUpdate);
+
+			return () => {
+				clearInterval(intervalId);
+				document.removeEventListener("visibilitychange", handleVisibility);
+				window.removeEventListener("focus", checkForUpdate);
+			};
 		};
 
-		void register();
+		let cleanupRegister: (() => void) | undefined;
+		void register().then((cleanup) => {
+			cleanupRegister = cleanup;
+		});
 
 		return () => {
 			navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
+			cleanupRegister?.();
 		};
 	}, []);
 
