@@ -23,11 +23,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { resetFirestoreForUser } from "@/lib/db/firebase";
 import { db } from "@/lib/db/local";
-import { clearFirestoreForUser, getFirestoreUsage } from "@/lib/db/sync";
+import { clearFirestoreForUser, getFirestoreUsage, getSyncBackupCounts } from "@/lib/db/sync";
 import { parseFirebaseConfigJson } from "@/lib/firebaseConfigParser";
 import { useSyncStore } from "@/store/sync-store";
 
 import type { ParseFirebaseConfigResult } from "@/lib/firebaseConfigParser";
+import type { SyncBackupCounts } from "@/lib/db/sync";
 
 interface FirebaseSyncPanelProps {
 	userId: string;
@@ -52,6 +53,7 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 		freeLimitMB: number;
 		percentUsed: string;
 	} | null>(null);
+	const [backupCounts, setBackupCounts] = useState<SyncBackupCounts | null>(null);
 
 	// Sync local state with DB config
 	useEffect(() => {
@@ -67,6 +69,15 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 			if (u) setUsage(u);
 		});
 	}, [enabled, userId, lastSync]);
+
+	// Load per-table backup counts (accounts/categories/transactions: backed up vs. pending)
+	useEffect(() => {
+		if (!enabled) {
+			setBackupCounts(null);
+			return;
+		}
+		void getSyncBackupCounts(userId).then((c) => setBackupCounts(c));
+	}, [enabled, userId, lastSync, syncing]);
 
 	async function handleSave() {
 		if (!configJson.trim()) return;
@@ -234,6 +245,26 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 							</span>
 						</div>
 						<Progress value={parseFloat(usage.percentUsed)} className="h-1.5" />
+					</div>
+				)}
+
+				{/* Per-table backup counts */}
+				{backupCounts && (
+					<div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/30 p-2.5">
+						<p className="text-xs font-medium text-muted-foreground">Backed up to Firebase</p>
+						{backupCounts.tables.map((t) => (
+							<div key={t.table} className="flex items-center justify-between text-xs">
+								<span className="capitalize text-muted-foreground">{t.table}</span>
+								<span>
+									{t.remote} / {t.local} backed up
+									{t.pending > 0 && (
+										<span className="ml-1 text-amber-600 dark:text-amber-500">
+											({t.pending} left)
+										</span>
+									)}
+								</span>
+							</div>
+						))}
 					</div>
 				)}
 			</div>
