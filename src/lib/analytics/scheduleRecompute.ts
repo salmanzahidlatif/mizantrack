@@ -7,7 +7,7 @@ import {
 import { getFirestoreForUser } from "@/lib/db/firebase";
 import { db } from "@/lib/db/local";
 
-const RECOMPUTE_DELAY_MS = 800;
+const RECOMPUTE_DELAY_MS = 0;
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const activeRuns = new Map<string, Promise<void>>();

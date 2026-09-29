@@ -4,7 +4,12 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { createTransaction, updateTransaction } from "@/lib/actions/transactions";
+import {
+	createTransaction,
+	deleteTransaction,
+	updateTransaction,
+} from "@/lib/actions/transactions";
+import { ALL_CURRENCIES_KEY } from "@/lib/analytics/computeDashboardStats";
 import { db } from "@/lib/db/local";
 import { transactionSchema } from "@/lib/validations/transaction";
 
@@ -156,7 +161,9 @@ describe("transactions db operations", () => {
 	const TXN_ID_2 = "550e8400-e29b-41d4-a716-446655440034";
 
 	beforeEach(async () => {
+		await db.accounts.clear();
 		await db.transactions.clear();
+		await db.dashboardStats.clear();
 	});
 
 	it("can add and retrieve a transaction", async () => {
@@ -230,6 +237,47 @@ describe("transactions db operations", () => {
 			toAccountId: ACCOUNT_ID_2,
 		});
 		expect(txn?.categoryId).toBeUndefined();
+	});
+
+	it("updates dashboard stats immediately after create, edit, and delete actions", async () => {
+		await db.accounts.put({
+			id: ACCOUNT_ID,
+			userId: USER_ID,
+			title: "AED Wallet",
+			openingBalance: 0,
+			currency: "AED",
+			isArchived: false,
+			updatedAt: Date.now(),
+		});
+
+		const id = await createTransaction(
+			USER_ID,
+			{
+				type: "Expense",
+				amount: 100,
+				date: new Date(),
+				accountId: ACCOUNT_ID,
+			},
+			{ id: TXN_ID }
+		);
+		let stats = await db.dashboardStats.get(USER_ID);
+		expect(stats?.perCurrency.AED?.monthExpense).toBe(100);
+		expect(stats?.perCurrency[ALL_CURRENCIES_KEY]?.monthExpense).toBe(100);
+
+		await updateTransaction(USER_ID, id, {
+			type: "Expense",
+			amount: 250,
+			date: new Date(),
+			accountId: ACCOUNT_ID,
+		});
+		stats = await db.dashboardStats.get(USER_ID);
+		expect(stats?.perCurrency.AED?.monthExpense).toBe(250);
+		expect(stats?.balances[ACCOUNT_ID]).toBe(-250);
+
+		await deleteTransaction(USER_ID, id);
+		stats = await db.dashboardStats.get(USER_ID);
+		expect(stats?.perCurrency.AED?.monthExpense).toBe(0);
+		expect(stats?.balances[ACCOUNT_ID]).toBe(0);
 	});
 
 	it("surfaces a readable action error for a transfer missing toAccountId", async () => {

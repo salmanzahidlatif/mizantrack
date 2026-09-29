@@ -44,10 +44,8 @@ describe("scheduleAnalyticsRecompute", () => {
 		scheduleAnalyticsRecompute("debounce-user");
 		scheduleAnalyticsRecompute("debounce-user");
 
-		await new Promise((resolve) => setTimeout(resolve, 700));
 		expect(computeDashboardStats).not.toHaveBeenCalled();
 
-		await new Promise((resolve) => setTimeout(resolve, 250));
 		await flushAnalyticsRecompute("debounce-user");
 
 		expect(computeDashboardStats).toHaveBeenCalledTimes(1);

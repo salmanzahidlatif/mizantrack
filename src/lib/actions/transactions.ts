@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 
-import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
+import { recomputeAnalyticsNow } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
 import { transactionSchema, type TransactionFormValues } from "@/lib/validations/transaction";
 
@@ -45,12 +45,8 @@ function toTransactionPayload(
 	};
 }
 
-function scheduleRecomputeSafely(userId: string): void {
-	try {
-		scheduleAnalyticsRecompute(userId);
-	} catch (error) {
-		console.error("Failed to schedule dashboard analytics recompute:", error);
-	}
+async function recomputeAfterLocalWrite(userId: string): Promise<void> {
+	await recomputeAnalyticsNow(userId);
 }
 
 export async function createTransaction(
@@ -65,7 +61,7 @@ export async function createTransaction(
 		LOCAL_TRANSACTION_WRITE_TIMEOUT_MS,
 		"Saving the transaction is taking too long. Close other MizanTrack tabs and try again."
 	);
-	scheduleRecomputeSafely(userId);
+	await recomputeAfterLocalWrite(userId);
 	return id;
 }
 
@@ -85,7 +81,7 @@ export async function updateTransaction(
 		throw new Error("Transaction was not found. Please reload and try again.");
 	}
 
-	scheduleRecomputeSafely(userId);
+	await recomputeAfterLocalWrite(userId);
 }
 
 export async function deleteTransaction(userId: string, transactionId: string): Promise<void> {
@@ -103,5 +99,5 @@ export async function deleteTransaction(userId: string, transactionId: string): 
 		throw new Error("Transaction was not found. Please reload and try again.");
 	}
 
-	scheduleRecomputeSafely(userId);
+	await recomputeAfterLocalWrite(userId);
 }

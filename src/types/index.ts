@@ -102,6 +102,11 @@ export interface DashboardStats {
 		accountCurrency: string;
 		toAccountId?: string;
 	}>;
+	warnings?: Array<{
+		code: "cross_currency_transfer_destination_skipped";
+		transactionId: string;
+		message: string;
+	}>;
 }
 
 export type FilterPeriod =

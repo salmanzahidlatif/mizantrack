@@ -1,15 +1,40 @@
-import { endOfMonth, format, startOfMonth, subMonths } from "date-fns";
-
 import { db } from "@/lib/db/local";
 
 import type { Account, DashboardStats, Transaction } from "@/types";
 
-const TREND_MONTHS = 6;
+export const DEFAULT_TREND_MONTHS = 6;
 
 // Firestore rejects empty-string field names (`setDoc` errors with
 // "Document fields must not be empty"), so the "all currencies combined"
 // bucket in `perCurrency` must use a non-empty sentinel key instead of "".
 export const ALL_CURRENCIES_KEY = "ALL";
+
+const MS_PER_MINUTE = 60 * 1000;
+const MONTH_LABELS = [
+	"Jan",
+	"Feb",
+	"Mar",
+	"Apr",
+	"May",
+	"Jun",
+	"Jul",
+	"Aug",
+	"Sep",
+	"Oct",
+	"Nov",
+	"Dec",
+] as const;
+
+interface DashboardMonthRange {
+	startMs: number;
+	endMs: number;
+}
+
+export interface DashboardStatsAggregationOptions {
+	now?: Date;
+	trendMonths?: number;
+	timeZoneOffsetMinutes?: number;
+}
 
 /**
  * Deep-removes any `undefined` values from an object/array (Firestore's
@@ -71,12 +96,56 @@ interface AggregateState {
 	trendMap: Map<string, TrendItem>;
 }
 
-function createAggregateState(now: Date, accountIds: Set<string> | null): AggregateState {
+export function getLocalTimeZoneOffsetMinutes(now = new Date()): number {
+	return -now.getTimezoneOffset();
+}
+
+function shiftedUtcDate(ms: number, timeZoneOffsetMinutes: number): Date {
+	return new Date(ms + timeZoneOffsetMinutes * MS_PER_MINUTE);
+}
+
+function getMonthStartMs(now: Date, timeZoneOffsetMinutes: number, monthOffset = 0): number {
+	const shifted = shiftedUtcDate(now.getTime(), timeZoneOffsetMinutes);
+	return (
+		Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() + monthOffset, 1) -
+		timeZoneOffsetMinutes * MS_PER_MINUTE
+	);
+}
+
+export function getDashboardMonthRange(
+	now = new Date(),
+	timeZoneOffsetMinutes = getLocalTimeZoneOffsetMinutes(now)
+): DashboardMonthRange {
+	return {
+		startMs: getMonthStartMs(now, timeZoneOffsetMinutes),
+		endMs: getMonthStartMs(now, timeZoneOffsetMinutes, 1) - 1,
+	};
+}
+
+export function formatDashboardMonthLabel(
+	dateMs: number,
+	timeZoneOffsetMinutes = getLocalTimeZoneOffsetMinutes(new Date(dateMs))
+): string {
+	const shifted = shiftedUtcDate(dateMs, timeZoneOffsetMinutes);
+	const month = MONTH_LABELS[shifted.getUTCMonth()];
+	const year = String(shifted.getUTCFullYear()).slice(-2);
+	return `${month} ${year}`;
+}
+
+function createAggregateState(
+	now: Date,
+	accountIds: Set<string> | null,
+	trendMonths: number,
+	timeZoneOffsetMinutes: number
+): AggregateState {
 	const trend: TrendItem[] = [];
 	const trendMap = new Map<string, TrendItem>();
 
-	for (let i = TREND_MONTHS - 1; i >= 0; i--) {
-		const label = format(subMonths(now, i), "MMM yy");
+	for (let i = trendMonths - 1; i >= 0; i--) {
+		const label = formatDashboardMonthLabel(
+			getMonthStartMs(now, timeZoneOffsetMinutes, -i),
+			timeZoneOffsetMinutes
+		);
 		const bucket: TrendItem = { month: label, income: 0, expense: 0 };
 		trend.push(bucket);
 		trendMap.set(label, bucket);
@@ -93,13 +162,12 @@ function createAggregateState(now: Date, accountIds: Set<string> | null): Aggreg
 	};
 }
 
-function matchesCurrency(transaction: Transaction, accountIds: Set<string> | null): boolean {
+function sourceAccountMatchesCurrency(
+	transaction: Transaction,
+	accountIds: Set<string> | null
+): boolean {
 	if (!accountIds) return true;
-
-	return (
-		accountIds.has(transaction.accountId) ||
-		(Boolean(transaction.toAccountId) && accountIds.has(transaction.toAccountId!))
-	);
+	return accountIds.has(transaction.accountId);
 }
 
 function isKnownCrossCurrencyTransfer(
@@ -116,31 +184,40 @@ function isKnownCrossCurrencyTransfer(
 	);
 }
 
-export async function computeDashboardStats(userId: string): Promise<DashboardStats> {
-	const [accounts, transactions] = await Promise.all([
-		db.accounts
-			.where("userId")
-			.equals(userId)
-			.filter((account) => !account.deletedAt)
-			.toArray(),
-		db.transactions
-			.where("userId")
-			.equals(userId)
-			.filter((transaction) => !transaction.deletedAt)
-			.toArray(),
-	]);
+export function getMonthlySummaryFromDashboardStats(
+	stats: DashboardStats,
+	months = DEFAULT_TREND_MONTHS,
+	currency?: string
+): TrendItem[] {
+	let currencyKey = ALL_CURRENCIES_KEY;
+	if (currency) currencyKey = currency;
+	const bucket = stats.perCurrency[currencyKey];
+	if (!bucket) return [];
+	return bucket.trend.slice(-months);
+}
 
-	const now = new Date();
-	const nowMs = Date.now();
-	const monthStart = startOfMonth(now).getTime();
-	const monthEnd = endOfMonth(now).getTime();
-	const trendStart = startOfMonth(subMonths(now, TREND_MONTHS - 1)).getTime();
+export function aggregateDashboardStats(
+	userId: string,
+	accounts: Account[],
+	transactions: Transaction[],
+	options: DashboardStatsAggregationOptions = {}
+): DashboardStats {
+	const now = options.now ?? new Date();
+	const trendMonths = Math.max(1, Math.floor(options.trendMonths ?? DEFAULT_TREND_MONTHS));
+	const timeZoneOffsetMinutes = options.timeZoneOffsetMinutes ?? getLocalTimeZoneOffsetMinutes(now);
+	const { startMs: monthStart, endMs: monthEnd } = getDashboardMonthRange(
+		now,
+		timeZoneOffsetMinutes
+	);
+	const trendStart = getMonthStartMs(now, timeZoneOffsetMinutes, -(trendMonths - 1));
+	const trendEnd = monthEnd;
 
 	const balances: Record<string, number> = {};
 	const accountById = new Map<string, Account>();
 	const currencyAccountIds = new Map<string, Set<string>>();
+	const warnings: NonNullable<DashboardStats["warnings"]> = [];
 
-	for (const account of accounts) {
+	for (const account of accounts.filter((item) => !item.deletedAt)) {
 		accountById.set(account.id, account);
 		balances[account.id] = account.openingBalance;
 
@@ -150,7 +227,12 @@ export async function computeDashboardStats(userId: string): Promise<DashboardSt
 		currencyAccountIds.get(account.currency)!.add(account.id);
 	}
 
-	for (const transaction of transactions) {
+	const activeTransactions = transactions.filter((transaction) => {
+		if (transaction.deletedAt) return false;
+		return accountById.has(transaction.accountId);
+	});
+
+	for (const transaction of activeTransactions) {
 		const sourceBalance = balances[transaction.accountId];
 
 		if (transaction.type === "Income" && sourceBalance !== undefined) {
@@ -167,9 +249,12 @@ export async function computeDashboardStats(userId: string): Promise<DashboardSt
 				const destinationBalance = balances[transaction.toAccountId];
 				if (destinationBalance !== undefined) {
 					if (isCrossCurrency) {
-						// `travelCurrency` is travel-spend display metadata, not a transfer FX
-						// contract. Without a destination amount/rate, adding source-currency
-						// `amount` would corrupt the destination currency's balance.
+						warnings.push({
+							code: "cross_currency_transfer_destination_skipped",
+							transactionId: transaction.id,
+							message:
+								"Cross-currency transfer destination balance was not adjusted because no destination amount or FX contract is stored.",
+						});
 						continue;
 					}
 					balances[transaction.toAccountId] = destinationBalance + transaction.amount;
@@ -179,14 +264,20 @@ export async function computeDashboardStats(userId: string): Promise<DashboardSt
 	}
 
 	const aggregates = new Map<string, AggregateState>();
-	aggregates.set(ALL_CURRENCIES_KEY, createAggregateState(now, null));
+	aggregates.set(
+		ALL_CURRENCIES_KEY,
+		createAggregateState(now, null, trendMonths, timeZoneOffsetMinutes)
+	);
 	for (const [currency, accountIds] of currencyAccountIds.entries()) {
-		aggregates.set(currency, createAggregateState(now, accountIds));
+		aggregates.set(
+			currency,
+			createAggregateState(now, accountIds, trendMonths, timeZoneOffsetMinutes)
+		);
 	}
 
-	for (const transaction of transactions) {
+	for (const transaction of activeTransactions) {
 		for (const state of aggregates.values()) {
-			if (!matchesCurrency(transaction, state.accountIds)) continue;
+			if (!sourceAccountMatchesCurrency(transaction, state.accountIds)) continue;
 
 			if (transaction.date >= monthStart && transaction.date <= monthEnd) {
 				if (transaction.type === "Income") {
@@ -196,9 +287,11 @@ export async function computeDashboardStats(userId: string): Promise<DashboardSt
 				}
 			}
 
-			if (transaction.date < trendStart || transaction.date > nowMs) continue;
+			if (transaction.date < trendStart || transaction.date > trendEnd) continue;
 
-			const bucket = state.trendMap.get(format(new Date(transaction.date), "MMM yy"));
+			const bucket = state.trendMap.get(
+				formatDashboardMonthLabel(transaction.date, timeZoneOffsetMinutes)
+			);
 			if (!bucket) continue;
 
 			if (transaction.type === "Income") {
@@ -209,7 +302,7 @@ export async function computeDashboardStats(userId: string): Promise<DashboardSt
 		}
 	}
 
-	const recent = [...transactions]
+	const recent = [...activeTransactions]
 		.sort((a, b) => b.date - a.date)
 		.slice(0, 20)
 		.map((transaction) => {
@@ -242,5 +335,18 @@ export async function computeDashboardStats(userId: string): Promise<DashboardSt
 		balances,
 		perCurrency,
 		recent,
+		...(warnings.length > 0 && { warnings }),
 	};
+}
+
+export async function computeDashboardStats(
+	userId: string,
+	options: DashboardStatsAggregationOptions = {}
+): Promise<DashboardStats> {
+	const [accounts, transactions] = await Promise.all([
+		db.accounts.where("userId").equals(userId).toArray(),
+		db.transactions.where("userId").equals(userId).toArray(),
+	]);
+
+	return aggregateDashboardStats(userId, accounts, transactions, options);
 }
