@@ -16,6 +16,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { db } from "@/lib/db/local";
+
 import type { GoldItem, GoldPurity } from "@/types";
 
 interface GoldItemsManagerProps {
@@ -39,7 +40,12 @@ export function GoldItemsManager({
 	const [editingId, setEditingId] = useState<string | null>(null);
 
 	const goldItems = useLiveQuery(
-		() => db.goldItems.where("userId").equals(userId).filter((g) => !g.deletedAt).toArray(),
+		() =>
+			db.goldItems
+				.where("userId")
+				.equals(userId)
+				.filter((g) => !g.deletedAt)
+				.toArray(),
 		[userId]
 	);
 
@@ -102,7 +108,7 @@ export function GoldItemsManager({
 			{/* Add Form */}
 			{isAdding && (
 				<GoldItemForm
-					onSave={handleAdd}
+					onSave={(data) => void handleAdd(data)}
 					onCancel={() => setIsAdding(false)}
 					referenceCurrency={referenceCurrency}
 				/>
@@ -115,7 +121,7 @@ export function GoldItemsManager({
 						<GoldItemForm
 							key={item.id}
 							initialData={item}
-							onSave={(data) => handleUpdate(item.id, data)}
+							onSave={(data) => void handleUpdate(item.id, data)}
 							onCancel={() => setEditingId(null)}
 							referenceCurrency={referenceCurrency}
 						/>

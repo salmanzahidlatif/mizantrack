@@ -98,11 +98,11 @@ export function ZakatMonthlyBalances({
 				const adjustedBalance = isLiability ? -Math.abs(balance) : balance;
 
 				// Skip if balance is negative for assets or positive for liabilities
-				if ((isLiability && adjustedBalance > 0) || (!isLiability && adjustedBalance < 0))
-					continue;
+				if ((isLiability && adjustedBalance > 0) || (!isLiability && adjustedBalance < 0)) continue;
 
 				// Convert to reference currency
-				const rate = account.currency === referenceCurrency ? 1 : (exchangeRates[account.currency] ?? 1);
+				const rate =
+					account.currency === referenceCurrency ? 1 : (exchangeRates[account.currency] ?? 1);
 				total += adjustedBalance * rate;
 			}
 

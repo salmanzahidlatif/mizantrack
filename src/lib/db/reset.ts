@@ -1,6 +1,6 @@
 import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
-import { CORE_SYNC_TABLES } from "@/lib/db/sync";
 import { seedDefaultCategories } from "@/lib/db/seed";
+import { CORE_SYNC_TABLES } from "@/lib/db/sync";
 
 import { db } from "./local";
 

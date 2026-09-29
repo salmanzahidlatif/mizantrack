@@ -4,8 +4,8 @@
  */
 import "fake-indexeddb/auto";
 
-import * as XLSX from "xlsx";
 import { beforeEach, describe, expect, it } from "vitest";
+import * as XLSX from "xlsx";
 
 import { getDateRange } from "@/lib/dateRange";
 import { db } from "@/lib/db/local";
@@ -327,7 +327,9 @@ describe("importHysabKytab — currency", () => {
 		expect(txns.length).toBeGreaterThan(0);
 		txns.forEach((t) => {
 			// categoryId must be absent (undefined), NOT explicitly set to undefined
-			expect(Object.prototype.hasOwnProperty.call(t, "categoryId") && t.categoryId === undefined).toBe(false);
+			expect(
+				Object.prototype.hasOwnProperty.call(t, "categoryId") && t.categoryId === undefined
+			).toBe(false);
 		});
 	});
 });
@@ -583,5 +585,3 @@ describe("importHysabKytab — idempotency and name normalization", () => {
 		expect(auto!.isArchived).toBe(true);
 	});
 });
-
-

@@ -27,8 +27,8 @@ import { clearFirestoreForUser, getFirestoreUsage, getSyncBackupCounts } from "@
 import { parseFirebaseConfigJson } from "@/lib/firebaseConfigParser";
 import { useSyncStore } from "@/store/sync-store";
 
-import type { ParseFirebaseConfigResult } from "@/lib/firebaseConfigParser";
 import type { SyncBackupCounts } from "@/lib/db/sync";
+import type { ParseFirebaseConfigResult } from "@/lib/firebaseConfigParser";
 
 interface FirebaseSyncPanelProps {
 	userId: string;
@@ -254,7 +254,7 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 						<p className="text-xs font-medium text-muted-foreground">Backed up to Firebase</p>
 						{backupCounts.tables.map((t) => (
 							<div key={t.table} className="flex items-center justify-between text-xs">
-								<span className="capitalize text-muted-foreground">{t.table}</span>
+								<span className="text-muted-foreground capitalize">{t.table}</span>
 								<span>
 									{t.remote} / {t.local} backed up
 									{t.pending > 0 && (
@@ -299,8 +299,8 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 					<DialogHeader>
 						<DialogTitle>Delete All Firebase Data?</DialogTitle>
 						<DialogDescription>
-							This will permanently delete ALL your data from Firebase. Your local data is not affected.
-							The next sync will re-upload everything.
+							This will permanently delete ALL your data from Firebase. Your local data is not
+							affected. The next sync will re-upload everything.
 						</DialogDescription>
 					</DialogHeader>
 					{clearing && (
@@ -310,7 +310,10 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 						<Button variant="outline" onClick={() => setClearDataOpen(false)} disabled={clearing}>
 							Cancel
 						</Button>
-						<Button variant="destructive" onClick={() => void handleClearData()} disabled={clearing}>
+						<Button
+							variant="destructive"
+							onClick={() => void handleClearData()}
+							disabled={clearing}>
 							{clearing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
 							Delete from Firebase
 						</Button>

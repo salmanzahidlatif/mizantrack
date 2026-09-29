@@ -58,7 +58,10 @@ function sanitizeFirebaseConfigInput(raw: string): string {
 	text = text.replace(/([{,]\s*)([A-Za-z_$][\w$]*)(\s*:)/g, '$1"$2"$3');
 
 	// Normalize single-quoted string values to double-quoted.
-	text = text.replace(/'((?:\\.|[^'\\])*)'/g, (_match, inner: string) => `"${inner.replace(/"/g, '\\"')}"`);
+	text = text.replace(
+		/'((?:\\.|[^'\\])*)'/g,
+		(_match, inner: string) => `"${inner.replace(/"/g, '\\"')}"`
+	);
 
 	// Remove trailing commas before a closing brace/bracket.
 	text = text.replace(/,(\s*[}\]])/g, "$1");

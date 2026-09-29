@@ -2,11 +2,12 @@
 
 import { format } from "date-fns";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ChevronDown, ChevronUp, Eye, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { db } from "@/lib/db/local";
+
 import type { ZakatCalculation } from "@/types";
 
 interface ZakatHistoryProps {
@@ -110,7 +111,7 @@ export function ZakatHistory({ userId }: ZakatHistoryProps) {
 								<div className="flex items-center gap-4">
 									{calc.isLiable && (
 										<div className="text-right">
-											<p className="text-sm font-bold tabular-nums text-primary">
+											<p className="text-sm font-bold text-primary tabular-nums">
 												{calc.zakatObligation.toLocaleString("en-US", {
 													minimumFractionDigits: 2,
 												})}{" "}
@@ -185,7 +186,7 @@ export function ZakatHistory({ userId }: ZakatHistoryProps) {
 												</div>
 												<div className="flex justify-between font-medium">
 													<span>Zakat Obligation:</span>
-													<span className="tabular-nums text-primary">
+													<span className="text-primary tabular-nums">
 														{calc.zakatObligation.toLocaleString("en-US", {
 															minimumFractionDigits: 2,
 														})}{" "}
@@ -202,7 +203,9 @@ export function ZakatHistory({ userId }: ZakatHistoryProps) {
 												<div className="space-y-1 text-sm">
 													<div className="flex justify-between">
 														<span className="text-muted-foreground">Total Weight:</span>
-														<span className="tabular-nums">{calc.totalGoldWeightGrams.toFixed(2)}g</span>
+														<span className="tabular-nums">
+															{calc.totalGoldWeightGrams.toFixed(2)}g
+														</span>
 													</div>
 													<div className="flex justify-between">
 														<span className="text-muted-foreground">Total Value:</span>
@@ -239,7 +242,9 @@ export function ZakatHistory({ userId }: ZakatHistoryProps) {
 																)}
 															</div>
 															<span className="tabular-nums">
-																{account.balance.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+																{account.balance.toLocaleString("en-US", {
+																	maximumFractionDigits: 0,
+																})}
 															</span>
 														</div>
 													))}

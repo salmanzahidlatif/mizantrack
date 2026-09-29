@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import Dexie from "dexie";
-import { IDBFactory } from "fake-indexeddb";
 import fs from "fs";
 import path from "path";
+
+import Dexie from "dexie";
+import { IDBFactory } from "fake-indexeddb";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db/local";
 import { importHysabKytab } from "@/lib/import/hysabKytab";
@@ -35,29 +36,12 @@ describe("HK Import - Actual Backup File Integration Test", () => {
 			return;
 		}
 
-		console.log("\n📂 Testing with actual backup file:", backupPath);
-		console.log("📦 File size:", (fs.statSync(backupPath).size / 1024 / 1024).toFixed(2), "MB\n");
-
 		// Read the file and create a File object
 		const buffer = fs.readFileSync(backupPath);
 		const file = new File([buffer], "Hysab Kytab - backup - new.xls");
 
 		// Run the import
-		console.time("Import duration");
 		const result = await importHysabKytab(file, userId);
-		console.timeEnd("Import duration");
-
-		console.log("\n📊 IMPORT RESULTS:");
-		console.log("=".repeat(70));
-		console.log("✅ Accounts imported:", result.accounts);
-		console.log("✅ Categories imported:", result.categories);
-		console.log("✅ Transactions imported:", result.transactions);
-		console.log("✅ Transfers paired:", result.transfersPaired);
-		console.log("✅ Auto-created accounts:", result.autoCreated);
-		if (result.autoCreatedAccounts && result.autoCreatedAccounts.length > 0) {
-			console.log("   Auto-created account names:", result.autoCreatedAccounts.join(", "));
-		}
-		console.log("=".repeat(70));
 
 		// Verify expected counts based on the analysis
 		expect(result.accounts).toBe(38); // Rows in ACCOUNT sheet
@@ -85,27 +69,15 @@ describe("HK Import - Actual Backup File Integration Test", () => {
 			(t) => t.type === "Transfer" && t.toAccountId === undefined
 		);
 
-		console.log("\n🔗 TRANSFER ANALYSIS:");
-		console.log("   Paired transfers (with toAccountId):", pairedTransfers.length);
-		console.log("   Unmatched transfers (without toAccountId):", unmatchedTransfers.length);
-
 		expect(pairedTransfers.length).toBe(1388);
 		expect(unmatchedTransfers.length).toBe(1);
 
 		// Verify all accounts have PKR currency (from user config)
 		const nonPKRAccounts = accounts.filter((a) => a.currency !== "PKR");
 		if (nonPKRAccounts.length > 0) {
-			console.warn("⚠️  Non-PKR accounts found:", nonPKRAccounts.map((a) => `${a.title} (${a.currency})`));
-		}
-
-		// Sample some paired transfers to verify they look correct
-		const samplePaired = pairedTransfers.slice(0, 5);
-		console.log("\n📝 SAMPLE PAIRED TRANSFERS:");
-		for (const tx of samplePaired) {
-			const fromAccount = accounts.find((a) => a.id === tx.accountId);
-			const toAccount = accounts.find((a) => a.id === tx.toAccountId);
-			console.log(
-				`   ${fromAccount?.title} → ${toAccount?.title}: ${tx.amount} (${new Date(tx.date).toLocaleDateString()})`
+			console.warn(
+				"⚠️  Non-PKR accounts found:",
+				nonPKRAccounts.map((a) => `${a.title} (${a.currency})`)
 			);
 		}
 
@@ -121,8 +93,6 @@ describe("HK Import - Actual Backup File Integration Test", () => {
 		}
 
 		expect(orphanTxns.length).toBe(0); // Should be 0 - all references should be valid
-
-		console.log("\n✅ ALL VALIDATIONS PASSED\n");
 	}, 30000); // 30 second timeout for large import
 
 	it.skip("handles idempotent re-import (same counts on second import)", async () => {
@@ -140,10 +110,6 @@ describe("HK Import - Actual Backup File Integration Test", () => {
 		// Second import (should be idempotent)
 		const result2 = await importHysabKytab(file, userId);
 
-		console.log("\n🔄 IDEMPOTENCY TEST:");
-		console.log("   First import transactions:", result1.transactions);
-		console.log("   Second import transactions:", result2.transactions);
-
 		// Counts should be identical
 		expect(result2.accounts).toBe(result1.accounts);
 		expect(result2.categories).toBe(result1.categories);
@@ -153,7 +119,5 @@ describe("HK Import - Actual Backup File Integration Test", () => {
 		// Database should still have same counts (upsert, not append)
 		const transactions = await db.transactions.where("userId").equals(userId).toArray();
 		expect(transactions.length).toBe(result1.transactions);
-
-		console.log("✅ Idempotent re-import verified\n");
 	}, 60000); // 60 second timeout for two imports
 });

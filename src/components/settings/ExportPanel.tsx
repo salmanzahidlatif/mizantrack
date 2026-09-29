@@ -29,7 +29,8 @@ interface ExportPanelProps {
 export function ExportPanel({ userId }: ExportPanelProps) {
 	const config = useDbConfig(userId);
 	const fiscalYearStartMonth = config?.fiscalYearStartMonth ?? 7;
-	const enabledCurrencies = config?.enabledCurrencies ?? (config?.currency ? [config.currency] : ["PKR"]);
+	const enabledCurrencies =
+		config?.enabledCurrencies ?? (config?.currency ? [config.currency] : ["PKR"]);
 	const defaultCurrency = config?.currency ?? enabledCurrencies[0] ?? "PKR";
 
 	const [open, setOpen] = useState(false);
@@ -113,9 +114,7 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 						<div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2.5">
 							<div>
 								<p className="text-sm font-medium">Include archived accounts</p>
-								<p className="text-xs text-muted-foreground">
-									Off exports active accounts only
-								</p>
+								<p className="text-xs text-muted-foreground">Off exports active accounts only</p>
 							</div>
 							<Switch
 								checked={includeArchivedAccounts}

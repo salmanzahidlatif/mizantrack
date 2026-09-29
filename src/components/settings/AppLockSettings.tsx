@@ -112,13 +112,19 @@ export function AppLockSettings({ userId, userDisplay }: AppLockSettingsProps) {
 		if (enabled) {
 			try {
 				const credentialId = await registerBiometric(userId, userDisplay ?? undefined);
-				await db.dbConfig.update(userId, { biometricEnabled: true, biometricCredentialId: credentialId });
+				await db.dbConfig.update(userId, {
+					biometricEnabled: true,
+					biometricCredentialId: credentialId,
+				});
 				toast.success("Biometric authentication enabled.");
 			} catch {
 				toast.error("Biometric setup failed. Please try again.");
 			}
 		} else {
-			await db.dbConfig.update(userId, { biometricEnabled: false, biometricCredentialId: undefined });
+			await db.dbConfig.update(userId, {
+				biometricEnabled: false,
+				biometricCredentialId: undefined,
+			});
 			toast.success("Biometric authentication disabled.");
 		}
 	};
@@ -161,8 +167,11 @@ export function AppLockSettings({ userId, userDisplay }: AppLockSettingsProps) {
 							<Button
 								variant="outline"
 								size="sm"
-								onClick={() => { setPinMode("change-current"); setPinInput(""); setPinError(null); }}
-							>
+								onClick={() => {
+									setPinMode("change-current");
+									setPinInput("");
+									setPinError(null);
+								}}>
 								Change PIN
 							</Button>
 							<Button variant="outline" size="sm" onClick={() => void handleRemovePin()}>
@@ -192,18 +201,18 @@ export function AppLockSettings({ userId, userDisplay }: AppLockSettingsProps) {
 									size="sm"
 									disabled={pinInput.length !== PIN_LENGTH || saving}
 									onClick={() =>
-										pinMode === "change-current"
-											? void handleChangePin()
-											: void handleSetPin()
-									}
-								>
+										pinMode === "change-current" ? void handleChangePin() : void handleSetPin()
+									}>
 									{saving ? "Saving…" : "Continue"}
 								</Button>
 								<Button
 									variant="ghost"
 									size="sm"
-									onClick={() => { setPinMode("idle"); setPinInput(""); setPinError(null); }}
-								>
+									onClick={() => {
+										setPinMode("idle");
+										setPinInput("");
+										setPinError(null);
+									}}>
 									Cancel
 								</Button>
 							</div>
@@ -232,8 +241,7 @@ export function AppLockSettings({ userId, userDisplay }: AppLockSettingsProps) {
 					<p>Set up a PIN to protect your financial data when you leave the app.</p>
 					<button
 						onClick={() => setPinMode("set")}
-						className="mt-2 font-medium text-primary underline-offset-4 hover:underline"
-					>
+						className="mt-2 font-medium text-primary underline-offset-4 hover:underline">
 						Set up App Lock →
 					</button>
 				</div>

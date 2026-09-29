@@ -40,7 +40,8 @@ function formatCount(value: number): string {
 
 export function ImportPanel({ userId }: ImportPanelProps) {
 	const config = useDbConfig(userId);
-	const enabledCurrencies = config?.enabledCurrencies ?? (config?.currency ? [config.currency] : ["PKR"]);
+	const enabledCurrencies =
+		config?.enabledCurrencies ?? (config?.currency ? [config.currency] : ["PKR"]);
 	const needsCurrencyPrompt = enabledCurrencies.length > 1;
 
 	const fileRef = useRef<HTMLInputElement>(null);
@@ -119,7 +120,8 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 				<span className="text-xs text-muted-foreground">.xlsx / .xls files</span>
 			</div>
 			<p className="text-xs text-muted-foreground">
-				Transaction dates are read from the sheet. If a date is missing or unreadable it defaults to 1 Jan 2000 so your recent history is unaffected.
+				Transaction dates are read from the sheet. If a date is missing or unreadable it defaults to
+				1 Jan 2000 so your recent history is unaffected.
 			</p>
 
 			{/* Hidden file input */}
@@ -136,11 +138,16 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 			{/* Currency selector for multi-currency import */}
 			<CurrencyPicker
 				selected={selectedCurrency ? [selectedCurrency] : [enabledCurrencies[0] ?? "PKR"]}
-				onChange={(codes) => { void handleCurrencyConfirm(codes); }}
+				onChange={(codes) => {
+					void handleCurrencyConfirm(codes);
+				}}
 				singleSelect
 				open={currencyPickerOpen}
 				onOpenChange={(v) => {
-					if (!v) { setPendingFile(null); setCurrencyPickerOpen(false); }
+					if (!v) {
+						setPendingFile(null);
+						setCurrencyPickerOpen(false);
+					}
 				}}
 			/>
 
@@ -174,12 +181,12 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 							</p>
 							{showQuotaNote && (
 								<p className="text-xs text-muted-foreground">
-									This import created {formatCount(totalImportedRecords)} records. Your next
-									sync will push up to {formatCount(totalImportedRecords)} documents to
-									Firebase — that&apos;s about {quotaPercent}% of the daily{" "}
-									{formatCount(FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT)}-write free-tier
-									limit. If it&apos;s a lot, syncing may take more than one day; that&apos;s
-									expected and safe.
+									This import created {formatCount(totalImportedRecords)} records. Your next sync
+									will push up to {formatCount(totalImportedRecords)} documents to Firebase —
+									that&apos;s about {quotaPercent}% of the daily{" "}
+									{formatCount(FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT)}-write free-tier limit. If
+									it&apos;s a lot, syncing may take more than one day; that&apos;s expected and
+									safe.
 								</p>
 							)}
 							{result.autoCreatedAccounts?.length > 0 && (

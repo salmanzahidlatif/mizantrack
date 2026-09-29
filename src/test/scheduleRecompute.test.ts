@@ -16,7 +16,10 @@ vi.mock("firebase/firestore", () => ({
 }));
 
 import { computeDashboardStats } from "@/lib/analytics/computeDashboardStats";
-import { flushAnalyticsRecompute, scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
+import {
+	flushAnalyticsRecompute,
+	scheduleAnalyticsRecompute,
+} from "@/lib/analytics/scheduleRecompute";
 import { getFirestoreForUser } from "@/lib/db/firebase";
 import { db } from "@/lib/db/local";
 

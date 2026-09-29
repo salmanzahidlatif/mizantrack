@@ -36,7 +36,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 				// Google OAuth stores the profile image as token.picture.
 				session.user.name = (token.name as string | null | undefined) ?? session.user.name;
 				session.user.email = (token.email as string | null | undefined) ?? session.user.email;
-				session.user.image = (token.picture as string | null | undefined) ?? (token.image as string | null | undefined) ?? session.user.image;
+				session.user.image =
+					(token.picture as string | null | undefined) ??
+					(token.image as string | null | undefined) ??
+					session.user.image;
 			}
 			return session;
 		},

@@ -219,7 +219,10 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 	const pairs: TransferPair[] = [];
 
 	// Build a map of candidates by date+amount for fast lookup
-	const candidatesByKey = new Map<string, Array<{ row: HKActivityRow; i: number; amount: number }>>();
+	const candidatesByKey = new Map<
+		string,
+		Array<{ row: HKActivityRow; i: number; amount: number }>
+	>();
 
 	for (const { row, i } of transfers) {
 		const dateStr = String(row["Voucher Date"] ?? "");
@@ -356,7 +359,9 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 	}
 
 	if (autoCreatedAccounts.size > 0) {
-		console.warn("[HK Import] Auto-created archived accounts for missing/deleted names:", [...autoCreatedAccounts]);
+		console.warn("[HK Import] Auto-created archived accounts for missing/deleted names:", [
+			...autoCreatedAccounts,
+		]);
 	}
 	scheduleAnalyticsRecompute(userId);
 

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { db } from "@/lib/db/local";
 import { getZakatYear } from "@/lib/islamicCalendar";
+
 import type { ZakatPayment } from "@/types";
 
 interface ZakatPaymentsProps {
@@ -50,7 +51,9 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 		[userId]
 	);
 
-	async function handleAdd(payment: Omit<ZakatPayment, "id" | "userId" | "createdAt" | "updatedAt">) {
+	async function handleAdd(
+		payment: Omit<ZakatPayment, "id" | "userId" | "createdAt" | "updatedAt">
+	) {
 		await db.zakatPayments.add({
 			...payment,
 			id: uuid(),
@@ -99,7 +102,7 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 			{isAdding && (
 				<PaymentForm
 					calculations={calculations ?? []}
-					onSave={handleAdd}
+					onSave={(data) => void handleAdd(data)}
 					onCancel={() => setIsAdding(false)}
 					referenceCurrency={referenceCurrency}
 				/>
@@ -113,7 +116,7 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 							key={payment.id}
 							initialData={payment}
 							calculations={calculations ?? []}
-							onSave={(data) => handleUpdate(payment.id, data)}
+							onSave={(data) => void handleUpdate(payment.id, data)}
 							onCancel={() => setEditingId(null)}
 							referenceCurrency={referenceCurrency}
 						/>
@@ -203,7 +206,9 @@ function PaymentForm({
 	const [notes, setNotes] = useState(initialData?.notes ?? "");
 
 	// Get unique Islamic years from calculations
-	const uniqueYears = Array.from(new Set(calculations.map((c) => c.islamicYear))).sort().reverse();
+	const uniqueYears = Array.from(new Set(calculations.map((c) => c.islamicYear)))
+		.sort()
+		.reverse();
 
 	// If no calculations, allow manual entry
 	const availableYears = uniqueYears.length > 0 ? uniqueYears : [islamicYear];

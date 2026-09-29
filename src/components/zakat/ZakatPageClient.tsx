@@ -35,7 +35,7 @@ interface ZakatPageClientProps {
 export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
-	const referenceCurrency = activeCurrency || config?.currency || "PKR";
+	const referenceCurrency = activeCurrency !== "" ? activeCurrency : (config?.currency ?? "PKR");
 	const accounts = useAccounts(userId, { currency: activeCurrency || undefined });
 
 	const allTransactions = useLiveQuery(

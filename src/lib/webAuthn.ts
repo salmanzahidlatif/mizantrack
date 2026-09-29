@@ -26,7 +26,8 @@ export async function registerBiometric(userId: string, userDisplay?: string): P
 	}
 
 	const challenge = crypto.getRandomValues(new Uint8Array(32));
-	const displayName = userDisplay || "MizanTrack User";
+	const displayName =
+		userDisplay !== "" && userDisplay !== undefined ? userDisplay : "MizanTrack User";
 
 	const credential = (await navigator.credentials.create({
 		publicKey: {

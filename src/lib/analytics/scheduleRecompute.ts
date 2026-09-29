@@ -1,6 +1,9 @@
 import { doc, setDoc } from "firebase/firestore";
 
-import { computeDashboardStats, sanitizeDashboardStats } from "@/lib/analytics/computeDashboardStats";
+import {
+	computeDashboardStats,
+	sanitizeDashboardStats,
+} from "@/lib/analytics/computeDashboardStats";
 import { getFirestoreForUser } from "@/lib/db/firebase";
 import { db } from "@/lib/db/local";
 
@@ -25,7 +28,10 @@ async function persistDashboardStats(userId: string) {
 	if (!firestore) return;
 
 	try {
-		await setDoc(doc(firestore, `users/${userId}/analytics`, "dashboard"), sanitizeDashboardStats(stats));
+		await setDoc(
+			doc(firestore, `users/${userId}/analytics`, "dashboard"),
+			sanitizeDashboardStats(stats)
+		);
 	} catch (error) {
 		console.warn("Dashboard analytics push skipped:", error);
 	}

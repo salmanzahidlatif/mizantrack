@@ -57,7 +57,9 @@ export function AutoGoogleSignIn() {
 							Continue with Google
 						</Button>
 
-						<div className="mt-3 min-h-4 text-center text-xs text-muted-foreground" aria-live="polite">
+						<div
+							className="mt-3 min-h-4 text-center text-xs text-muted-foreground"
+							aria-live="polite">
 							{isRedirecting ? (
 								<span className="inline-flex items-center gap-1.5">
 									<Loader2 className="h-3.5 w-3.5 animate-spin" />

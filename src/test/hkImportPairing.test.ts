@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
 import Dexie from "dexie";
 import { IDBFactory } from "fake-indexeddb";
+import { beforeEach, describe, expect, it } from "vitest";
+import * as XLSX from "xlsx";
 
 import { db } from "@/lib/db/local";
 import { importHysabKytab } from "@/lib/import/hysabKytab";
-import * as XLSX from "xlsx";
 
 // Mock IndexedDB
 Dexie.dependencies.indexedDB = new IDBFactory();

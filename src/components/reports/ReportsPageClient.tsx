@@ -41,7 +41,7 @@ interface ReportsPageClientProps {
 export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
-	const currency = activeCurrency || config?.currency || "PKR";
+	const currency = activeCurrency !== "" ? activeCurrency : (config?.currency ?? "PKR");
 	const fiscalYearStartMonth = config?.fiscalYearStartMonth ?? 7;
 
 	const accounts = useActiveAccounts(userId);
@@ -178,7 +178,9 @@ export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 							variant: (net >= 0 ? "positive" : "negative") as "positive" | "negative",
 						},
 					].map(({ label, amount, variant }) => (
-						<div key={label} className="rounded-xl border border-border/60 bg-card p-3 text-center shadow-[var(--shadow-card)]">
+						<div
+							key={label}
+							className="rounded-xl border border-border/60 bg-card p-3 text-center shadow-[var(--shadow-card)]">
 							<p className="mb-1 text-xs text-muted-foreground">{label}</p>
 							<CurrencyAmount amount={amount} currency={currency} variant={variant} />
 						</div>

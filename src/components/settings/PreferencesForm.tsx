@@ -81,7 +81,12 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 		setEnabledCurrencies(config?.enabledCurrencies ?? [config?.currency ?? "PKR"]);
 	}, [config, userId]);
 
-	function scheduleSave(newCurrency: string, newMonth: number, newGoldKey: string, newEnabledCurrencies?: string[]) {
+	function scheduleSave(
+		newCurrency: string,
+		newMonth: number,
+		newGoldKey: string,
+		newEnabledCurrencies?: string[]
+	) {
 		if (saveTimer.current) clearTimeout(saveTimer.current);
 		saveTimer.current = setTimeout(() => {
 			const cur = newCurrency.toUpperCase() || "PKR";
@@ -151,13 +156,19 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 						{enabledCurrencies.map((code) => {
 							const entry = getCurrencyByCode(code);
 							return (
-								<span key={code} className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
+								<span
+									key={code}
+									className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
 									{entry?.flag} {code}
 								</span>
 							);
 						})}
 					</div>
-					<Button variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="text-xs">
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => setPickerOpen(true)}
+						className="text-xs">
 						Manage Currencies
 					</Button>
 					<p className="text-xs text-muted-foreground">Primary currency used throughout the app.</p>

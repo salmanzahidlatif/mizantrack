@@ -56,9 +56,9 @@ export function ResetLocalDataPanel({ userId }: ResetLocalDataPanelProps) {
 			<div>
 				<h2 className="font-semibold text-destructive">Reset Local Data</h2>
 				<p className="mt-0.5 text-sm text-muted-foreground">
-					Wipes all accounts, categories, and transactions from this device and restores the
-					default category list — like a fresh install. Useful on mobile/PWA where clearing
-					browser cache isn&apos;t easy.
+					Wipes all accounts, categories, and transactions from this device and restores the default
+					category list — like a fresh install. Useful on mobile/PWA where clearing browser cache
+					isn&apos;t easy.
 				</p>
 			</div>
 
@@ -76,8 +76,8 @@ export function ResetLocalDataPanel({ userId }: ResetLocalDataPanelProps) {
 						<DialogTitle>Reset local data?</DialogTitle>
 						<DialogDescription>
 							This permanently deletes all accounts, categories, and transactions stored on this
-							device, then restores the default category list. Your app settings and Zakat data
-							are not affected.{" "}
+							device, then restores the default category list. Your app settings and Zakat data are
+							not affected.{" "}
 							{syncEnabled
 								? "Since Cloud Sync is enabled, your data will be re-downloaded from Firebase on the next sync."
 								: "Cloud Sync is off, so this data cannot be recovered afterwards."}

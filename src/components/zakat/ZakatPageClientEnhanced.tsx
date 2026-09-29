@@ -6,10 +6,6 @@ import { CalendarIcon, Check, Download, Loader2, RefreshCw, Save } from "lucide-
 import { useEffect, useMemo, useState } from "react";
 import { v4 as uuid } from "uuid";
 
-import { GoldItemsManager } from "@/components/zakat/GoldItemsManager";
-import { ZakatHistory } from "@/components/zakat/ZakatHistory";
-import { ZakatMonthlyBalances } from "@/components/zakat/ZakatMonthlyBalances";
-import { ZakatPayments } from "@/components/zakat/ZakatPayments";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -23,13 +19,18 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { GoldItemsManager } from "@/components/zakat/GoldItemsManager";
+import { ZakatHistory } from "@/components/zakat/ZakatHistory";
+import { ZakatMonthlyBalances } from "@/components/zakat/ZakatMonthlyBalances";
+import { ZakatPayments } from "@/components/zakat/ZakatPayments";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { db } from "@/lib/db/local";
 import { fetchGoldPrice } from "@/lib/goldPrice";
-import { getZakatYear, getCurrentIslamicDate } from "@/lib/islamicCalendar";
+import { getZakatYear } from "@/lib/islamicCalendar";
 import { exportZakatSummary } from "@/lib/zakatExport";
 import { useFilterStore } from "@/store/filter-store";
+
 import type { GoldPurity } from "@/types";
 
 const NISAB_GOLD_GRAMS = 85;
@@ -48,7 +49,7 @@ interface ZakatPageClientProps {
 export function ZakatPageClientEnhanced({ userId }: ZakatPageClientProps) {
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
-	const referenceCurrency = activeCurrency || config?.currency || "PKR";
+	const referenceCurrency = activeCurrency !== "" ? activeCurrency : (config?.currency ?? "PKR");
 	const accounts = useAccounts(userId, { currency: activeCurrency || undefined });
 
 	const allTransactions = useLiveQuery(
@@ -62,7 +63,12 @@ export function ZakatPageClientEnhanced({ userId }: ZakatPageClientProps) {
 	);
 
 	const goldItems = useLiveQuery(
-		() => db.goldItems.where("userId").equals(userId).filter((g) => !g.deletedAt).toArray(),
+		() =>
+			db.goldItems
+				.where("userId")
+				.equals(userId)
+				.filter((g) => !g.deletedAt)
+				.toArray(),
 		[userId]
 	);
 
@@ -158,7 +164,8 @@ export function ZakatPageClientEnhanced({ userId }: ZakatPageClientProps) {
 			const isLiability = account.accountType === "liability";
 
 			// Convert to reference currency
-			const rate = account.currency === referenceCurrency ? 1 : (exchangeRates[account.currency] ?? 1);
+			const rate =
+				account.currency === referenceCurrency ? 1 : (exchangeRates[account.currency] ?? 1);
 			const balanceInRef = balance * rate;
 
 			if (isLiability) {
@@ -483,16 +490,22 @@ export function ZakatPageClientEnhanced({ userId }: ZakatPageClientProps) {
 							]
 								.filter(Boolean)
 								.map((item) => {
-									const { label, value, isNegative } = item as { label: string; value: string; isNegative?: boolean };
+									const { label, value, isNegative } = item as {
+										label: string;
+										value: string;
+										isNegative?: boolean;
+									};
 									return (
-									<div key={label} className="flex justify-between">
-										<span className="text-muted-foreground">{label}</span>
-										<span className={`font-medium tabular-nums ${isNegative ? "text-destructive" : ""}`}>
-											{isNegative && "- "}
-											{value}
-										</span>
-									</div>
-								);})}
+										<div key={label} className="flex justify-between">
+											<span className="text-muted-foreground">{label}</span>
+											<span
+												className={`font-medium tabular-nums ${isNegative ? "text-destructive" : ""}`}>
+												{isNegative && "- "}
+												{value}
+											</span>
+										</div>
+									);
+								})}
 						</div>
 
 						<div className="mt-4 rounded-lg bg-background p-3 text-center">
@@ -519,7 +532,7 @@ export function ZakatPageClientEnhanced({ userId }: ZakatPageClientProps) {
 
 						{isLiable && (
 							<div className="mt-4 flex justify-center">
-								<Button onClick={handleSaveCalculation}>
+								<Button onClick={() => void handleSaveCalculation()}>
 									<Save className="mr-2 h-4 w-4" />
 									Save This Calculation
 								</Button>

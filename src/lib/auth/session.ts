@@ -38,7 +38,10 @@ export function resolveSessionUserId(token: TokenLike): string | null {
  * Call this from the NextAuth `jwt` callback. `account` is only non-null on the
  * initial sign-in; subsequent requests leave token.sub unchanged.
  */
-export function pinTokenSubToProvider(token: TokenLike, account: AccountLike | null | undefined): TokenLike {
+export function pinTokenSubToProvider(
+	token: TokenLike,
+	account: AccountLike | null | undefined
+): TokenLike {
 	if (account?.providerAccountId && typeof account.providerAccountId === "string") {
 		return { ...token, sub: account.providerAccountId };
 	}
