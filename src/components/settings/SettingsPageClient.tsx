@@ -1,6 +1,7 @@
 "use client";
 
 import { AppLockSettings } from "@/components/settings/AppLockSettings";
+import { CategoryCurrencyBackfillPanel } from "@/components/settings/CategoryCurrencyBackfillPanel";
 import { ExportPanel } from "@/components/settings/ExportPanel";
 import { FirebaseSyncPanel } from "@/components/settings/FirebaseSyncPanel";
 import { ImportPanel } from "@/components/settings/ImportPanel";
@@ -30,6 +31,8 @@ export function SettingsPageClient({ userId, userDisplay }: SettingsPageClientPr
 			</div>
 
 			<FirebaseSyncPanel userId={userId} />
+
+			<CategoryCurrencyBackfillPanel userId={userId} />
 
 			<ResetLocalDataPanel userId={userId} />
 		</div>
