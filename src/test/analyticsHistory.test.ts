@@ -442,4 +442,37 @@ describe("historical analytics queries", () => {
 		});
 		expect(analytics.netWorth).toBe(1319);
 	});
+
+	it("does not let invalid transfers affect historical account balances", async () => {
+		await db.transactions.put({
+			id: "aed-invalid-transfer",
+			userId: USER_ID,
+			type: "Transfer",
+			date: gst("2026-09-16T12:00:00.000+04:00"),
+			amount: 532154.23,
+			accountId: "aed-active",
+			updatedAt: gst("2026-09-16T12:00:00.000+04:00"),
+		});
+
+		const analytics = await getAccountsAnalytics(USER_ID, {
+			currency: "AED",
+			asOf: new Date("2026-09-30T23:30:00.000+04:00"),
+			timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			period: {
+				interval: "monthly",
+				anchorDate: new Date("2026-09-15T12:00:00.000+04:00"),
+				timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			},
+		});
+
+		expect(analytics.accounts.find((account) => account.accountId === "aed-active")?.balance).toBe(
+			1489
+		);
+		expect(analytics.warnings).toContainEqual({
+			code: "invalid_transfer_counterparty_skipped",
+			transactionId: "aed-invalid-transfer",
+			message:
+				"Transfer balance impact was skipped because the destination account is missing or deleted.",
+		});
+	});
 });

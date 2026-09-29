@@ -46,8 +46,9 @@ describe("HK Import - Actual Backup File Integration Test", () => {
 		// Verify expected counts based on the analysis
 		expect(result.accounts).toBe(38); // Rows in ACCOUNT sheet
 		expect(result.categories).toBe(70); // Rows in CATEGORY sheet (before deduplication)
-		expect(result.transactions).toBe(7596); // 6207 non-transfers + 1388 paired + 1 unmatched
+		expect(result.transactions).toBe(7596); // 6207 non-transfers + 1388 paired + 1 adjustment
 		expect(result.transfersPaired).toBe(1388); // NEW algorithm result
+		expect(result.unmatchedTransferAdjustments).toBe(1);
 		expect(result.autoCreated).toBe(5); // Expected auto-created accounts for missing references
 
 		// Verify database state
@@ -68,9 +69,13 @@ describe("HK Import - Actual Backup File Integration Test", () => {
 		const unmatchedTransfers = transactions.filter(
 			(t) => t.type === "Transfer" && t.toAccountId === undefined
 		);
+		const unmatchedAdjustments = transactions.filter((t) =>
+			t.description?.startsWith("[HK unmatched transfer]")
+		);
 
 		expect(pairedTransfers.length).toBe(1388);
-		expect(unmatchedTransfers.length).toBe(1);
+		expect(unmatchedTransfers.length).toBe(0);
+		expect(unmatchedAdjustments.length).toBe(1);
 
 		// Verify all accounts have PKR currency (from user config)
 		const nonPKRAccounts = accounts.filter((a) => a.currency !== "PKR");

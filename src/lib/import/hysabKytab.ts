@@ -9,6 +9,7 @@ import type { Transaction } from "@/types";
 
 /** Stable namespace UUID for deterministic HK import transaction IDs. */
 const HK_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+const EXACT_COMPLEMENT_SCORE = 100;
 
 /**
  * Deterministic transaction ID based on userId + row index.
@@ -45,6 +46,61 @@ function parseHKDate(raw: string): number {
 	}
 	// Unrecognised format — fall back to 1 Jan 2000 so historical filters are not polluted
 	return new Date(2000, 0, 1).getTime();
+}
+
+function normalizeTransferText(value: unknown): string {
+	return String(value ?? "")
+		.toLowerCase()
+		.replace(/\s*\(closed\)\s*$/i, "")
+		.replace(/~/g, "-")
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim();
+}
+
+function normalizeTransferToken(value: unknown): string {
+	return normalizeTransferText(value).replace(/\s+/g, "");
+}
+
+function getTransferMatchKey(row: HKActivityRow): string {
+	const dateStr = String(row["Voucher Date"] ?? "").trim();
+	const absAmount = Math.abs(Number(row["Voucher Amount"]));
+	const dateKey = dateStr === "" ? `EMPTY|${normalizeTransferText(row["Description"])}` : dateStr;
+	return `${dateKey}|${absAmount.toFixed(2)}`;
+}
+
+function getTransferPairScore(sourceRow: HKActivityRow, destRow: HKActivityRow): number {
+	const sourceDescription = normalizeTransferText(sourceRow["Description"]);
+	const destDescription = normalizeTransferText(destRow["Description"]);
+	const sourceAccount = normalizeTransferText(sourceRow["Account Name"]);
+	const destAccount = normalizeTransferText(destRow["Account Name"]);
+	const sourceDescriptionToken = normalizeTransferToken(sourceRow["Description"]);
+	const destDescriptionToken = normalizeTransferToken(destRow["Description"]);
+	const sourceAccountToken = normalizeTransferToken(sourceRow["Account Name"]);
+	const destAccountToken = normalizeTransferToken(destRow["Account Name"]);
+	const sourceMentionsDestination = destAccount !== "" && sourceDescription.includes(destAccount);
+	const destinationMentionsSource = sourceAccount !== "" && destDescription.includes(sourceAccount);
+
+	let score = 0;
+
+	if (
+		sourceDescriptionToken &&
+		destDescriptionToken &&
+		sourceDescriptionToken === destAccountToken &&
+		destDescriptionToken === sourceAccountToken
+	) {
+		score += EXACT_COMPLEMENT_SCORE;
+	}
+
+	if (sourceMentionsDestination && destinationMentionsSource) {
+		score += 60;
+	} else {
+		if (sourceMentionsDestination) score += 25;
+		if (destinationMentionsSource) score += 25;
+	}
+
+	if (sourceDescription && sourceDescription === destDescription) score += 10;
+
+	return score;
 }
 
 export async function importHysabKytab(file: File, userId: string, targetCurrency?: string) {
@@ -194,6 +250,7 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 
 	let imported = 0;
 	let transfersPaired = 0;
+	let unmatchedTransferAdjustments = 0;
 
 	const processedIndexes = new Set<number>();
 
@@ -218,21 +275,15 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 
 	const pairs: TransferPair[] = [];
 
-	// Build a map of candidates by date+amount for fast lookup
+	// Build a map of candidates by date+amount for deterministic matching.
 	const candidatesByKey = new Map<
 		string,
 		Array<{ row: HKActivityRow; i: number; amount: number }>
 	>();
 
 	for (const { row, i } of transfers) {
-		const dateStr = String(row["Voucher Date"] ?? "");
 		const amount = Number(row["Voucher Amount"]);
-		const absAmount = Math.abs(amount);
-
-		// For empty dates, use a special key that includes description for matching
-		const dateKey =
-			dateStr.trim() === "" ? `EMPTY|${String(row["Description"] ?? "").trim()}` : dateStr;
-		const key = `${dateKey}|${absAmount}`;
+		const key = getTransferMatchKey(row);
 
 		if (!candidatesByKey.has(key)) {
 			candidatesByKey.set(key, []);
@@ -244,17 +295,41 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 	for (const [_key, candidates] of candidatesByKey.entries()) {
 		if (candidates.length < 2) continue; // No pairs possible
 
-		// Separate into positive and negative
 		const negatives = candidates.filter((c) => c.amount < 0);
 		const positives = candidates.filter((c) => c.amount > 0);
+		const pairCandidates = negatives.flatMap((neg) =>
+			positives
+				.filter(
+					(pos) =>
+						normalizeTransferToken(pos.row["Account Name"]) !==
+						normalizeTransferToken(neg.row["Account Name"])
+				)
+				.map((pos) => ({
+					neg,
+					pos,
+					score: getTransferPairScore(neg.row, pos.row),
+					distance: Math.abs(neg.i - pos.i),
+					accountPairKey: `${normalizeTransferText(neg.row["Account Name"])}→${normalizeTransferText(
+						pos.row["Account Name"]
+					)}`,
+				}))
+		);
 
-		// Pair them up (greedy matching)
-		const pairCount = Math.min(negatives.length, positives.length);
+		pairCandidates.sort(
+			(a, b) =>
+				b.score - a.score ||
+				a.distance - b.distance ||
+				a.accountPairKey.localeCompare(b.accountPairKey) ||
+				a.neg.i - b.neg.i ||
+				a.pos.i - b.pos.i
+		);
 
-		for (let p = 0; p < pairCount; p++) {
-			const neg = negatives[p];
-			const pos = positives[p];
-			if (!neg || !pos) continue;
+		const usedNegatives = new Set<number>();
+		const usedPositives = new Set<number>();
+
+		for (const candidate of pairCandidates) {
+			const { neg, pos } = candidate;
+			if (usedNegatives.has(neg.i) || usedPositives.has(pos.i)) continue;
 
 			pairs.push({
 				sourceIdx: neg.i,
@@ -263,6 +338,8 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 				destRow: pos.row,
 			});
 
+			usedNegatives.add(neg.i);
+			usedPositives.add(pos.i);
 			processedIndexes.add(neg.i);
 			processedIndexes.add(pos.i);
 		}
@@ -291,25 +368,35 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 		imported++;
 	}
 
-	// Import unmatched transfers (without toAccountId)
+	// Import unmatched transfers as explicit one-sided adjustments.
+	// A Transfer without a counterparty is invalid in MizanTrack because balance
+	// math must conserve transfers. The HK sign tells us whether the one-sided row
+	// increases or decreases the named account, so keep it visible as Income/Expense
+	// rather than silently leaking value through a destination-less transfer.
 	for (const { row, i } of transfers) {
 		if (processedIndexes.has(i)) continue;
 
 		const date = parseHKDate(String(row["Voucher Date"]));
-		const amount = Math.abs(Number(row["Voucher Amount"]));
+		const rawAmount = Number(row["Voucher Amount"]);
+		const amount = Math.abs(rawAmount);
 		const accountId = await resolveOrCreateAccountId(row["Account Name"]);
+		const type: "Income" | "Expense" = rawAmount > 0 ? "Income" : "Expense";
+		const description = row["Description"]
+			? `[HK unmatched transfer] ${row["Description"]}`
+			: "[HK unmatched transfer]";
 
 		await db.transactions.put({
 			id: makeHKTxnId(userId, i),
 			userId,
-			type: "Transfer",
+			type,
 			date,
 			amount,
-			description: row["Description"] ?? "",
+			description,
 			accountId,
 			updatedAt: now,
 		});
 
+		unmatchedTransferAdjustments++;
 		imported++;
 	}
 
@@ -370,6 +457,7 @@ export async function importHysabKytab(file: File, userId: string, targetCurrenc
 		categories: catRows.length,
 		transactions: imported,
 		transfersPaired,
+		unmatchedTransferAdjustments,
 		autoCreated: autoCreatedAccounts.size,
 		autoCreatedAccounts: [...autoCreatedAccounts],
 	};

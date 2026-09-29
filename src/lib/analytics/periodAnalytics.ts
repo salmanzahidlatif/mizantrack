@@ -101,7 +101,7 @@ export interface AccountsAnalytics {
 	netFlow: number;
 	accounts: AccountBalanceBreakdownItem[];
 	warnings: Array<{
-		code: "cross_currency_transfer_destination_skipped";
+		code: "cross_currency_transfer_destination_skipped" | "invalid_transfer_counterparty_skipped";
 		transactionId: string;
 		message: string;
 	}>;
@@ -160,6 +160,16 @@ function isKnownCrossCurrencyTransfer(
 
 	return Boolean(
 		sourceAccount && destinationAccount && sourceAccount.currency !== destinationAccount.currency
+	);
+}
+
+function hasInvalidTransferCounterparty(
+	transaction: Transaction,
+	accountById: Map<string, Account>
+): boolean {
+	return (
+		transaction.type === "Transfer" &&
+		(!transaction.toAccountId || !accountById.has(transaction.toAccountId))
 	);
 }
 
@@ -471,6 +481,16 @@ export function aggregateAccountsAnalytics(
 				balances.get(transaction.accountId)! - transaction.amount
 			);
 		} else if (transaction.type === "Transfer") {
+			if (hasInvalidTransferCounterparty(transaction, scope.accountById)) {
+				warnings.push({
+					code: "invalid_transfer_counterparty_skipped",
+					transactionId: transaction.id,
+					message:
+						"Transfer balance impact was skipped because the destination account is missing or deleted.",
+				});
+				continue;
+			}
+
 			if (balances.has(transaction.accountId)) {
 				balances.set(
 					transaction.accountId,

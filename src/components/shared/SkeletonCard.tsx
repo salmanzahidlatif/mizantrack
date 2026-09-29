@@ -13,7 +13,7 @@ function Skeleton({ className }: { className?: string }) {
 
 export function SkeletonCard({ className, rows = 1 }: SkeletonCardProps) {
 	return (
-		<div className={cn(CARD_SURFACE, "overflow-hidden p-4", className)}>
+		<div aria-hidden="true" className={cn(CARD_SURFACE, "overflow-hidden p-4", className)}>
 			<div className="flex items-start justify-between gap-4">
 				<div className="min-w-0 flex-1 space-y-2.5">
 					<Skeleton className="h-4 w-2/5" />

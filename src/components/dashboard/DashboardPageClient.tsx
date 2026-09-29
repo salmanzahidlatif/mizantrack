@@ -9,10 +9,10 @@ import {
 	TrendingUp,
 	WalletCards,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { CategoryBreakdownChart } from "@/components/charts/CategoryDonutChart";
 import {
 	AnalyticsIntervalChooser,
 	getIntervalLabel,
@@ -24,6 +24,7 @@ import {
 } from "@/components/dashboard/monthData";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
+import { SkeletonChart } from "@/components/shared/SkeletonChart";
 import { Button } from "@/components/ui/button";
 import { useAccountsAnalytics } from "@/hooks/useAccountsAnalytics";
 import { useAnalyticsMonthSummaries } from "@/hooks/useAnalyticsMonthSummaries";
@@ -50,6 +51,13 @@ import type {
 	PeriodAnalyticsQuery,
 } from "@/lib/analytics/periodAnalytics";
 
+const CategoryBreakdownChart = dynamic(
+	() => import("@/components/charts/CategoryDonutChart").then((mod) => mod.CategoryBreakdownChart),
+	{
+		loading: () => <SkeletonChart height={280} />,
+	}
+);
+
 interface DashboardPageClientProps {
 	userId: string;
 }
@@ -75,6 +83,23 @@ interface WhatYouHaveCardProps {
 	analytics?: AccountsAnalytics;
 	currency: string;
 	onAddAccount: () => void;
+}
+
+function sortDashboardAccounts(accounts: AccountsAnalytics["accounts"]) {
+	return accounts
+		.map((account, index) => ({ account, index }))
+		.filter(({ account }) => !account.isArchived)
+		.sort((a, b) => {
+			const zeroA = a.account.balance === 0 ? 1 : 0;
+			const zeroB = b.account.balance === 0 ? 1 : 0;
+			if (zeroA !== zeroB) return zeroA - zeroB;
+
+			const balanceDiff = b.account.balance - a.account.balance;
+			if (balanceDiff !== 0) return balanceDiff;
+
+			return a.index - b.index;
+		})
+		.map(({ account }) => account);
 }
 
 function useMonthSwipe(onChangeMonth: (delta: number) => void, canGoNext: boolean) {
@@ -258,12 +283,48 @@ function MonthStrip({
 	);
 }
 
+function WhatYouHaveSkeleton() {
+	return (
+		<section
+			className={cn(CARD_SURFACE, "overflow-hidden p-4")}
+			aria-busy="true"
+			data-testid="what-you-have-skeleton">
+			<p className="sr-only" role="status">
+				Loading account balances
+			</p>
+			<div aria-hidden="true">
+				<div className="mb-4 flex items-start justify-between gap-3">
+					<div className="space-y-2">
+						<div className="shimmer h-4 w-28 rounded-full bg-muted/70" />
+						<div className="shimmer h-9 w-44 rounded-full bg-muted/70" />
+					</div>
+					<div className="shimmer h-5 w-5 rounded-full bg-muted/70" />
+				</div>
+				<div className="grid grid-cols-2 gap-2">
+					{Array.from({ length: 5 }).map((_, index) => (
+						<div
+							key={index}
+							className="min-h-[72px] rounded-2xl border border-border/60 bg-muted/35 p-3">
+							<div className="shimmer h-3 w-20 rounded-full bg-muted/70" />
+							<div className="shimmer mt-2 h-5 w-24 rounded-full bg-muted/70" />
+						</div>
+					))}
+					<div className="min-h-[72px] rounded-2xl border border-dashed border-border/80 bg-muted/20 p-3" />
+				</div>
+				<div className="mt-4 flex justify-end">
+					<div className="shimmer h-5 w-20 rounded-full bg-muted/70" />
+				</div>
+			</div>
+		</section>
+	);
+}
+
 function WhatYouHaveCard({ analytics, currency, onAddAccount }: WhatYouHaveCardProps) {
 	if (!analytics) {
-		return <SkeletonCard className="h-64" />;
+		return <WhatYouHaveSkeleton />;
 	}
 
-	const accounts = analytics.accounts.filter((account) => !account.isArchived).slice(0, 5);
+	const accounts = sortDashboardAccounts(analytics.accounts).slice(0, 5);
 
 	return (
 		<section className={cn(CARD_SURFACE, "overflow-hidden p-4")} aria-labelledby="what-you-have">
@@ -286,8 +347,11 @@ function WhatYouHaveCard({ analytics, currency, onAddAccount }: WhatYouHaveCardP
 					<Link
 						key={account.accountId}
 						href="/accounts"
+						data-testid="dashboard-account-tile"
+						data-account-id={account.accountId}
+						data-balance={account.balance}
 						className={cn(
-							"press rounded-2xl border border-border/60 bg-muted/35 p-3 text-left",
+							"press min-h-[72px] rounded-2xl border border-border/60 bg-muted/35 p-3 text-left",
 							LIST_ROW
 						)}
 						style={staggerDelay(index, 30)}>
@@ -451,8 +515,10 @@ export function DashboardPageClient({ userId }: DashboardPageClientProps) {
 		openAddAccount();
 	}
 
+	const isAnalyticsBusy = periodAnalytics === undefined || accountAnalytics === undefined;
+
 	return (
-		<div className="space-y-5">
+		<div className="space-y-5" aria-busy={isAnalyticsBusy}>
 			<div>
 				<h1 className="hidden text-2xl font-bold tracking-tight md:block">Dashboard</h1>
 				<p className="text-sm text-muted-foreground">

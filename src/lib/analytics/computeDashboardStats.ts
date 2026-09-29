@@ -184,6 +184,16 @@ function isKnownCrossCurrencyTransfer(
 	);
 }
 
+function hasInvalidTransferCounterparty(
+	transaction: Transaction,
+	accountById: Map<string, Account>
+): boolean {
+	return (
+		transaction.type === "Transfer" &&
+		(!transaction.toAccountId || !accountById.has(transaction.toAccountId))
+	);
+}
+
 export function getMonthlySummaryFromDashboardStats(
 	stats: DashboardStats,
 	months = DEFAULT_TREND_MONTHS,
@@ -240,6 +250,16 @@ export function aggregateDashboardStats(
 		} else if (transaction.type === "Expense" && sourceBalance !== undefined) {
 			balances[transaction.accountId] = sourceBalance - transaction.amount;
 		} else if (transaction.type === "Transfer") {
+			if (hasInvalidTransferCounterparty(transaction, accountById)) {
+				warnings.push({
+					code: "invalid_transfer_counterparty_skipped",
+					transactionId: transaction.id,
+					message:
+						"Transfer balance impact was skipped because the destination account is missing or deleted.",
+				});
+				continue;
+			}
+
 			const isCrossCurrency = isKnownCrossCurrencyTransfer(transaction, accountById);
 			if (sourceBalance !== undefined) {
 				balances[transaction.accountId] = sourceBalance - transaction.amount;

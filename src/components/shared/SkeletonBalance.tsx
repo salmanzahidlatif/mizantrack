@@ -9,7 +9,10 @@ export function SkeletonBalance({ count = 1 }: SkeletonBalanceProps) {
 	return (
 		<>
 			{Array.from({ length: count }).map((_, i) => (
-				<div key={i} className={cn(CARD_SURFACE, "flex min-w-44 flex-col gap-3 p-4")}>
+				<div
+					key={i}
+					aria-hidden="true"
+					className={cn(CARD_SURFACE, "flex min-w-44 flex-col gap-3 p-4")}>
 					<div className="flex items-center gap-2">
 						<div className="shimmer h-8 w-8 rounded-2xl bg-muted/70" />
 						<div className="min-w-0 flex-1 space-y-2">

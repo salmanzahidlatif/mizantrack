@@ -295,7 +295,7 @@ export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 	}
 
 	return (
-		<div className="space-y-5">
+		<div className="space-y-5" aria-busy={analytics === undefined}>
 			<div>
 				<h1 className="hidden text-2xl font-bold md:block">Reports</h1>
 				<p className="text-sm text-muted-foreground">Insights for {periodLabel}</p>

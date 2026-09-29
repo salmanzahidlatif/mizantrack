@@ -227,6 +227,60 @@ describe("computeDashboardStats", () => {
 		]);
 	});
 
+	it("skips destination-less transfers with a warning instead of destroying account value", async () => {
+		await db.accounts.bulkPut([
+			{
+				id: "acc-cash",
+				userId: USER_ID,
+				title: "Cash",
+				openingBalance: 378.09,
+				currency: "AED",
+				isArchived: false,
+				updatedAt: Date.now(),
+			},
+		]);
+		await db.transactions.bulkPut([
+			{
+				id: "txn-leaky-transfer-1",
+				userId: USER_ID,
+				type: "Transfer",
+				date: Date.now(),
+				amount: 100000,
+				accountId: "acc-cash",
+				updatedAt: Date.now(),
+			},
+			{
+				id: "txn-leaky-transfer-2",
+				userId: USER_ID,
+				type: "Transfer",
+				date: Date.now() + 1,
+				amount: 432154.23,
+				accountId: "acc-cash",
+				updatedAt: Date.now(),
+			},
+		]);
+
+		const stats = await computeDashboardStats(USER_ID);
+		const legacyLeakyBalance = 378.09 - 532154.23;
+
+		expect(legacyLeakyBalance).toBeCloseTo(-531776.14, 2);
+		expect(stats.balances["acc-cash"]).toBeCloseTo(378.09, 2);
+		expect(stats.warnings).toEqual([
+			{
+				code: "invalid_transfer_counterparty_skipped",
+				transactionId: "txn-leaky-transfer-1",
+				message:
+					"Transfer balance impact was skipped because the destination account is missing or deleted.",
+			},
+			{
+				code: "invalid_transfer_counterparty_skipped",
+				transactionId: "txn-leaky-transfer-2",
+				message:
+					"Transfer balance impact was skipped because the destination account is missing or deleted.",
+			},
+		]);
+	});
+
 	it("aggregates exact monthly totals across timezone boundaries, currencies, transfers, archived accounts, and soft deletes", () => {
 		const now = new Date("2026-09-15T12:00:00.000+04:00");
 		const stats = aggregateDashboardStats(

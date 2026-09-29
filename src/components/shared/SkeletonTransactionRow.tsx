@@ -8,7 +8,10 @@ export function SkeletonTransactionRow({ count = 5 }: SkeletonTransactionRowProp
 	return (
 		<>
 			{Array.from({ length: count }).map((_, i) => (
-				<div key={i} className="flex min-h-[76px] items-center gap-3 px-4 py-3.5">
+				<div
+					key={i}
+					aria-hidden="true"
+					className="flex min-h-[76px] items-center gap-3 px-4 py-3.5">
 					<div className="shimmer h-11 w-11 flex-shrink-0 rounded-2xl bg-muted/70" />
 					<div className="min-w-0 flex-1 space-y-2">
 						<div

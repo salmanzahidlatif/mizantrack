@@ -18,6 +18,16 @@ function isKnownCrossCurrencyTransfer(
 	);
 }
 
+function hasInvalidTransferCounterparty(
+	transaction: Transaction,
+	accountById: Map<string, Account>
+): boolean {
+	return (
+		transaction.type === "Transfer" &&
+		(!transaction.toAccountId || !accountById.has(transaction.toAccountId))
+	);
+}
+
 export function useAccountBalance(accountId: string, userId: string): number | undefined {
 	return useLiveQuery(async () => {
 		const account = await db.accounts.get(accountId);
@@ -48,6 +58,8 @@ export function useAccountBalance(accountId: string, userId: string): number | u
 			} else if (t.type === "Expense" && t.accountId === accountId) {
 				balance -= t.amount;
 			} else if (t.type === "Transfer") {
+				if (hasInvalidTransferCounterparty(t, accountById)) continue;
+
 				const isCrossCurrency = isKnownCrossCurrencyTransfer(t, accountById);
 				if (t.accountId === accountId) {
 					balance -= t.amount; // source

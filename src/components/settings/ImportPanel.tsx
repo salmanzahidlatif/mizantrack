@@ -26,6 +26,7 @@ interface ImportResult {
 	categories: number;
 	transactions: number;
 	transfersPaired: number;
+	unmatchedTransferAdjustments?: number;
 	autoCreated: number;
 	autoCreatedAccounts: string[];
 }
@@ -166,6 +167,14 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 									{ label: "Categories imported", value: result.categories },
 									{ label: "Transactions imported", value: result.transactions },
 									{ label: "Transfers paired", value: result.transfersPaired },
+									...(result.unmatchedTransferAdjustments
+										? [
+												{
+													label: "Unmatched transfers imported as adjustments",
+													value: result.unmatchedTransferAdjustments,
+												},
+											]
+										: []),
 									...(result.autoCreated > 0
 										? [{ label: "Accounts auto-created", value: result.autoCreated }]
 										: []),

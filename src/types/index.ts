@@ -125,7 +125,7 @@ export interface DashboardStats {
 		toAccountId?: string;
 	}>;
 	warnings?: Array<{
-		code: "cross_currency_transfer_destination_skipped";
+		code: "cross_currency_transfer_destination_skipped" | "invalid_transfer_counterparty_skipped";
 		transactionId: string;
 		message: string;
 	}>;

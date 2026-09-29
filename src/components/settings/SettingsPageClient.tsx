@@ -7,6 +7,7 @@ import { FirebaseSyncPanel } from "@/components/settings/FirebaseSyncPanel";
 import { ImportPanel } from "@/components/settings/ImportPanel";
 import { PreferencesForm } from "@/components/settings/PreferencesForm";
 import { ResetLocalDataPanel } from "@/components/settings/ResetLocalDataPanel";
+import { TransferIntegrityPanel } from "@/components/settings/TransferIntegrityPanel";
 
 interface SettingsPageClientProps {
 	userId: string;
@@ -33,6 +34,8 @@ export function SettingsPageClient({ userId, userDisplay }: SettingsPageClientPr
 			<FirebaseSyncPanel userId={userId} />
 
 			<CategoryCurrencyBackfillPanel userId={userId} />
+
+			<TransferIntegrityPanel userId={userId} />
 
 			<ResetLocalDataPanel userId={userId} />
 		</div>
