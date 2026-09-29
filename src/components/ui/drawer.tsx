@@ -35,6 +35,8 @@ function Drawer({
 	scrollLockTimeout = 250,
 	repositionInputs = false,
 	snapToSequentialPoint = true,
+	handleOnly = false,
+	closeThreshold,
 	...props
 }: DrawerProps) {
 	const { light } = useHaptics();
@@ -94,6 +96,8 @@ function Drawer({
 			scrollLockTimeout={scrollLockTimeout}
 			repositionInputs={repositionInputs}
 			snapToSequentialPoint={snapToSequentialPoint}
+			handleOnly={handleOnly}
+			closeThreshold={closeThreshold}
 			{...snapPointProps}
 			{...props}
 		/>
@@ -151,8 +155,10 @@ function DrawerContent({
 				style={style}
 				{...props}>
 				{showHandle && (
-					<div className="hidden shrink-0 touch-none px-4 pt-3 pb-2 group-data-[vaul-drawer-direction=bottom]/drawer-content:block">
-						<DrawerPrimitive.Handle className="mx-auto !h-1.5 !w-12 !rounded-full !bg-muted-foreground/30 transition-[opacity,transform,background-color] duration-[var(--dur-fast)] ease-[var(--ease-spring)] active:scale-110 active:!bg-muted-foreground/45" />
+					<div className="hidden h-12 shrink-0 touch-none items-center justify-center px-4 group-data-[vaul-drawer-direction=bottom]/drawer-content:flex">
+						<DrawerPrimitive.Handle className="group/drawer-handle relative !h-12 !w-24 !touch-none !rounded-none !bg-transparent !opacity-100">
+							<span className="pointer-events-none absolute top-1/2 left-1/2 h-1.5 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-muted-foreground/30 transition-[opacity,transform,background-color] duration-[var(--dur-fast)] ease-[var(--ease-spring)] group-active/drawer-handle:scale-110 group-active/drawer-handle:bg-muted-foreground/45" />
+						</DrawerPrimitive.Handle>
 					</div>
 				)}
 				{children}

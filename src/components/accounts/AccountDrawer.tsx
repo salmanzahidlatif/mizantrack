@@ -41,6 +41,7 @@ const COLOR_SWATCHES = [
 const ACCOUNT_FORM_ID = "account-drawer-form";
 const FORM_DRAWER_CONTENT_CLASS =
 	"overflow-hidden pb-0 data-[vaul-drawer-direction=bottom]:h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_1rem)] data-[vaul-drawer-direction=bottom]:max-h-[95dvh] data-[vaul-drawer-direction=bottom]:pb-0";
+const FORM_DRAWER_CLOSE_THRESHOLD = 0.55;
 const FOCUSABLE_FIELD_SELECTOR =
 	"input, textarea, select, button, [role='combobox'], [contenteditable='true']";
 const FOCUS_SCROLL_DELAY = 280;
@@ -139,7 +140,11 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 			: currencyShortcuts;
 
 	return (
-		<Drawer open={isAccountDrawerOpen} onOpenChange={(open) => !open && closeAccountDrawer()}>
+		<Drawer
+			open={isAccountDrawerOpen}
+			handleOnly
+			closeThreshold={FORM_DRAWER_CLOSE_THRESHOLD}
+			onOpenChange={(open) => !open && closeAccountDrawer()}>
 			<DrawerContent className={FORM_DRAWER_CONTENT_CLASS}>
 				<DrawerHeader className="shrink-0 border-b border-border/60 px-4 pb-3 text-left">
 					<div className="flex items-start justify-between gap-3">
