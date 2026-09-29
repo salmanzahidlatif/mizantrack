@@ -99,18 +99,9 @@ function AccountCard({ account, balance, onEdit, onSelect, className, style }: A
 
 	return (
 		<div
-			role="button"
-			tabIndex={0}
-			onClick={handleSelect}
-			onKeyDown={(e) => {
-				if (e.key === "Enter" || e.key === " ") {
-					e.preventDefault();
-					handleSelect();
-				}
-			}}
 			className={cn(
 				CARD_SURFACE,
-				"relative min-h-36 cursor-pointer overflow-hidden p-4 transition-shadow duration-200 hover:shadow-[var(--shadow-sheet)]",
+				"relative min-h-36 overflow-hidden transition-shadow duration-200 hover:shadow-[var(--shadow-sheet)]",
 				account.isArchived && "opacity-70",
 				PRESS_SCALE,
 				TAPPABLE,
@@ -125,39 +116,78 @@ function AccountCard({ account, balance, onEdit, onSelect, className, style }: A
 				className="pointer-events-none absolute -top-10 -right-10 h-28 w-28 rounded-full opacity-15 blur-2xl"
 				style={{ backgroundColor: account.color ?? "var(--primary)" }}
 			/>
-			<div className="flex items-start justify-between gap-2">
-				<div className="min-w-0 flex-1">
-					<div className="flex items-center gap-2">
-						<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted text-lg leading-none shadow-sm">
-							{icon}
-						</span>
-						<div className="min-w-0">
-							<p className="truncate text-base font-semibold tracking-tight">{account.title}</p>
-							<p className="mt-0.5 truncate text-xs text-muted-foreground">
-								{account.accountType === "liability" ? "Liability account" : "Active balance"}
-							</p>
+			<button
+				type="button"
+				onClick={handleSelect}
+				className="relative block min-h-36 w-full cursor-pointer rounded-2xl p-4 text-left text-card-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
+				<div className="flex items-start gap-2 pr-10">
+					<div className="min-w-0 flex-1">
+						<div className="flex items-center gap-2">
+							<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted text-lg leading-none shadow-sm">
+								{icon}
+							</span>
+							<div className="min-w-0">
+								<p className="truncate text-base font-semibold tracking-tight">{account.title}</p>
+								<p className="mt-0.5 truncate text-xs text-muted-foreground">
+									{account.accountType === "liability" ? "Liability account" : "Active balance"}
+								</p>
+							</div>
 						</div>
 					</div>
 				</div>
 
+				<div className="mt-5">
+					<div className="mb-1.5 flex items-center gap-2">
+						<span className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-[11px] font-bold tracking-[0.14em] text-muted-foreground uppercase">
+							{currency?.flag && <span className="text-xs tracking-normal">{currency.flag}</span>}
+							{account.currency}
+						</span>
+						{account.isArchived && (
+							<span className="rounded-full bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+								Archived
+							</span>
+						)}
+					</div>
+					<AccountBalance balance={balance} currency={account.currency} />
+				</div>
+
+				<ChevronRight className="absolute right-4 bottom-4 h-4 w-4 text-muted-foreground/45" />
+			</button>
+
+			<div
+				className="absolute top-4 right-4 z-10"
+				onPointerDown={(event) => event.stopPropagation()}
+				onClick={(event) => event.stopPropagation()}>
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
 						<Button
 							variant="ghost"
 							size="icon"
 							className="h-7 w-7 shrink-0"
-							onClick={(e) => e.stopPropagation()}>
+							onPointerDown={(event) => event.stopPropagation()}
+							onClick={(event) => {
+								event.preventDefault();
+								event.stopPropagation();
+							}}>
 							<MoreVertical className="h-4 w-4" />
 							<span className="sr-only">Account options</span>
 						</Button>
 					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end">
-						<DropdownMenuItem onClick={() => onEdit(account.id)}>
+					<DropdownMenuContent
+						align="end"
+						onPointerDown={(event) => event.stopPropagation()}
+						onClick={(event) => event.stopPropagation()}>
+						<DropdownMenuItem
+							onSelect={(event) => {
+								event.stopPropagation();
+								onEdit(account.id);
+							}}>
 							<Pencil className="mr-2 h-4 w-4" />
 							Edit
 						</DropdownMenuItem>
 						<DropdownMenuItem
-							onClick={() => {
+							onSelect={(event) => {
+								event.stopPropagation();
 								void handleArchiveToggle();
 							}}>
 							{account.isArchived ? (
@@ -174,7 +204,8 @@ function AccountCard({ account, balance, onEdit, onSelect, className, style }: A
 						</DropdownMenuItem>
 						<DropdownMenuItem
 							className="text-destructive focus:text-destructive"
-							onClick={() => {
+							onSelect={(event) => {
+								event.stopPropagation();
 								void handleDelete();
 							}}>
 							<Trash2 className="mr-2 h-4 w-4" />
@@ -183,23 +214,6 @@ function AccountCard({ account, balance, onEdit, onSelect, className, style }: A
 					</DropdownMenuContent>
 				</DropdownMenu>
 			</div>
-
-			<div className="mt-5">
-				<div className="mb-1.5 flex items-center gap-2">
-					<span className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-[11px] font-bold tracking-[0.14em] text-muted-foreground uppercase">
-						{currency?.flag && <span className="text-xs tracking-normal">{currency.flag}</span>}
-						{account.currency}
-					</span>
-					{account.isArchived && (
-						<span className="rounded-full bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
-							Archived
-						</span>
-					)}
-				</div>
-				<AccountBalance balance={balance} currency={account.currency} />
-			</div>
-
-			<ChevronRight className="absolute right-4 bottom-4 h-4 w-4 text-muted-foreground/45" />
 		</div>
 	);
 }
