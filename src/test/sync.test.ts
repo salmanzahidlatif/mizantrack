@@ -32,6 +32,8 @@ vi.mock("firebase/firestore", () => ({
 	setDoc: vi.fn(),
 	query: vi.fn(),
 	where: vi.fn(),
+	orderBy: vi.fn(),
+	serverTimestamp: vi.fn(() => ({ __type: "serverTimestamp" })),
 }));
 
 function createEmptyFirestoreMocks() {
@@ -43,6 +45,18 @@ function createEmptyFirestoreMocks() {
 		mockSet,
 		batch: { set: mockSet, commit: mockCommit },
 	};
+}
+
+function coreSyncMetaKeys() {
+	return [
+		"lastSync",
+		...CORE_SYNC_TABLES.map((table) => `lastSync:${table}`),
+		...CORE_SYNC_TABLES.map((table) => `syncedAtMigration:${table}:v1`),
+	];
+}
+
+function firestoreTimestamp(millis: number) {
+	return { toMillis: () => millis };
 }
 
 async function configureEmptySyncMocks() {
@@ -125,10 +139,7 @@ describe("syncAll — strip undefined fields", () => {
 
 	beforeEach(async () => {
 		await db.transactions.where("userId").equals(USER_ID).delete();
-		await db.syncMeta.bulkDelete([
-			"lastSync",
-			...CORE_SYNC_TABLES.map((table) => `lastSync:${table}`),
-		]);
+		await db.syncMeta.bulkDelete(coreSyncMetaKeys());
 	});
 
 	it("syncAll_TransactionWithUndefinedCategoryId_DoesNotPassUndefinedToFirestore", async () => {
@@ -198,10 +209,7 @@ describe("syncAll — optional field clearing", () => {
 		await db.accounts.where("userId").equals(USER_ID).delete();
 		await db.categories.where("userId").equals(USER_ID).delete();
 		await db.transactions.where("userId").equals(USER_ID).delete();
-		await db.syncMeta.bulkDelete([
-			"lastSync",
-			...CORE_SYNC_TABLES.map((table) => `lastSync:${table}`),
-		]);
+		await db.syncMeta.bulkDelete(coreSyncMetaKeys());
 	});
 
 	it("syncAll_MissingOptionalFields_WritesNullsSoMergeClearsRemoteValues", async () => {
@@ -317,10 +325,7 @@ describe("syncAll — per-table watermarks", () => {
 		await db.accounts.where("userId").equals(USER_ID).delete();
 		await db.categories.where("userId").equals(USER_ID).delete();
 		await db.transactions.where("userId").equals(USER_ID).delete();
-		await db.syncMeta.bulkDelete([
-			"lastSync",
-			...CORE_SYNC_TABLES.map((table) => `lastSync:${table}`),
-		]);
+		await db.syncMeta.bulkDelete(coreSyncMetaKeys());
 	});
 
 	it("syncAll_PartialFailure_DoesNotRepushSucceededTablesOnRetry", async () => {
@@ -423,7 +428,17 @@ describe("syncAll — per-table watermarks", () => {
 			return batch as unknown as ReturnType<typeof firestore.writeBatch>;
 		}) as typeof firestore.writeBatch);
 
-		await expect(syncAll(USER_ID)).rejects.toMatchObject({ code: "resource-exhausted" });
+		const firstResult = await syncAll(USER_ID);
+		expect(firstResult.status).toBe("partial");
+		expect(firstResult.errors).toEqual([
+			expect.objectContaining({
+				scope: "transactions",
+				phase: "migration",
+				code: "resource-exhausted",
+				quotaExceeded: true,
+				message: FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE,
+			}),
+		]);
 		expect(firstAttemptWrites).toEqual({ accounts: 1, categories: 1, transactions: 1 });
 		expect(await db.syncMeta.get("lastSync:accounts")).toBeTruthy();
 		expect(await db.syncMeta.get("lastSync:categories")).toBeTruthy();
@@ -435,7 +450,7 @@ describe("syncAll — per-table watermarks", () => {
 		expect(secondAttemptWrites).toEqual({ accounts: 0, categories: 0, transactions: 1 });
 	});
 
-	it("syncAll_LegacyGlobalLastSync_SeedsPerTableWatermarksWithoutMassResync", async () => {
+	it("syncAll_LegacyGlobalLastSync_BackfillsLocalRecordsForServerCursorMigration", async () => {
 		const legacyLastSync = 5_000;
 		await db.syncMeta.put({ id: "lastSync", timestamp: legacyLastSync });
 		await db.accounts.put({
@@ -469,11 +484,236 @@ describe("syncAll — per-table watermarks", () => {
 
 		await syncAll(USER_ID);
 
-		expect(mockSet).not.toHaveBeenCalled();
+		expect(mockSet).toHaveBeenCalledTimes(3);
 		for (const table of CORE_SYNC_TABLES) {
 			const meta = await db.syncMeta.get(`lastSync:${table}`);
-			expect(meta?.timestamp).toBeGreaterThanOrEqual(legacyLastSync);
+			expect(meta?.timestamp).toBe(0);
+			expect(await db.syncMeta.get(`syncedAtMigration:${table}:v1`)).toBeTruthy();
 		}
+	});
+});
+
+describe("syncAll — server syncedAt cursors", () => {
+	const USER_ID = "sync-server-cursor-test-user";
+
+	beforeEach(async () => {
+		await db.accounts.where("userId").equals(USER_ID).delete();
+		await db.categories.where("userId").equals(USER_ID).delete();
+		await db.transactions.where("userId").equals(USER_ID).delete();
+		await db.syncMeta.bulkDelete(coreSyncMetaKeys());
+	});
+
+	async function markMigrationDone() {
+		await db.syncMeta.bulkPut(
+			CORE_SYNC_TABLES.map((table) => ({
+				id: `syncedAtMigration:${table}:v1`,
+				timestamp: 1,
+			}))
+		);
+	}
+
+	it("syncAll_RemoteUpdatedAtBehindLocalCursor_PullsByServerSyncedAt", async () => {
+		await markMigrationDone();
+		await db.syncMeta.put({ id: "lastSync:accounts", timestamp: 1_000 });
+		const { firestore } = await configureEmptySyncMocks();
+
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const path = (ref as { path?: string }).path;
+			if (path === `users/${USER_ID}/accounts`) {
+				return {
+					docs: [
+						{
+							id: "acc-android",
+							data: () => ({
+								id: "acc-android",
+								userId: USER_ID,
+								title: "Android Cash",
+								openingBalance: 500,
+								currency: "PKR",
+								isArchived: false,
+								updatedAt: 940,
+								syncedAt: firestoreTimestamp(1_200),
+							}),
+						},
+					],
+				} as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+
+		const result = await syncAll(USER_ID);
+
+		expect(result.status).toBe("success");
+		expect(await db.accounts.get("acc-android")).toMatchObject({
+			openingBalance: 500,
+			updatedAt: 940,
+			pendingSync: false,
+		});
+		expect((await db.syncMeta.get("lastSync:accounts"))?.timestamp).toBe(1_200);
+	});
+
+	it("syncAll_PulledFutureClockRecord_DoesNotRepushOnNextSync", async () => {
+		await markMigrationDone();
+		const { firestore, mockSet } = await configureEmptySyncMocks();
+		let syncAttempt = 1;
+
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const path = (ref as { path?: string }).path;
+			if (syncAttempt === 1 && path === `users/${USER_ID}/transactions`) {
+				return {
+					docs: [
+						{
+							id: "txn-future-clock",
+							data: () => ({
+								id: "txn-future-clock",
+								userId: USER_ID,
+								type: "Expense",
+								date: 1_000,
+								amount: 75,
+								accountId: "acc-1",
+								updatedAt: 999_999,
+								syncedAt: firestoreTimestamp(2_000),
+							}),
+						},
+					],
+				} as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+
+		await syncAll(USER_ID);
+		syncAttempt = 2;
+		mockSet.mockClear();
+		await syncAll(USER_ID);
+
+		expect(mockSet).not.toHaveBeenCalled();
+		expect(await db.transactions.get("txn-future-clock")).toMatchObject({
+			amount: 75,
+			pendingSync: false,
+		});
+	});
+
+	it("syncAll_CategoriesPullFailure_DoesNotBlockTransactionsOrAdvanceCategoryCursor", async () => {
+		await markMigrationDone();
+		await db.syncMeta.bulkPut([
+			{ id: "lastSync:categories", timestamp: 10 },
+			{ id: "lastSync:transactions", timestamp: 10 },
+		]);
+		const { firestore } = await configureEmptySyncMocks();
+
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const path = (ref as { path?: string }).path;
+			if (path === `users/${USER_ID}/categories`) {
+				throw new Error("Sync timed out while pulling categories");
+			}
+			if (path === `users/${USER_ID}/transactions`) {
+				return {
+					docs: [
+						{
+							id: "txn-after-category-failure",
+							data: () => ({
+								id: "txn-after-category-failure",
+								userId: USER_ID,
+								type: "Income",
+								date: 2_000,
+								amount: 300,
+								accountId: "acc-1",
+								updatedAt: 2_000,
+								syncedAt: firestoreTimestamp(20),
+							}),
+						},
+					],
+				} as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+
+		const result = await syncAll(USER_ID);
+
+		expect(result.status).toBe("partial");
+		expect(result.errors).toEqual([
+			expect.objectContaining({
+				scope: "categories",
+				phase: "pull",
+				message: "Sync timed out while pulling categories",
+			}),
+		]);
+		expect(await db.transactions.get("txn-after-category-failure")).toMatchObject({
+			amount: 300,
+		});
+		expect((await db.syncMeta.get("lastSync:categories"))?.timestamp).toBe(10);
+		expect((await db.syncMeta.get("lastSync:transactions"))?.timestamp).toBe(20);
+	});
+
+	it("syncAll_ServerCursorMigration_IsIdempotentAndPreservesSoftDeletes", async () => {
+		await db.accounts.put({
+			id: "acc-remote-deleted",
+			userId: USER_ID,
+			title: "Old Local",
+			openingBalance: 100,
+			currency: "PKR",
+			isArchived: false,
+			updatedAt: 1_000,
+		});
+		await db.accounts.put({
+			id: "acc-local-deleted",
+			userId: USER_ID,
+			title: "Local Tombstone",
+			openingBalance: 0,
+			currency: "PKR",
+			isArchived: false,
+			updatedAt: 3_000,
+			deletedAt: 3_000,
+		});
+
+		const { firestore, mockSet } = await configureEmptySyncMocks();
+		let accountMigrationCalls = 0;
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const path = (ref as { path?: string }).path;
+			if (path === `users/${USER_ID}/accounts` && accountMigrationCalls === 0) {
+				accountMigrationCalls++;
+				return {
+					docs: [
+						{
+							id: "acc-remote-deleted",
+							data: () => ({
+								id: "acc-remote-deleted",
+								userId: USER_ID,
+								title: "Remote Tombstone",
+								openingBalance: 100,
+								currency: "PKR",
+								isArchived: false,
+								updatedAt: 2_000,
+								deletedAt: 2_000,
+							}),
+						},
+					],
+				} as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+
+		await syncAll(USER_ID);
+		const firstWriteCount = mockSet.mock.calls.length;
+		mockSet.mockClear();
+		await syncAll(USER_ID);
+
+		expect(firstWriteCount).toBe(2);
+		expect(mockSet).not.toHaveBeenCalled();
+		expect(await db.accounts.get("acc-remote-deleted")).toMatchObject({
+			title: "Remote Tombstone",
+			deletedAt: 2_000,
+			pendingSync: false,
+		});
+		expect(await db.accounts.get("acc-local-deleted")).toMatchObject({
+			deletedAt: 3_000,
+			pendingSync: false,
+		});
+		expect(await db.syncMeta.get("syncedAtMigration:accounts:v1")).toBeTruthy();
 	});
 });
 
