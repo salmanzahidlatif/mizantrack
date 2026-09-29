@@ -377,6 +377,138 @@
 		backdrop-filter: blur(26px) saturate(180%);
 		-webkit-backdrop-filter: blur(26px) saturate(180%);
 	}
+	.liquid-glass-nav {
+		isolation: isolate;
+		overflow: hidden;
+		background:
+			linear-gradient(
+				180deg,
+				color-mix(in oklab, var(--background) 80%, white 10%) 0%,
+				color-mix(in oklab, var(--background) 76%, transparent) 100%
+			),
+			color-mix(in oklab, var(--background) 88%, transparent);
+		border-top: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+		box-shadow: var(--shadow-nav);
+		transform: translateZ(0);
+	}
+	.liquid-glass-nav::before,
+	.liquid-glass-nav::after {
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+		pointer-events: none;
+		content: "";
+	}
+	.liquid-glass-nav::before {
+		height: 1px;
+		background: linear-gradient(
+			90deg,
+			transparent,
+			color-mix(in oklab, white 78%, var(--background) 22%),
+			transparent
+		);
+		opacity: 0.8;
+	}
+	.liquid-glass-nav::after {
+		background:
+			radial-gradient(
+				120% 90% at 50% -20%,
+				color-mix(in oklab, white 42%, transparent) 0%,
+				transparent 58%
+			),
+			linear-gradient(
+				115deg,
+				transparent 8%,
+				color-mix(in oklab, white 14%, transparent) 42%,
+				transparent 68%
+			);
+		opacity: 0.64;
+	}
+	.dark .liquid-glass-nav {
+		background:
+			linear-gradient(
+				180deg,
+				color-mix(in oklab, var(--background) 72%, white 7%) 0%,
+				color-mix(in oklab, var(--background) 70%, transparent) 100%
+			),
+			color-mix(in oklab, var(--background) 78%, transparent);
+		border-top-color: color-mix(in oklab, white 14%, transparent);
+	}
+	.dark .liquid-glass-nav::before {
+		background: linear-gradient(
+			90deg,
+			transparent,
+			color-mix(in oklab, white 32%, transparent),
+			transparent
+		);
+		opacity: 0.7;
+	}
+	.dark .liquid-glass-nav::after {
+		background:
+			radial-gradient(
+				120% 90% at 50% -20%,
+				color-mix(in oklab, white 20%, transparent) 0%,
+				transparent 58%
+			),
+			linear-gradient(
+				115deg,
+				transparent 8%,
+				color-mix(in oklab, white 8%, transparent) 42%,
+				transparent 68%
+			);
+		opacity: 0.72;
+	}
+	.liquid-glass-pill {
+		background:
+			linear-gradient(
+				180deg,
+				color-mix(in oklab, white 48%, var(--primary) 10%) 0%,
+				color-mix(in oklab, var(--primary) 16%, transparent) 100%
+			),
+			color-mix(in oklab, var(--primary) 10%, var(--background) 52%);
+		border: 1px solid color-mix(in oklab, white 52%, var(--primary) 18%);
+		box-shadow:
+			inset 0 1px 0 color-mix(in oklab, white 72%, transparent),
+			inset 0 -1px 0 color-mix(in oklab, var(--primary) 22%, transparent),
+			0 10px 24px color-mix(in oklab, var(--primary) 12%, transparent),
+			0 2px 8px color-mix(in oklab, black 8%, transparent);
+	}
+	.dark .liquid-glass-pill {
+		background:
+			linear-gradient(
+				180deg,
+				color-mix(in oklab, white 18%, var(--primary) 14%) 0%,
+				color-mix(in oklab, var(--primary) 16%, transparent) 100%
+			),
+			color-mix(in oklab, var(--background) 48%, var(--primary) 14%);
+		border-color: color-mix(in oklab, white 18%, var(--primary) 20%);
+		box-shadow:
+			inset 0 1px 0 color-mix(in oklab, white 24%, transparent),
+			inset 0 -1px 0 color-mix(in oklab, black 34%, transparent),
+			0 12px 26px color-mix(in oklab, black 38%, transparent),
+			0 0 20px color-mix(in oklab, var(--primary) 10%, transparent);
+	}
+	.liquid-glass-active-icon {
+		filter: drop-shadow(0 0 10px color-mix(in oklab, var(--primary) 30%, transparent));
+	}
+	@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+		.liquid-glass-nav {
+			background-color: color-mix(in oklab, var(--background) 66%, transparent);
+			backdrop-filter: blur(28px) saturate(180%);
+			-webkit-backdrop-filter: blur(28px) saturate(180%);
+		}
+		.dark .liquid-glass-nav {
+			background-color: color-mix(in oklab, var(--background) 58%, transparent);
+		}
+	}
+	@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+		.liquid-glass-nav {
+			background: color-mix(in oklab, var(--background) 96%, var(--foreground) 4%);
+		}
+		.dark .liquid-glass-nav {
+			background: color-mix(in oklab, var(--background) 92%, white 8%);
+		}
+	}
 	.no-scrollbar {
 		scrollbar-width: none;
 		-ms-overflow-style: none;
