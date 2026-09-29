@@ -1,0 +1,554 @@
+import {
+	formatMonthLabel,
+	getDateRange,
+	getMonthRange,
+	getMonthRangeOffset,
+	getMonthStripRanges,
+	resolveAnalyticsPeriod,
+	type AnalyticsInterval,
+	type ResolvedAnalyticsPeriod,
+} from "@/lib/dateRange";
+import { db } from "@/lib/db/local";
+
+import type { Account, Category, DateRange, Transaction } from "@/types";
+
+export const UNCATEGORIZED_CATEGORY_ID = "__uncategorized__";
+export const UNCATEGORIZED_CATEGORY_TITLE = "Uncategorized";
+
+export type AnalyticsBreakdownType = "Expense" | "Income";
+export type MonthlySummaryMode = "ending" | "around";
+
+export interface PeriodAnalyticsQuery {
+	currency: string;
+	interval?: AnalyticsInterval;
+	anchorDate?: Date;
+	fiscalYearStartMonth?: number;
+	customRange?: DateRange;
+	now?: Date;
+	timeZoneOffsetMinutes?: number;
+}
+
+export interface CategoryBreakdownItem {
+	categoryId: string | null;
+	title: string;
+	color?: string;
+	icon?: string;
+	amount: number;
+	share: number;
+}
+
+export interface PeriodAnalytics {
+	userId: string;
+	currency: string;
+	period: ResolvedAnalyticsPeriod;
+	income: number;
+	expense: number;
+	net: number;
+	incomeBreakdown: CategoryBreakdownItem[];
+	expenseBreakdown: CategoryBreakdownItem[];
+	transactionCount: number;
+}
+
+export interface MonthlySummariesQuery {
+	currency: string;
+	months?: number;
+	anchorDate?: Date;
+	mode?: MonthlySummaryMode;
+	timeZoneOffsetMinutes?: number;
+}
+
+export interface AnalyticsMonthSummaryItem {
+	month: string;
+	key: string;
+	label: string;
+	from: Date;
+	to: Date;
+	fromMs: number;
+	toMs: number;
+	income: number;
+	expense: number;
+	net: number;
+	hasData: boolean;
+	currency: string;
+}
+
+export interface AccountsAnalyticsQuery {
+	currency: string;
+	period?: Omit<PeriodAnalyticsQuery, "currency">;
+	asOf?: Date;
+	timeZoneOffsetMinutes?: number;
+}
+
+export interface AccountBalanceBreakdownItem {
+	accountId: string;
+	title: string;
+	currency: string;
+	color?: string;
+	icon?: string;
+	isArchived: boolean;
+	accountType: Account["accountType"];
+	balance: number;
+}
+
+export interface AccountsAnalytics {
+	userId: string;
+	currency: string;
+	asOf: Date;
+	period: ResolvedAnalyticsPeriod;
+	netWorth: number;
+	inflow: number;
+	outflow: number;
+	netFlow: number;
+	accounts: AccountBalanceBreakdownItem[];
+	warnings: Array<{
+		code: "cross_currency_transfer_destination_skipped";
+		transactionId: string;
+		message: string;
+	}>;
+}
+
+interface AccountScope {
+	accounts: Account[];
+	accountById: Map<string, Account>;
+	currencyAccountIds: Set<string>;
+}
+
+function assertCurrency(currency: string): string {
+	const normalized = currency.trim();
+	if (!normalized) {
+		throw new Error("Analytics queries require an explicit currency. Refusing to mix currencies.");
+	}
+	return normalized;
+}
+
+function resolvePeriod(
+	query: Omit<PeriodAnalyticsQuery, "currency"> = {}
+): ResolvedAnalyticsPeriod {
+	return resolveAnalyticsPeriod({
+		interval: query.interval ?? (query.customRange ? "custom" : "monthly"),
+		anchorDate: query.anchorDate ?? query.now,
+		fiscalYearStartMonth: query.fiscalYearStartMonth,
+		customRange: query.customRange,
+		now: query.now,
+		timeZoneOffsetMinutes: query.timeZoneOffsetMinutes,
+	});
+}
+
+function getAccountScope(userId: string, accounts: Account[], currency: string): AccountScope {
+	const activeAccounts = accounts.filter(
+		(account) => account.userId === userId && !account.deletedAt
+	);
+	const accountById = new Map(activeAccounts.map((account) => [account.id, account]));
+	const scopedAccounts = activeAccounts.filter((account) => account.currency === currency);
+	const currencyAccountIds = new Set(scopedAccounts.map((account) => account.id));
+
+	return {
+		accounts: scopedAccounts,
+		accountById,
+		currencyAccountIds,
+	};
+}
+
+function isKnownCrossCurrencyTransfer(
+	transaction: Transaction,
+	accountById: Map<string, Account>
+): boolean {
+	if (transaction.type !== "Transfer" || !transaction.toAccountId) return false;
+
+	const sourceAccount = accountById.get(transaction.accountId);
+	const destinationAccount = accountById.get(transaction.toAccountId);
+
+	return Boolean(
+		sourceAccount && destinationAccount && sourceAccount.currency !== destinationAccount.currency
+	);
+}
+
+function categoryMatchesBreakdown(
+	category: Category | undefined,
+	type: AnalyticsBreakdownType,
+	currency: string
+): category is Category {
+	if (!category || category.deletedAt || category.type !== type) return false;
+	return !category.currency || category.currency === currency;
+}
+
+function buildBreakdown(
+	transactions: Transaction[],
+	categories: Category[],
+	type: AnalyticsBreakdownType,
+	currency: string,
+	total: number
+): CategoryBreakdownItem[] {
+	const categoriesById = new Map(categories.map((category) => [category.id, category]));
+	const buckets = new Map<
+		string,
+		{
+			categoryId: string | null;
+			title: string;
+			color?: string;
+			icon?: string;
+			amount: number;
+		}
+	>();
+
+	for (const transaction of transactions) {
+		if (transaction.type !== type) continue;
+
+		const category = categoryMatchesBreakdown(
+			transaction.categoryId ? categoriesById.get(transaction.categoryId) : undefined,
+			type,
+			currency
+		)
+			? categoriesById.get(transaction.categoryId!)
+			: undefined;
+		const key = category?.id ?? UNCATEGORIZED_CATEGORY_ID;
+		const current =
+			buckets.get(key) ??
+			(category
+				? {
+						categoryId: category.id,
+						title: category.title,
+						color: category.color,
+						icon: category.icon,
+						amount: 0,
+					}
+				: {
+						categoryId: null,
+						title: UNCATEGORIZED_CATEGORY_TITLE,
+						amount: 0,
+					});
+
+		current.amount += transaction.amount;
+		buckets.set(key, current);
+	}
+
+	return [...buckets.values()]
+		.map((item) => ({
+			...item,
+			share: total > 0 ? item.amount / total : 0,
+		}))
+		.sort((a, b) => b.amount - a.amount || a.title.localeCompare(b.title));
+}
+
+function filterPeriodTransactions(
+	userId: string,
+	transactions: Transaction[],
+	accountIds: Set<string>,
+	period: ResolvedAnalyticsPeriod
+): Transaction[] {
+	return transactions.filter(
+		(transaction) =>
+			transaction.userId === userId &&
+			!transaction.deletedAt &&
+			transaction.date >= period.fromMs &&
+			transaction.date <= period.toMs &&
+			accountIds.has(transaction.accountId)
+	);
+}
+
+async function getTransactionsInRange(
+	userId: string,
+	fromMs: number,
+	toMs: number
+): Promise<Transaction[]> {
+	if (fromMs <= 0 && toMs >= 8640000000000000) {
+		return db.transactions
+			.where("userId")
+			.equals(userId)
+			.filter((transaction) => !transaction.deletedAt)
+			.toArray();
+	}
+
+	return db.transactions
+		.where("date")
+		.between(fromMs, toMs, true, true)
+		.filter((transaction) => transaction.userId === userId && !transaction.deletedAt)
+		.toArray();
+}
+
+export function aggregatePeriodAnalytics(
+	userId: string,
+	accounts: Account[],
+	categories: Category[],
+	transactions: Transaction[],
+	query: PeriodAnalyticsQuery
+): PeriodAnalytics {
+	const currency = assertCurrency(query.currency);
+	const period = resolvePeriod(query);
+	const scope = getAccountScope(userId, accounts, currency);
+	const periodTransactions = filterPeriodTransactions(
+		userId,
+		transactions,
+		scope.currencyAccountIds,
+		period
+	);
+
+	let income = 0;
+	let expense = 0;
+	let transactionCount = 0;
+	for (const transaction of periodTransactions) {
+		if (transaction.type === "Income") {
+			income += transaction.amount;
+			transactionCount++;
+		} else if (transaction.type === "Expense") {
+			expense += transaction.amount;
+			transactionCount++;
+		}
+	}
+
+	return {
+		userId,
+		currency,
+		period,
+		income,
+		expense,
+		net: income - expense,
+		incomeBreakdown: buildBreakdown(periodTransactions, categories, "Income", currency, income),
+		expenseBreakdown: buildBreakdown(periodTransactions, categories, "Expense", currency, expense),
+		transactionCount,
+	};
+}
+
+export async function getPeriodAnalytics(
+	userId: string,
+	query: PeriodAnalyticsQuery
+): Promise<PeriodAnalytics> {
+	const currency = assertCurrency(query.currency);
+	const period = resolvePeriod(query);
+	const [accounts, categories, transactions] = await Promise.all([
+		db.accounts.where("userId").equals(userId).toArray(),
+		db.categories.where("userId").equals(userId).toArray(),
+		getTransactionsInRange(userId, period.fromMs, period.toMs),
+	]);
+
+	return aggregatePeriodAnalytics(userId, accounts, categories, transactions, {
+		...query,
+		currency,
+	});
+}
+
+function getMonthlyRanges(query: MonthlySummariesQuery) {
+	const months = Math.max(1, Math.floor(query.months ?? 6));
+	const anchorDate = query.anchorDate ?? new Date();
+
+	if (query.mode === "around") {
+		return getMonthStripRanges(anchorDate, {
+			months,
+			timeZoneOffsetMinutes: query.timeZoneOffsetMinutes,
+		});
+	}
+
+	return Array.from({ length: months }, (_, index) => {
+		const offset = index - (months - 1);
+		return getMonthRangeOffset(anchorDate, offset, {
+			timeZoneOffsetMinutes: query.timeZoneOffsetMinutes,
+		});
+	});
+}
+
+export function aggregateMonthlySummaries(
+	userId: string,
+	accounts: Account[],
+	transactions: Transaction[],
+	query: MonthlySummariesQuery
+): AnalyticsMonthSummaryItem[] {
+	const currency = assertCurrency(query.currency);
+	const ranges = getMonthlyRanges(query);
+	const scope = getAccountScope(userId, accounts, currency);
+	const summaries = new Map(
+		ranges.map((range) => [
+			range.key,
+			{
+				month: range.shortLabel,
+				key: range.key,
+				label: range.label,
+				from: range.from,
+				to: range.to,
+				fromMs: range.fromMs,
+				toMs: range.toMs,
+				income: 0,
+				expense: 0,
+				net: 0,
+				hasData: false,
+				currency,
+			},
+		])
+	);
+
+	for (const transaction of transactions) {
+		if (
+			transaction.userId !== userId ||
+			transaction.deletedAt ||
+			!scope.currencyAccountIds.has(transaction.accountId) ||
+			transaction.type === "Transfer"
+		) {
+			continue;
+		}
+
+		const key = getMonthRange(new Date(transaction.date), {
+			timeZoneOffsetMinutes: query.timeZoneOffsetMinutes,
+		}).key;
+		const summary = summaries.get(key);
+		if (!summary) continue;
+
+		if (transaction.type === "Income") {
+			summary.income += transaction.amount;
+		} else if (transaction.type === "Expense") {
+			summary.expense += transaction.amount;
+		}
+		summary.net = summary.income - summary.expense;
+		summary.hasData = summary.income > 0 || summary.expense > 0;
+	}
+
+	return ranges.map((range) => summaries.get(range.key)!);
+}
+
+export async function getMonthlySummaries(
+	userId: string,
+	query: MonthlySummariesQuery
+): Promise<AnalyticsMonthSummaryItem[]> {
+	const currency = assertCurrency(query.currency);
+	const ranges = getMonthlyRanges(query);
+	const fromMs = Math.min(...ranges.map((range) => range.fromMs));
+	const toMs = Math.max(...ranges.map((range) => range.toMs));
+	const [accounts, transactions] = await Promise.all([
+		db.accounts.where("userId").equals(userId).toArray(),
+		getTransactionsInRange(userId, fromMs, toMs),
+	]);
+
+	return aggregateMonthlySummaries(userId, accounts, transactions, {
+		...query,
+		currency,
+	});
+}
+
+function getEndOfAsOfDay(asOf: Date, timeZoneOffsetMinutes?: number): Date {
+	return getDateRange("today", 1, undefined, {
+		now: asOf,
+		timeZoneOffsetMinutes,
+	}).to;
+}
+
+export function aggregateAccountsAnalytics(
+	userId: string,
+	accounts: Account[],
+	transactions: Transaction[],
+	query: AccountsAnalyticsQuery
+): AccountsAnalytics {
+	const currency = assertCurrency(query.currency);
+	const asOf = query.asOf ?? new Date();
+	const period = resolvePeriod(query.period);
+	const scope = getAccountScope(userId, accounts, currency);
+	const balances = new Map(scope.accounts.map((account) => [account.id, account.openingBalance]));
+	const warnings: AccountsAnalytics["warnings"] = [];
+	const asOfMs = getEndOfAsOfDay(asOf, query.timeZoneOffsetMinutes).getTime();
+
+	let inflow = 0;
+	let outflow = 0;
+	for (const transaction of transactions) {
+		if (transaction.userId !== userId || transaction.deletedAt) continue;
+
+		const isSourceInCurrency = scope.currencyAccountIds.has(transaction.accountId);
+		if (
+			isSourceInCurrency &&
+			transaction.date >= period.fromMs &&
+			transaction.date <= period.toMs
+		) {
+			if (transaction.type === "Income") inflow += transaction.amount;
+			if (transaction.type === "Expense") outflow += transaction.amount;
+		}
+
+		if (transaction.date > asOfMs) continue;
+
+		if (transaction.type === "Income" && balances.has(transaction.accountId)) {
+			balances.set(
+				transaction.accountId,
+				balances.get(transaction.accountId)! + transaction.amount
+			);
+		} else if (transaction.type === "Expense" && balances.has(transaction.accountId)) {
+			balances.set(
+				transaction.accountId,
+				balances.get(transaction.accountId)! - transaction.amount
+			);
+		} else if (transaction.type === "Transfer") {
+			if (balances.has(transaction.accountId)) {
+				balances.set(
+					transaction.accountId,
+					balances.get(transaction.accountId)! - transaction.amount
+				);
+			}
+
+			if (transaction.toAccountId && balances.has(transaction.toAccountId)) {
+				if (isKnownCrossCurrencyTransfer(transaction, scope.accountById)) {
+					warnings.push({
+						code: "cross_currency_transfer_destination_skipped",
+						transactionId: transaction.id,
+						message:
+							"Cross-currency transfer destination balance was not adjusted because no destination amount or FX contract is stored.",
+					});
+				} else {
+					balances.set(
+						transaction.toAccountId,
+						balances.get(transaction.toAccountId)! + transaction.amount
+					);
+				}
+			}
+		}
+	}
+
+	const accountBalances = scope.accounts
+		.map((account) => ({
+			accountId: account.id,
+			title: account.title,
+			currency: account.currency,
+			color: account.color,
+			icon: account.icon,
+			isArchived: account.isArchived,
+			accountType: account.accountType,
+			balance: balances.get(account.id) ?? account.openingBalance,
+		}))
+		.sort((a, b) => b.balance - a.balance || a.title.localeCompare(b.title));
+	const netWorth = accountBalances.reduce((sum, account) => sum + account.balance, 0);
+
+	return {
+		userId,
+		currency,
+		asOf,
+		period,
+		netWorth,
+		inflow,
+		outflow,
+		netFlow: inflow - outflow,
+		accounts: accountBalances,
+		warnings,
+	};
+}
+
+export async function getAccountsAnalytics(
+	userId: string,
+	query: AccountsAnalyticsQuery
+): Promise<AccountsAnalytics> {
+	const currency = assertCurrency(query.currency);
+	const asOf = query.asOf ?? new Date();
+	const asOfRange = resolveAnalyticsPeriod({
+		interval: "custom",
+		customRange: { from: new Date(0), to: getEndOfAsOfDay(asOf, query.timeZoneOffsetMinutes) },
+	});
+	const period = resolvePeriod(query.period);
+	const fromMs = Math.min(asOfRange.fromMs, period.fromMs);
+	const toMs = Math.max(asOfRange.toMs, period.toMs);
+	const [accounts, transactions] = await Promise.all([
+		db.accounts.where("userId").equals(userId).toArray(),
+		getTransactionsInRange(userId, fromMs, toMs),
+	]);
+
+	return aggregateAccountsAnalytics(userId, accounts, transactions, {
+		...query,
+		currency,
+		asOf,
+	});
+}
+
+export function getMonthLabelForDate(date: Date, timeZoneOffsetMinutes?: number): string {
+	return formatMonthLabel(date, { timeZoneOffsetMinutes });
+}
