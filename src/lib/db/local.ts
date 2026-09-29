@@ -73,6 +73,39 @@ class MizanTrackDB extends Dexie {
 			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
 			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
 		});
+
+		this.on("blocked", (event) => {
+			console.warn("MizanTrack IndexedDB upgrade is blocked by another open app instance.", event);
+			if (typeof window !== "undefined") {
+				window.dispatchEvent(
+					new CustomEvent("mizantrack-db-blocked", {
+						detail: {
+							oldVersion: event.oldVersion,
+							newVersion: event.newVersion,
+						},
+					})
+				);
+			}
+		});
+
+		this.on("versionchange", (event) => {
+			console.warn(
+				"Temporarily closing stale MizanTrack IndexedDB connection for schema upgrade.",
+				event
+			);
+			this.close({ disableAutoOpen: false });
+			if (typeof window !== "undefined") {
+				window.dispatchEvent(
+					new CustomEvent("mizantrack-db-versionchange", {
+						detail: {
+							oldVersion: event.oldVersion,
+							newVersion: event.newVersion,
+							willAutoReopen: true,
+						},
+					})
+				);
+			}
+		});
 	}
 }
 

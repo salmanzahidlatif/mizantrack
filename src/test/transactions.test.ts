@@ -4,6 +4,7 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { createTransaction, updateTransaction } from "@/lib/actions/transactions";
 import { db } from "@/lib/db/local";
 import { transactionSchema } from "@/lib/validations/transaction";
 
@@ -58,6 +59,22 @@ describe("transactionSchema", () => {
 		if (!result.success) {
 			const paths = result.error.issues.map((i) => i.path.join("."));
 			expect(paths).toContain("toAccountId");
+			expect(result.error.issues[0]?.message).toBe("Destination account is required for transfers");
+		}
+	});
+
+	it("rejects a transfer with a blank toAccountId with a readable message", () => {
+		const result = transactionSchema.safeParse({
+			type: "Transfer",
+			amount: 200,
+			date: new Date(),
+			accountId: ACCOUNT_ID,
+			toAccountId: "",
+		});
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues[0]?.path.join(".")).toBe("toAccountId");
+			expect(result.error.issues[0]?.message).toBe("Destination account is required for transfers");
 		}
 	});
 
@@ -191,6 +208,42 @@ describe("transactions db operations", () => {
 		expect(txn?.toAccountId).toBe(ACCOUNT_ID_2);
 	});
 
+	it("creates a transfer through schema validation and the transaction action", async () => {
+		const parsed = transactionSchema.parse({
+			type: "Transfer",
+			amount: 500,
+			date: new Date("2026-09-29T10:00:00.000Z"),
+			accountId: ACCOUNT_ID,
+			toAccountId: ACCOUNT_ID_2,
+			categoryId: CATEGORY_ID,
+		});
+
+		const id = await createTransaction(USER_ID, parsed, { id: TXN_ID });
+
+		const txn = await db.transactions.get(id);
+		expect(txn).toMatchObject({
+			id: TXN_ID,
+			userId: USER_ID,
+			type: "Transfer",
+			amount: 500,
+			accountId: ACCOUNT_ID,
+			toAccountId: ACCOUNT_ID_2,
+		});
+		expect(txn?.categoryId).toBeUndefined();
+	});
+
+	it("surfaces a readable action error for a transfer missing toAccountId", async () => {
+		await expect(
+			createTransaction(USER_ID, {
+				type: "Transfer",
+				amount: 200,
+				date: new Date(),
+				accountId: ACCOUNT_ID,
+				toAccountId: "",
+			})
+		).rejects.toThrow("Destination account is required for transfers");
+	});
+
 	it("can filter non-deleted transactions by userId", async () => {
 		const now = Date.now();
 		await db.transactions.bulkPut([
@@ -237,5 +290,32 @@ describe("transactions db operations", () => {
 		await db.transactions.update(TXN_ID, { amount: 75, updatedAt: Date.now() });
 		const txn = await db.transactions.get(TXN_ID);
 		expect(txn?.amount).toBe(75);
+	});
+
+	it("updateTransaction_TransferChangedToExpense_ClearsDestinationAccount", async () => {
+		const now = Date.now();
+		await db.transactions.put({
+			id: TXN_ID,
+			userId: USER_ID,
+			type: "Transfer",
+			amount: 50,
+			date: now,
+			accountId: ACCOUNT_ID,
+			toAccountId: ACCOUNT_ID_2,
+			updatedAt: now,
+		});
+
+		await updateTransaction(USER_ID, TXN_ID, {
+			type: "Expense",
+			amount: 50,
+			date: new Date(now),
+			accountId: ACCOUNT_ID,
+			categoryId: CATEGORY_ID,
+		});
+
+		const txn = await db.transactions.get(TXN_ID);
+		expect(txn?.type).toBe("Expense");
+		expect(txn?.categoryId).toBe(CATEGORY_ID);
+		expect(txn?.toAccountId).toBeUndefined();
 	});
 });

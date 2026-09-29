@@ -4,9 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
 import { CalendarIcon, ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useForm, type Resolver } from "react-hook-form";
+import { useForm, type FieldErrors, type Resolver, type SubmitErrorHandler } from "react-hook-form";
 import { toast } from "sonner";
-import { v4 as uuidv4 } from "uuid";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -14,6 +13,7 @@ import {
 	Drawer,
 	DrawerClose,
 	DrawerContent,
+	DrawerDescription,
 	DrawerFooter,
 	DrawerHeader,
 	DrawerTitle,
@@ -30,12 +30,17 @@ import {
 } from "@/components/ui/select";
 import { useActiveAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
-import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
+import {
+	createTransaction,
+	deleteTransaction,
+	updateTransaction,
+} from "@/lib/actions/transactions";
 import { db } from "@/lib/db/local";
 import { transactionSchema, type TransactionFormValues } from "@/lib/validations/transaction";
+import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
-import type { Transaction, TransactionType } from "@/types";
+import type { Account, Category, Transaction, TransactionType } from "@/types";
 
 const TYPE_TABS: TransactionType[] = ["Expense", "Income", "Transfer"];
 
@@ -46,6 +51,107 @@ const TYPE_COLOR: Record<TransactionType, string> = {
 };
 
 const TYPE_INACTIVE = "border-border hover:border-primary";
+const TRANSACTION_FORM_ID = "transaction-drawer-form";
+const FORM_DRAWER_CONTENT_CLASS =
+	"overflow-hidden pb-0 data-[vaul-drawer-direction=bottom]:h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_1rem)] data-[vaul-drawer-direction=bottom]:max-h-[95dvh] data-[vaul-drawer-direction=bottom]:pb-0";
+const FOCUSABLE_FIELD_SELECTOR =
+	"input, textarea, select, button, [role='combobox'], [contenteditable='true']";
+const FOCUS_SCROLL_DELAY = 280;
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+	AED: "د.إ",
+	PKR: "₨",
+	USD: "$",
+	EUR: "€",
+	GBP: "£",
+	SAR: "﷼",
+	INR: "₹",
+};
+
+function getCurrencyLabel(currency?: string): string {
+	if (!currency) return "";
+	const code = currency.toUpperCase();
+	const symbol = CURRENCY_SYMBOLS[code] ?? code;
+	return symbol === code ? code : `${symbol} ${code}`;
+}
+
+function includeRecordsById<T extends { id: string }>(
+	records: T[],
+	extraRecords: T[],
+	ids: Array<string | undefined>
+): T[] {
+	const wantedIds = new Set(ids.filter((id): id is string => Boolean(id)));
+	const seenIds = new Set(records.map((record) => record.id));
+	const merged = [...records];
+
+	for (const record of extraRecords) {
+		if (wantedIds.has(record.id) && !seenIds.has(record.id)) {
+			merged.push(record);
+			seenIds.add(record.id);
+		}
+	}
+
+	return merged;
+}
+
+export function getTransferDestinationAccounts(
+	accounts: Account[],
+	editAccounts: Account[],
+	sourceAccountId: string | undefined,
+	selectedDestinationAccountId: string | undefined
+): Account[] {
+	const allKnownAccounts = includeRecordsById(accounts, editAccounts, [
+		sourceAccountId,
+		selectedDestinationAccountId,
+	]);
+	const sourceAccount = allKnownAccounts.find((account) => account.id === sourceAccountId);
+	const sameCurrencyAccounts = sourceAccount
+		? accounts.filter(
+				(account) => account.id !== sourceAccount.id && account.currency === sourceAccount.currency
+			)
+		: [];
+
+	return includeRecordsById(sameCurrencyAccounts, editAccounts, [
+		selectedDestinationAccountId,
+	]).filter((account) => account.id !== sourceAccountId);
+}
+
+function errorMessage(error: unknown): string {
+	if (error instanceof Error && error.message) return error.message;
+	return "Something went wrong. Please try again.";
+}
+
+function scrollFocusedFieldIntoView(target: EventTarget | null) {
+	if (!(target instanceof HTMLElement)) return;
+
+	const field = target.closest(FOCUSABLE_FIELD_SELECTOR);
+	if (!(field instanceof HTMLElement)) return;
+
+	const scroll = () => {
+		field.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+	};
+
+	window.requestAnimationFrame(scroll);
+	window.setTimeout(scroll, FOCUS_SCROLL_DELAY);
+}
+
+function getFirstErrorMessage(fieldErrors: FieldErrors<TransactionFormValues>): string | null {
+	for (const value of Object.values(fieldErrors) as unknown[]) {
+		if (!value) continue;
+		if (
+			typeof value === "object" &&
+			"message" in value &&
+			typeof (value as { message?: unknown }).message === "string"
+		) {
+			return (value as { message: string }).message;
+		}
+		if (typeof value === "object") {
+			const nested = getFirstErrorMessage(value as FieldErrors<TransactionFormValues>);
+			if (nested) return nested;
+		}
+	}
+	return null;
+}
 
 interface TransactionDrawerProps {
 	userId: string;
@@ -53,11 +159,15 @@ interface TransactionDrawerProps {
 
 export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 	const { isTransactionDrawerOpen, editTransactionId, closeTransactionDrawer } = useUIStore();
+	const { activeCurrency } = useFilterStore();
 	const accounts = useActiveAccounts(userId);
-	const allCategories = useCategories(userId);
+	const allCategories = useCategories(userId, undefined, activeCurrency || undefined);
+	const [editAccounts, setEditAccounts] = useState<Account[]>([]);
+	const [editCategory, setEditCategory] = useState<Category | null>(null);
 	const [showTravel, setShowTravel] = useState(false);
 	const [confirming, setConfirming] = useState(false);
 	const [datePickerOpen, setDatePickerOpen] = useState(false);
+	const [saving, setSaving] = useState(false);
 
 	const {
 		register,
@@ -65,6 +175,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 		reset,
 		watch,
 		setValue,
+		setError,
 		formState: { errors, isSubmitting },
 	} = useForm<TransactionFormValues>({
 		resolver: zodResolver(transactionSchema) as Resolver<TransactionFormValues>,
@@ -77,67 +188,159 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 
 	const watchedType = watch("type") as TransactionType;
 	const watchedAccount = watch("accountId");
+	const watchedToAccount = watch("toAccountId");
+	const watchedCategory = watch("categoryId");
 	const watchedDate = watch("date");
+	const currency = activeCurrency || undefined;
+	const baseAccounts = accounts ?? [];
+	const currencyAccounts = currency
+		? baseAccounts.filter((account) => account.currency === currency)
+		: baseAccounts;
+	const accountOptions = includeRecordsById(currencyAccounts, editAccounts, [watchedAccount]);
+	const selectedAccount = accountOptions.find((account) => account.id === watchedAccount);
+	const destAccounts =
+		watchedType === "Transfer"
+			? getTransferDestinationAccounts(baseAccounts, editAccounts, watchedAccount, watchedToAccount)
+			: [];
+	const selectedDestinationAccount = destAccounts.find(
+		(account) => account.id === watchedToAccount
+	);
+	const crossCurrencyTransferWarning =
+		watchedType === "Transfer" &&
+		editTransactionId &&
+		selectedAccount &&
+		selectedDestinationAccount &&
+		selectedAccount.currency !== selectedDestinationAccount.currency
+			? `This existing transfer moves money between ${selectedAccount.currency} and ${selectedDestinationAccount.currency}. New transfers must use accounts in the same currency because MizanTrack does not apply FX conversion.`
+			: undefined;
+	const amountCurrencyLabel = getCurrencyLabel(selectedAccount?.currency ?? currency);
 
-	const categories = (allCategories ?? []).filter((c) => {
+	const typeCategories = (allCategories ?? []).filter((c) => {
 		if (watchedType === "Expense") return c.type === "Expense";
 		if (watchedType === "Income") return c.type === "Income";
 		return false;
 	});
+	const categories = includeRecordsById(typeCategories, editCategory ? [editCategory] : [], [
+		watchedCategory,
+	]);
 
-	const destAccounts = (accounts ?? []).filter((a) => a.id !== watchedAccount);
+	useEffect(() => {
+		function handleBlocked() {
+			toast.error("Storage upgrade is blocked. Close other MizanTrack tabs, then try again.");
+		}
+
+		function handleVersionChange() {
+			toast.info("MizanTrack updated in another tab. Reload this app if saving does not resume.");
+		}
+
+		window.addEventListener("mizantrack-db-blocked", handleBlocked);
+		window.addEventListener("mizantrack-db-versionchange", handleVersionChange);
+		return () => {
+			window.removeEventListener("mizantrack-db-blocked", handleBlocked);
+			window.removeEventListener("mizantrack-db-versionchange", handleVersionChange);
+		};
+	}, []);
 
 	// Load existing transaction for editing
 	useEffect(() => {
+		let cancelled = false;
+
 		if (!isTransactionDrawerOpen) {
 			reset({ type: "Expense", date: new Date(), amount: undefined });
+			setEditAccounts([]);
+			setEditCategory(null);
 			setShowTravel(false);
 			setConfirming(false);
+			setSaving(false);
 			return;
 		}
-		if (!editTransactionId) return;
+		if (!editTransactionId) {
+			setEditAccounts([]);
+			setEditCategory(null);
+			return;
+		}
 
-		void db.transactions.get(editTransactionId).then((txn: Transaction | undefined) => {
-			if (!txn) return;
-			reset({
-				type: txn.type,
-				amount: txn.amount,
-				date: new Date(txn.date),
-				accountId: txn.accountId,
-				categoryId: txn.categoryId,
-				toAccountId: txn.toAccountId,
-				description: txn.description,
-				place: txn.place,
-				tags: txn.tags,
-				travelCurrency: txn.travelCurrency,
+		void db.transactions
+			.get(editTransactionId)
+			.then(async (txn: Transaction | undefined) => {
+				if (!txn || cancelled) return;
+				reset({
+					type: txn.type,
+					amount: txn.amount,
+					date: new Date(txn.date),
+					accountId: txn.accountId,
+					categoryId: txn.categoryId,
+					toAccountId: txn.toAccountId,
+					description: txn.description,
+					place: txn.place,
+					tags: txn.tags,
+					travelCurrency: txn.travelCurrency,
+				});
+				setShowTravel(Boolean(txn.travelCurrency));
+				const [sourceAccount, toAccount, category] = await Promise.all([
+					db.accounts.get(txn.accountId),
+					txn.toAccountId ? db.accounts.get(txn.toAccountId) : undefined,
+					txn.categoryId ? db.categories.get(txn.categoryId) : undefined,
+				]);
+				if (cancelled) return;
+				setEditAccounts(
+					[sourceAccount, toAccount].filter((account): account is Account => Boolean(account))
+				);
+				setEditCategory(category ?? null);
+			})
+			.catch((error) => {
+				if (!cancelled) toast.error(`Could not load transaction: ${errorMessage(error)}`);
 			});
-			if (txn.travelCurrency) setShowTravel(true);
-		});
+
+		return () => {
+			cancelled = true;
+		};
 	}, [isTransactionDrawerOpen, editTransactionId, reset]);
 
 	async function onSubmit(values: TransactionFormValues) {
-		const now = Date.now();
-		const payload = {
-			...values,
-			userId,
-			date: values.date instanceof Date ? values.date.getTime() : Number(values.date),
-			updatedAt: now,
-			// Clear Transfer-specific fields for non-transfer
-			toAccountId: values.type === "Transfer" ? values.toAccountId : undefined,
-			categoryId: values.type === "Transfer" ? undefined : values.categoryId,
-		};
+		if (values.type === "Transfer" && values.toAccountId) {
+			const allKnownAccounts = includeRecordsById(baseAccounts, editAccounts, [
+				values.accountId,
+				values.toAccountId,
+			]);
+			const sourceAccount = allKnownAccounts.find((account) => account.id === values.accountId);
+			const destinationAccount = allKnownAccounts.find(
+				(account) => account.id === values.toAccountId
+			);
 
-		if (editTransactionId) {
-			await db.transactions.update(editTransactionId, payload);
-			scheduleAnalyticsRecompute(userId);
-			toast.success("Transaction updated");
-		} else {
-			await db.transactions.put({ id: uuidv4(), ...payload });
-			scheduleAnalyticsRecompute(userId);
-			toast.success("Transaction recorded");
+			if (
+				!editTransactionId &&
+				sourceAccount &&
+				destinationAccount &&
+				sourceAccount.currency !== destinationAccount.currency
+			) {
+				const message = "Transfers must use accounts in the same currency.";
+				setError("toAccountId", { type: "validate", message });
+				toast.error(message);
+				return;
+			}
 		}
-		closeTransactionDrawer();
+
+		setSaving(true);
+		try {
+			if (editTransactionId) {
+				await updateTransaction(userId, editTransactionId, values);
+				toast.success("Transaction updated");
+			} else {
+				await createTransaction(userId, values);
+				toast.success("Transaction recorded");
+			}
+			closeTransactionDrawer();
+		} catch (error) {
+			toast.error(errorMessage(error));
+		} finally {
+			setSaving(false);
+		}
 	}
+
+	const onInvalid: SubmitErrorHandler<TransactionFormValues> = (formErrors) => {
+		toast.error(getFirstErrorMessage(formErrors) ?? "Please check the highlighted fields.");
+	};
 
 	async function handleDelete() {
 		if (!editTransactionId) return;
@@ -146,30 +349,63 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 			setTimeout(() => setConfirming(false), 3000);
 			return;
 		}
-		await db.transactions.update(editTransactionId, {
-			deletedAt: Date.now(),
-			updatedAt: Date.now(),
-		});
-		scheduleAnalyticsRecompute(userId);
-		toast.success("Transaction deleted");
-		closeTransactionDrawer();
+		setSaving(true);
+		try {
+			await deleteTransaction(userId, editTransactionId);
+			toast.success("Transaction deleted");
+			closeTransactionDrawer();
+		} catch (error) {
+			toast.error(errorMessage(error));
+		} finally {
+			setSaving(false);
+		}
 	}
 
 	return (
 		<Drawer
 			open={isTransactionDrawerOpen}
 			onOpenChange={(open) => !open && closeTransactionDrawer()}>
-			<DrawerContent className="max-h-[92dvh]">
-				<DrawerHeader>
-					<DrawerTitle>{editTransactionId ? "Edit Transaction" : "New Transaction"}</DrawerTitle>
+			<DrawerContent className={FORM_DRAWER_CONTENT_CLASS}>
+				<DrawerHeader className="shrink-0 border-b border-border/60 px-4 pb-3 text-left">
+					<div className="flex items-start justify-between gap-3">
+						<div>
+							<DrawerTitle>
+								{editTransactionId ? "Edit Transaction" : "New Transaction"}
+							</DrawerTitle>
+							<DrawerDescription className="sr-only">
+								Record an expense, income, or transfer transaction.
+							</DrawerDescription>
+						</div>
+						<DrawerClose asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								aria-label="Close transaction drawer"
+								onClick={closeTransactionDrawer}>
+								<span aria-hidden="true" className="text-xl leading-none">
+									×
+								</span>
+							</Button>
+						</DrawerClose>
+					</div>
 				</DrawerHeader>
 
-				<div className="overflow-y-auto px-4 pb-2">
-					<form
-						onSubmit={(e) => {
-							void handleSubmit(onSubmit)(e);
-						}}
-						className="space-y-4">
+				<form
+					id={TRANSACTION_FORM_ID}
+					onSubmit={(e) => {
+						void handleSubmit(
+							onSubmit,
+							onInvalid
+						)(e).catch((error) => {
+							setSaving(false);
+							toast.error(errorMessage(error));
+						});
+					}}
+					className="flex min-h-0 flex-1 flex-col">
+					<div
+						className="min-h-0 flex-1 scroll-pb-[calc(8rem_+_var(--keyboard-inset,0px))] space-y-4 overflow-y-auto overscroll-contain px-4 py-4"
+						onFocusCapture={(event) => scrollFocusedFieldIntoView(event.target)}>
 						{/* Type tabs */}
 						<div className="flex gap-2">
 							{TYPE_TABS.map((t) => (
@@ -191,7 +427,14 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 
 						{/* Amount */}
 						<div className="space-y-1.5">
-							<Label htmlFor="txn-amount">Amount *</Label>
+							<Label htmlFor="txn-amount">
+								Amount *
+								{amountCurrencyLabel && (
+									<span className="ml-1 text-xs font-normal text-muted-foreground">
+										{amountCurrencyLabel}
+									</span>
+								)}
+							</Label>
 							<Input
 								id="txn-amount"
 								type="number"
@@ -206,49 +449,63 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 
 						{/* Date */}
 						<div className="space-y-1.5">
-						<Label>Date *</Label>
-						<Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-							<PopoverTrigger asChild>
-								<Button
-									type="button"
-									variant="outline"
-									className="w-full justify-start font-normal">
-									<CalendarIcon className="mr-2 h-4 w-4" />
-									{watchedDate instanceof Date
-										? format(watchedDate, "d MMMM yyyy")
-										: "Pick a date"}
-								</Button>
-							</PopoverTrigger>
-							<PopoverContent className="w-auto p-0" align="start">
-								<Calendar
-									mode="single"
-									selected={watchedDate instanceof Date ? watchedDate : undefined}
-
-									onSelect={(d) => {
-										if (d) {
-											setValue("date", d, { shouldValidate: true });
-											setDatePickerOpen(false);
-										}
-									}}
-								/>
-							</PopoverContent>
-						</Popover>
-						{errors.date && (
-							<p className="text-xs text-destructive">{errors.date.message as string}</p>
-						)}
+							<Label>Date *</Label>
+							<Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+								<PopoverTrigger asChild>
+									<Button
+										type="button"
+										variant="outline"
+										className="w-full justify-start font-normal">
+										<CalendarIcon className="mr-2 h-4 w-4" />
+										{watchedDate instanceof Date
+											? format(watchedDate, "d MMMM yyyy")
+											: "Pick a date"}
+									</Button>
+								</PopoverTrigger>
+								<PopoverContent className="w-auto p-0" align="start">
+									<Calendar
+										mode="single"
+										selected={watchedDate instanceof Date ? watchedDate : undefined}
+										onSelect={(d) => {
+											if (d) {
+												setValue("date", d, { shouldValidate: true });
+												setDatePickerOpen(false);
+											}
+										}}
+									/>
+								</PopoverContent>
+							</Popover>
+							{errors.date && (
+								<p className="text-xs text-destructive">{errors.date.message as string}</p>
+							)}
 						</div>
 
 						{/* From Account */}
 						<div className="space-y-1.5">
 							<Label>{watchedType === "Transfer" ? "From Account *" : "Account *"}</Label>
 							<Select
-								value={watch("accountId") ?? ""}
-								onValueChange={(v) => setValue("accountId", v, { shouldValidate: true })}>
+								value={watchedAccount ?? ""}
+								onValueChange={(v) => {
+									setValue("accountId", v, { shouldValidate: true });
+									if (!editTransactionId && watchedToAccount) {
+										const nextSource = baseAccounts.find((account) => account.id === v);
+										const currentDestination = baseAccounts.find(
+											(account) => account.id === watchedToAccount
+										);
+										if (
+											nextSource &&
+											currentDestination &&
+											nextSource.currency !== currentDestination.currency
+										) {
+											setValue("toAccountId", undefined, { shouldValidate: true });
+										}
+									}
+								}}>
 								<SelectTrigger>
 									<SelectValue placeholder="Select account" />
 								</SelectTrigger>
 								<SelectContent>
-									{(accounts ?? []).map((a) => (
+									{accountOptions.map((a) => (
 										<SelectItem key={a.id} value={a.id}>
 											{a.icon} {a.title} ({a.currency})
 										</SelectItem>
@@ -265,7 +522,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 							<div className="space-y-1.5">
 								<Label>To Account *</Label>
 								<Select
-									value={watch("toAccountId") ?? ""}
+									value={watchedToAccount ?? ""}
 									onValueChange={(v) => setValue("toAccountId", v, { shouldValidate: true })}>
 									<SelectTrigger>
 										<SelectValue placeholder="Select destination" />
@@ -281,6 +538,18 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 								{errors.toAccountId && (
 									<p className="text-xs text-destructive">{errors.toAccountId.message}</p>
 								)}
+								{destAccounts.length === 0 && (
+									<p className="text-xs text-muted-foreground">
+										{selectedAccount
+											? `Add another active ${selectedAccount.currency} account before recording a transfer.`
+											: "Select a source account before choosing a destination."}
+									</p>
+								)}
+								{crossCurrencyTransferWarning && (
+									<p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+										{crossCurrencyTransferWarning}
+									</p>
+								)}
 							</div>
 						)}
 
@@ -289,7 +558,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 							<div className="space-y-1.5">
 								<Label>Category</Label>
 								<Select
-									value={watch("categoryId") ?? "none"}
+									value={watchedCategory ?? "none"}
 									onValueChange={(v) =>
 										setValue("categoryId", v === "none" ? undefined : v, {
 											shouldValidate: true,
@@ -307,6 +576,9 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 										))}
 									</SelectContent>
 								</Select>
+								{errors.categoryId && (
+									<p className="text-xs text-destructive">{errors.categoryId.message}</p>
+								)}
 							</div>
 						)}
 
@@ -329,7 +601,13 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 						{/* Travel Currency toggle */}
 						<button
 							type="button"
-							onClick={() => setShowTravel((v) => !v)}
+							onClick={() => {
+								const nextShowTravel = !showTravel;
+								setShowTravel(nextShowTravel);
+								if (!nextShowTravel) {
+									setValue("travelCurrency", undefined, { shouldValidate: true });
+								}
+							}}
 							className="flex w-full items-center justify-between text-sm text-muted-foreground hover:text-foreground">
 							<span>Travel Currency (optional)</span>
 							<ChevronDown
@@ -350,6 +628,11 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 											className="h-8 text-xs"
 											{...register("travelCurrency.symbol")}
 										/>
+										{errors.travelCurrency?.symbol && (
+											<p className="text-xs text-destructive">
+												{errors.travelCurrency.symbol.message}
+											</p>
+										)}
 									</div>
 									<div className="space-y-1">
 										<Label htmlFor="tc-rate" className="text-xs">
@@ -363,6 +646,11 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 											className="h-8 text-xs"
 											{...register("travelCurrency.rate")}
 										/>
+										{errors.travelCurrency?.rate && (
+											<p className="text-xs text-destructive">
+												{errors.travelCurrency.rate.message}
+											</p>
+										)}
 									</div>
 									<div className="space-y-1">
 										<Label htmlFor="tc-amount" className="text-xs">
@@ -376,6 +664,11 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 											className="h-8 text-xs"
 											{...register("travelCurrency.amount")}
 										/>
+										{errors.travelCurrency?.amount && (
+											<p className="text-xs text-destructive">
+												{errors.travelCurrency.amount.message}
+											</p>
+										)}
 									</div>
 									<div className="space-y-1">
 										<Label htmlFor="tc-location" className="text-xs">
@@ -387,38 +680,48 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 											className="h-8 text-xs"
 											{...register("travelCurrency.location")}
 										/>
+										{errors.travelCurrency?.location && (
+											<p className="text-xs text-destructive">
+												{errors.travelCurrency.location.message}
+											</p>
+										)}
 									</div>
 								</div>
 							</div>
 						)}
+					</div>
 
-						<DrawerFooter className="px-0 pb-0">
-							{editTransactionId && (
-								<Button
-									variant="destructive"
-									type="button"
-									className="w-full"
-									onClick={() => {
-										void handleDelete();
-									}}>
-									{confirming ? "Tap again to confirm delete" : "Delete Transaction"}
-								</Button>
-							)}
-							<Button type="submit" disabled={isSubmitting} className="w-full">
-								{isSubmitting ? "Saving…" : editTransactionId ? "Save Changes" : "Record"}
+					<DrawerFooter className="pb-safe shrink-0 border-t border-border/60 bg-popover/95 px-4 pt-3 [padding-bottom:calc(env(safe-area-inset-bottom,0px)_+_var(--keyboard-inset,0px)_+_0.75rem)] supports-backdrop-filter:backdrop-blur">
+						{editTransactionId && (
+							<Button
+								variant="destructive"
+								type="button"
+								className="w-full"
+								disabled={isSubmitting || saving}
+								onClick={() => {
+									void handleDelete();
+								}}>
+								{confirming ? "Tap again to confirm delete" : "Delete Transaction"}
 							</Button>
-							<DrawerClose asChild>
-								<Button
-									variant="outline"
-									type="button"
-									className="w-full"
-									onClick={closeTransactionDrawer}>
-									Cancel
-								</Button>
-							</DrawerClose>
-						</DrawerFooter>
-					</form>
-				</div>
+						)}
+						<Button
+							type="submit"
+							form={TRANSACTION_FORM_ID}
+							disabled={isSubmitting || saving}
+							className="w-full">
+							{isSubmitting || saving ? "Saving…" : editTransactionId ? "Save Changes" : "Record"}
+						</Button>
+						<DrawerClose asChild>
+							<Button
+								variant="outline"
+								type="button"
+								className="w-full"
+								onClick={closeTransactionDrawer}>
+								Cancel
+							</Button>
+						</DrawerClose>
+					</DrawerFooter>
+				</form>
 			</DrawerContent>
 		</Drawer>
 	);

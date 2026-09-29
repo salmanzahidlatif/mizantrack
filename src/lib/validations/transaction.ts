@@ -1,5 +1,19 @@
 import { z } from "zod";
 
+function requiredUuidSchema(requiredMessage: string, invalidMessage: string) {
+	return z.preprocess(
+		(value) => (value === "" ? undefined : value),
+		z.string({ message: requiredMessage }).uuid(invalidMessage)
+	);
+}
+
+function optionalUuidSchema(invalidMessage: string) {
+	return z.preprocess(
+		(value) => (value === "" ? undefined : value),
+		z.string().uuid(invalidMessage).optional()
+	);
+}
+
 const travelCurrencySchema = z.object({
 	symbol: z.string().min(1, "Symbol is required"),
 	rate: z.coerce.number().positive("Rate must be positive"),
@@ -11,9 +25,9 @@ const baseTransactionSchema = z.object({
 	type: z.enum(["Expense", "Income", "Transfer"]),
 	amount: z.coerce.number().positive("Amount must be greater than 0"),
 	date: z.coerce.date({ message: "Valid date is required" }),
-	accountId: z.string().uuid("Invalid account"),
+	accountId: requiredUuidSchema("Account is required", "Invalid account"),
 	description: z.string().max(255).optional(),
-	categoryId: z.string().uuid("Invalid category").optional(),
+	categoryId: optionalUuidSchema("Invalid category"),
 	tags: z.array(z.string()).optional(),
 	place: z.string().max(255).optional(),
 	travelCurrency: travelCurrencySchema.optional(),
@@ -21,7 +35,7 @@ const baseTransactionSchema = z.object({
 
 export const transactionSchema = baseTransactionSchema
 	.extend({
-		toAccountId: z.string().uuid("Invalid destination account").optional(),
+		toAccountId: optionalUuidSchema("Invalid destination account"),
 	})
 	.refine(
 		(data) => {
