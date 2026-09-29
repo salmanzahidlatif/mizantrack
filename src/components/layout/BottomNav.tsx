@@ -1,19 +1,23 @@
 "use client";
 
-import {
-	LayoutDashboard,
-	ArrowLeftRight,
-	Wallet,
-	BarChart3,
-	Moon,
-	Plus,
-} from "lucide-react";
+import { LayoutDashboard, ArrowLeftRight, Wallet, BarChart3, Moon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useHaptics } from "@/hooks/useHaptics";
 import { cn } from "@/lib/utils";
-import { useUIStore } from "@/store/ui-store";
+
+import type { CSSProperties } from "react";
+
+export const BOTTOM_NAV_ROUTES = [
+	{ href: "/dashboard", label: "Home" },
+	{ href: "/transactions", label: "Txns" },
+	{ href: "/accounts", label: "Accounts" },
+	{ href: "/reports", label: "Reports" },
+	{ href: "/zakat", label: "Zakat" },
+	{ href: "/settings", label: "Me" },
+] as const;
 
 const BOTTOM_NAV_ITEMS = [
 	{ href: "/dashboard", label: "Home", icon: LayoutDashboard },
@@ -21,7 +25,7 @@ const BOTTOM_NAV_ITEMS = [
 	{ href: "/accounts", label: "Accounts", icon: Wallet },
 	{ href: "/reports", label: "Reports", icon: BarChart3 },
 	{ href: "/zakat", label: "Zakat", icon: Moon },
-];
+] as const;
 
 interface BottomNavProps {
 	userImage?: string | null;
@@ -30,67 +34,99 @@ interface BottomNavProps {
 
 export function BottomNav({ userImage, userName }: BottomNavProps) {
 	const pathname = usePathname();
-	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
+	const haptics = useHaptics();
 
 	const settingsActive = pathname === "/settings" || pathname.startsWith("/settings");
+	const activeItemIndex = BOTTOM_NAV_ITEMS.findIndex(({ href }) => pathname === href);
+	const settingsIndex = BOTTOM_NAV_ITEMS.length;
+	const activeIndex = settingsActive ? settingsIndex : activeItemIndex;
+	const settingsTransitionType =
+		activeIndex >= 0 && settingsIndex < activeIndex ? "nav-back" : "nav-forward";
+	const indicatorStyle = {
+		transform:
+			activeIndex >= 0 ? `translate3d(${activeIndex * 100}%, 0, 0)` : "translate3d(0, 0, 0)",
+	} as CSSProperties;
 
 	return (
-		<>
-			{/* Bottom nav bar */}
-			<nav className="fixed right-0 bottom-0 left-0 z-50 border-t border-border/60 bg-background/85 backdrop-blur-md pb-[env(safe-area-inset-bottom,0px)] md:hidden">
-				<div className="flex items-center justify-around px-1 py-1.5">
-					{BOTTOM_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-						const active = pathname === href;
-						return (
-							<Link
-								key={href}
-								href={href}
+		<nav className="liquid-glass-nav pb-safe px-safe fixed right-0 bottom-0 left-0 z-50 shadow-[var(--shadow-nav)] md:hidden">
+			<div className="relative z-10 grid h-[var(--bottom-nav-height)] grid-cols-6 p-1.5">
+				<div
+					aria-hidden="true"
+					style={indicatorStyle}
+					className={cn(
+						"liquid-glass-pill absolute top-1.5 bottom-1.5 left-1.5 w-[calc((100%_-_0.75rem)/6)] rounded-[1.25rem] transition-[transform,opacity] duration-[var(--dur-slow)] ease-[var(--ease-spring)] motion-reduce:transition-none",
+						activeIndex >= 0 ? "opacity-100" : "opacity-0"
+					)}
+				/>
+				{BOTTOM_NAV_ITEMS.map(({ href, label, icon: Icon }, index) => {
+					const active = pathname === href;
+					const transitionType =
+						activeIndex >= 0 && index < activeIndex ? "nav-back" : "nav-forward";
+					return (
+						<Link
+							key={href}
+							href={href}
+							transitionTypes={[transitionType]}
+							aria-current={active ? "page" : undefined}
+							onClick={() => {
+								if (!active) haptics.selection();
+							}}
+							className={cn(
+								"press-scale tappable relative z-10 flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-[1.25rem] px-1 text-[10px] font-semibold transition-[color,transform,text-shadow] duration-[var(--dur-base)] ease-[var(--ease-ios)] motion-reduce:transition-none",
+								active ? "text-primary" : "text-muted-foreground hover:text-foreground"
+							)}>
+							<div
 								className={cn(
-									"flex flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 text-[10px] font-medium transition-all touch-manipulation active:scale-95",
-									active ? "text-primary" : "text-muted-foreground hover:text-foreground"
+									"mb-0.5 flex h-7 w-7 items-center justify-center rounded-full transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-spring)] motion-reduce:transition-none",
+									active ? "liquid-glass-active-icon scale-110" : "scale-100"
 								)}>
-								<div className={cn(
-									"mb-0.5 flex h-6 w-6 items-center justify-center rounded-full transition-colors",
-									active ? "bg-primary/10" : ""
+								<Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 2} />
+							</div>
+							<span
+								className={cn(
+									"max-w-full truncate transition-transform duration-[var(--dur-base)] ease-[var(--ease-spring)] motion-reduce:transition-none",
+									active ? "scale-105" : "scale-100"
 								)}>
-									<Icon className="h-5 w-5" />
-								</div>
-								<span>{label}</span>
-							</Link>
-						);
-					})}
+								{label}
+							</span>
+						</Link>
+					);
+				})}
 
-					{/* Settings / Profile avatar */}
-					<Link
-						href="/settings"
+				<Link
+					href="/settings"
+					transitionTypes={[settingsTransitionType]}
+					aria-current={settingsActive ? "page" : undefined}
+					onClick={() => {
+						if (!settingsActive) haptics.selection();
+					}}
+					className={cn(
+						"press-scale tappable relative z-10 flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-[1.25rem] px-1 text-[10px] font-semibold transition-[color,transform,text-shadow] duration-[var(--dur-base)] ease-[var(--ease-ios)] motion-reduce:transition-none",
+						settingsActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+					)}>
+					<div
 						className={cn(
-							"flex flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 text-[10px] font-medium transition-all touch-manipulation active:scale-95",
-							settingsActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+							"mb-0.5 flex h-7 w-7 items-center justify-center rounded-full ring-2 transition-[transform,box-shadow,filter] duration-[var(--dur-base)] ease-[var(--ease-spring)] motion-reduce:transition-none",
+							settingsActive
+								? "liquid-glass-active-icon scale-110 shadow-sm ring-primary"
+								: "scale-100 ring-border"
 						)}>
-						<div className={cn(
-							"mb-0.5 flex h-6 w-6 items-center justify-center rounded-full transition-colors ring-2",
-							settingsActive ? "ring-primary" : "ring-border"
+						<Avatar className="h-6 w-6">
+							<AvatarImage src={userImage ?? ""} referrerPolicy="no-referrer" />
+							<AvatarFallback className="text-[9px]">
+								{userName?.charAt(0).toUpperCase() ?? "U"}
+							</AvatarFallback>
+						</Avatar>
+					</div>
+					<span
+						className={cn(
+							"max-w-full truncate transition-transform duration-[var(--dur-base)] ease-[var(--ease-spring)] motion-reduce:transition-none",
+							settingsActive ? "scale-105" : "scale-100"
 						)}>
-							<Avatar className="h-6 w-6">
-								<AvatarImage src={userImage ?? ""} referrerPolicy="no-referrer" />
-								<AvatarFallback className="text-[9px]">
-									{userName?.charAt(0).toUpperCase() ?? "U"}
-								</AvatarFallback>
-							</Avatar>
-						</div>
-						<span>Me</span>
-					</Link>
-				</div>
-			</nav>
-
-			{/* FAB — floating add transaction */}
-			<button
-				type="button"
-				onClick={openAddTransaction}
-				className="fixed right-4 bottom-20 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary shadow-[var(--shadow-overlay)] transition-all hover:scale-105 active:scale-95 md:bottom-6 touch-manipulation">
-				<Plus className="h-6 w-6 text-primary-foreground" />
-				<span className="sr-only">Add transaction</span>
-			</button>
-		</>
+						Me
+					</span>
+				</Link>
+			</div>
+		</nav>
 	);
 }

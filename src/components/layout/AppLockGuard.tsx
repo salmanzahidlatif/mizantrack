@@ -39,7 +39,6 @@ export function AppLockGuard({ userId, children }: AppLockGuardProps) {
 				startGraceTimer(GRACE_PERIOD_MS - elapsed);
 			}
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [config?.appLockEnabled, config?.pinHash]);
 
 	// ── Visibility change: background ↔ foreground ──────────────────────────
@@ -72,15 +71,17 @@ export function AppLockGuard({ userId, children }: AppLockGuardProps) {
 			document.removeEventListener("visibilitychange", handleVisibilityChange);
 			window.removeEventListener("pagehide", handlePageHide);
 		};
-	}, [config?.appLockEnabled, config?.pinHash, _graceExpired, lock, startGraceTimer, cancelGraceTimer]);
+	}, [
+		config?.appLockEnabled,
+		config?.pinHash,
+		_graceExpired,
+		lock,
+		startGraceTimer,
+		cancelGraceTimer,
+	]);
 
 	if (isLocked) {
-		return (
-			<LockScreen
-				userId={userId}
-				onUnlock={() => useLockStore.getState().unlock()}
-			/>
-		);
+		return <LockScreen userId={userId} onUnlock={() => useLockStore.getState().unlock()} />;
 	}
 
 	return <>{children}</>;

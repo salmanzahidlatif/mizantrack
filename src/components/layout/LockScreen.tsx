@@ -162,7 +162,7 @@ export function LockScreen({ userId, onUnlock }: LockScreenProps) {
 				<div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-primary">
 					<Image src="/icon-192.png" alt="MizanTrack" width={56} height={56} unoptimized />
 					{/* Lock badge — signals this is the app-lock screen without replacing the brand mark */}
-					<span className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-secondary shadow-sm">
+					<span className="absolute -right-1.5 -bottom-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-secondary shadow-sm">
 						<KeyRound className="h-3.5 w-3.5 text-secondary-foreground" />
 					</span>
 				</div>
