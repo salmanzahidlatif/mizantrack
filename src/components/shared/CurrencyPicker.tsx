@@ -4,9 +4,15 @@ import { Check, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { CURRENCIES, searchCurrencies } from "@/lib/currencies";
+import { searchCurrencies } from "@/lib/currencies";
 
 interface CurrencyPickerProps {
 	/** Currently selected ISO codes */
@@ -39,7 +45,7 @@ export function CurrencyPicker({
 			setQuery("");
 			setError(null);
 		}
-	}, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+	}, [open, selected]);
 
 	const filtered = useMemo(() => searchCurrencies(query), [query]);
 
@@ -86,7 +92,7 @@ export function CurrencyPicker({
 
 				{/* Search */}
 				<div className="relative px-4 py-2">
-					<Search className="absolute left-7 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+					<Search className="absolute top-1/2 left-7 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 					<Input
 						placeholder="Search by country or currency code…"
 						value={query}
@@ -104,10 +110,9 @@ export function CurrencyPicker({
 							<button
 								key={entry.code}
 								onClick={() => toggle(entry.code)}
-								className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 mb-0.5 text-left transition-colors touch-manipulation ${
+								className={`mb-0.5 flex w-full touch-manipulation items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
 									isSelected ? "bg-primary/10" : "hover:bg-muted/50"
-								}`}
-							>
+								}`}>
 								<span className="text-xl leading-none">{entry.flag}</span>
 								<span className="flex-1 text-sm">
 									<span className="font-medium">{entry.country}</span>{" "}
@@ -126,9 +131,7 @@ export function CurrencyPicker({
 				<div className="border-t border-border px-4 py-3">
 					{error && <p className="mb-2 text-xs text-destructive">{error}</p>}
 					<div className="flex justify-between">
-						<span className="text-xs text-muted-foreground">
-							{localSelected.length} selected
-						</span>
+						<span className="text-xs text-muted-foreground">{localSelected.length} selected</span>
 						<div className="flex gap-2">
 							<Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
 								Cancel

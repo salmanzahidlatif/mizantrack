@@ -6,4 +6,3 @@ export const accountSortOptions: Array<{ value: AccountSort; label: string }> = 
 	{ value: "title-asc", label: "Name (A-Z)" },
 	{ value: "updated-desc", label: "Recently updated" },
 ];
-

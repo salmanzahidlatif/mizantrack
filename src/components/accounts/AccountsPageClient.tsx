@@ -1,5 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
 import { AccountDrawer } from "@/components/accounts/AccountDrawer";
 import { AccountList } from "@/components/accounts/AccountList";
 import { accountSortOptions, type AccountSort } from "@/components/accounts/accountSort";
@@ -12,10 +15,9 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useAccounts } from "@/hooks/useAccounts";
+import { useHaptics } from "@/hooks/useHaptics";
 import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
 
 interface AccountsPageClientProps {
 	userId: string;
@@ -27,6 +29,12 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 		useFilterStore();
 	const [sortBy, setSortBy] = useState<AccountSort>("balance-desc");
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
+	const haptics = useHaptics();
+
+	function handleAddAccount() {
+		haptics.light();
+		openAddAccount();
+	}
 
 	function handleSelectAccount(accountId: string) {
 		// Select this account in the shared filter store (other filters like period,
@@ -42,7 +50,10 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 	});
 
 	// Also fetch archived count to show/hide toggle
-	const allAccounts = useAccounts(userId, { currency: activeCurrency || undefined, showArchived: true });
+	const allAccounts = useAccounts(userId, {
+		currency: activeCurrency || undefined,
+		showArchived: true,
+	});
 	const hasArchived = allAccounts?.some((a) => a.isArchived) ?? false;
 
 	return (
@@ -78,7 +89,7 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 							{showArchivedAccounts ? "Hide Archived" : "Show Archived"}
 						</Button>
 					)}
-					<Button size="sm" onClick={openAddAccount}>
+					<Button size="sm" onClick={handleAddAccount}>
 						Add Account
 					</Button>
 				</div>

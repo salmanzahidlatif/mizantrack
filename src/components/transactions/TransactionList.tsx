@@ -1,15 +1,18 @@
 "use client";
 
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { format } from "date-fns";
-import { useRef } from "react";
+import { useCallback, useMemo, useRef, type RefObject } from "react";
 
 import { EmptyState } from "@/components/shared/EmptyState";
-import { SkeletonCard } from "@/components/shared/SkeletonCard";
+import { SkeletonTransactionRow } from "@/components/shared/SkeletonTransactionRow";
 import { TransactionRow } from "@/components/transactions/TransactionRow";
+import { CARD_SURFACE, FROSTED_HEADER, LIST_ROW, staggerDelay } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui-store";
 
 import type { Account, Category, Transaction } from "@/types";
+import type { Range } from "@tanstack/react-virtual";
 
 type ListItem =
 	| { kind: "header"; label: string; key: string }
@@ -34,6 +37,7 @@ function buildItems(transactions: Transaction[]): ListItem[] {
 
 interface TransactionListProps {
 	transactions: Transaction[] | undefined;
+	/** Full account list for row label/currency resolution; filters stay upstream. */
 	accounts: Account[];
 	categories: Category[];
 }
@@ -44,10 +48,8 @@ export function TransactionList({ transactions, accounts, categories }: Transact
 
 	if (transactions === undefined) {
 		return (
-			<div className="space-y-2">
-				{Array.from({ length: 5 }).map((_, i) => (
-					<SkeletonCard key={i} rows={2} />
-				))}
+			<div className={cn(CARD_SURFACE, "overflow-hidden")}>
+				<SkeletonTransactionRow count={6} />
 			</div>
 		);
 	}
@@ -70,57 +72,97 @@ export function TransactionList({ transactions, accounts, categories }: Transact
 }
 
 interface VirtualListProps {
-	parentRef: React.RefObject<HTMLDivElement | null>;
+	parentRef: RefObject<HTMLDivElement | null>;
 	items: ListItem[];
 	accounts: Account[];
 	categories: Category[];
 }
 
 function VirtualList({ parentRef, items, accounts, categories }: VirtualListProps) {
+	const activeStickyIndexRef = useRef<number | null>(null);
+	const stickyIndexes = useMemo(
+		() =>
+			items.reduce<number[]>((indexes, item, index) => {
+				if (item.kind === "header") indexes.push(index);
+				return indexes;
+			}, []),
+		[items]
+	);
+	const rangeExtractor = useCallback(
+		(range: Range) => {
+			let activeStickyIndex: number | null = null;
+
+			for (let i = stickyIndexes.length - 1; i >= 0; i -= 1) {
+				const stickyIndex = stickyIndexes[i];
+				if (stickyIndex === undefined) continue;
+				if (stickyIndex <= range.startIndex) {
+					activeStickyIndex = stickyIndex;
+					break;
+				}
+			}
+
+			activeStickyIndexRef.current = activeStickyIndex;
+
+			if (activeStickyIndex === null) {
+				return defaultRangeExtractor(range);
+			}
+
+			return Array.from(new Set([activeStickyIndex, ...defaultRangeExtractor(range)])).sort(
+				(a, b) => a - b
+			);
+		},
+		[stickyIndexes]
+	);
 	const virtualizer = useVirtualizer({
 		count: items.length,
 		getScrollElement: () => parentRef.current,
 		estimateSize: (index) => {
 			const item = items[index];
-			return item?.kind === "header" ? 36 : 64;
+			return item?.kind === "header" ? 44 : 76;
 		},
 		overscan: 10,
+		rangeExtractor,
 	});
 
 	return (
 		<div
 			ref={parentRef}
-			className="overflow-auto rounded-xl border border-border/60 bg-card shadow-[var(--shadow-card)]"
+			className={cn(CARD_SURFACE, "no-scrollbar overflow-auto")}
 			style={{ maxHeight: "calc(100dvh - 200px)" }}>
 			<div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
 				{virtualizer.getVirtualItems().map((virtualRow) => {
 					const item = items[virtualRow.index];
 					if (!item) return null;
+					const isActiveSticky =
+						item.kind === "header" && activeStickyIndexRef.current === virtualRow.index;
 					return (
 						<div
 							key={item.key}
 							data-index={virtualRow.index}
 							ref={virtualizer.measureElement}
 							style={{
-								position: "absolute",
+								position: isActiveSticky ? "sticky" : "absolute",
 								top: 0,
-								left: 0,
+								left: isActiveSticky ? undefined : 0,
 								width: "100%",
-								transform: `translateY(${virtualRow.start}px)`,
+								zIndex: isActiveSticky ? 30 : item.kind === "header" ? 20 : 0,
+								transform: isActiveSticky ? undefined : `translateY(${virtualRow.start}px)`,
 							}}>
 							{item.kind === "header" ? (
-								<div className="sticky top-0 z-10 bg-muted/80 px-4 py-1.5 backdrop-blur-sm">
-									<p className="text-xs font-semibold text-muted-foreground">{item.label}</p>
+								<div className={cn(FROSTED_HEADER, "flex min-h-11 items-center px-4 py-2.5")}>
+									<p className="text-xs font-bold tracking-[0.16em] text-muted-foreground uppercase">
+										{item.label}
+									</p>
 								</div>
 							) : (
-								<>
+								<div className={LIST_ROW} style={staggerDelay(Math.min(virtualRow.index, 10), 28)}>
 									<TransactionRow
 										transaction={item.transaction}
 										accounts={accounts}
 										categories={categories}
 									/>
-									<div className="mx-4 border-b border-border/50 last:border-0" />
-								</>
+									<div className="pointer-events-none absolute right-4 bottom-0 left-[72px] border-b border-border/55" />
+								</div>
 							)}
 						</div>
 					);

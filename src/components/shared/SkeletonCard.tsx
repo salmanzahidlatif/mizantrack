@@ -1,3 +1,4 @@
+import { CARD_SURFACE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 interface SkeletonCardProps {
@@ -7,23 +8,23 @@ interface SkeletonCardProps {
 }
 
 function Skeleton({ className }: { className?: string }) {
-	return <div className={cn("animate-pulse rounded-md bg-muted", className)} />;
+	return <div className={cn("shimmer rounded-full bg-muted/70", className)} />;
 }
 
 export function SkeletonCard({ className, rows = 1 }: SkeletonCardProps) {
 	return (
-		<div className={cn("rounded-xl border border-border bg-card p-4", className)}>
-			<div className="flex items-start justify-between">
-				<div className="flex-1 space-y-2">
-					<Skeleton className="h-4 w-1/3" />
-					<Skeleton className="h-3 w-1/4" />
+		<div className={cn(CARD_SURFACE, "overflow-hidden p-4", className)}>
+			<div className="flex items-start justify-between gap-4">
+				<div className="min-w-0 flex-1 space-y-2.5">
+					<Skeleton className="h-4 w-2/5" />
+					<Skeleton className="h-3 w-1/3" />
 				</div>
-				<Skeleton className="h-6 w-20" />
+				<Skeleton className="h-7 w-24" />
 			</div>
 			{rows > 1 && (
-				<div className="mt-4 space-y-2">
+				<div className="mt-4 space-y-2.5">
 					{Array.from({ length: rows - 1 }).map((_, i) => (
-						<Skeleton key={i} className="h-3 w-full" />
+						<Skeleton key={i} className={cn("h-3", i % 2 === 0 ? "w-full" : "w-5/6")} />
 					))}
 				</div>
 			)}

@@ -1,8 +1,16 @@
 "use client";
 
 import { useLiveQuery } from "dexie-react-hooks";
-import { MoreVertical, Pencil, Archive, ArchiveRestore, Trash2, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+	Archive,
+	ArchiveRestore,
+	ChevronRight,
+	MoreVertical,
+	Pencil,
+	Plus,
+	Trash2,
+} from "lucide-react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
@@ -15,8 +23,12 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useHaptics } from "@/hooks/useHaptics";
 import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
+import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
+import { CARD_SURFACE, LIST_ROW, PRESS_SCALE, TAPPABLE, staggerDelay } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui-store";
 
 import type { AccountSort } from "@/components/accounts/accountSort";
@@ -25,8 +37,19 @@ import type { Account } from "@/types";
 // ─── AccountBalance ────────────────────────────────────────────────────────
 
 function AccountBalance({ balance, currency }: { balance: number | undefined; currency: string }) {
-	if (balance === undefined) return <span className="text-sm text-muted-foreground">…</span>;
-	return <CurrencyAmount amount={balance} currency={currency} colorized showNegativeSign />;
+	if (balance === undefined) {
+		return <span className="shimmer inline-block h-7 w-32 rounded-full bg-muted/70" />;
+	}
+
+	return (
+		<CurrencyAmount
+			amount={balance}
+			currency={currency}
+			colorized
+			showNegativeSign
+			className="text-2xl leading-8"
+		/>
+	);
 }
 
 // ─── AccountCard ───────────────────────────────────────────────────────────
@@ -36,10 +59,20 @@ interface AccountCardProps {
 	balance: number | undefined;
 	onEdit: (id: string) => void;
 	onSelect: (id: string) => void;
+	className?: string;
+	style?: CSSProperties;
 }
 
-function AccountCard({ account, balance, onEdit, onSelect }: AccountCardProps) {
+function AccountCard({ account, balance, onEdit, onSelect, className, style }: AccountCardProps) {
 	const [confirming, setConfirming] = useState(false);
+	const haptics = useHaptics();
+	const currency = getCurrencyByCode(account.currency);
+	const icon = account.icon ?? "💼";
+
+	function handleSelect() {
+		haptics.selection();
+		onSelect(account.id);
+	}
 
 	async function handleArchiveToggle() {
 		await db.accounts.update(account.id, {
@@ -68,28 +101,43 @@ function AccountCard({ account, balance, onEdit, onSelect }: AccountCardProps) {
 		<div
 			role="button"
 			tabIndex={0}
-			onClick={() => onSelect(account.id)}
+			onClick={handleSelect}
 			onKeyDown={(e) => {
 				if (e.key === "Enter" || e.key === " ") {
 					e.preventDefault();
-					onSelect(account.id);
+					handleSelect();
 				}
 			}}
-			className="relative cursor-pointer rounded-xl border border-border bg-card p-4 transition-shadow hover:shadow-sm"
+			className={cn(
+				CARD_SURFACE,
+				"relative min-h-36 cursor-pointer overflow-hidden p-4 transition-shadow duration-200 hover:shadow-[var(--shadow-sheet)]",
+				account.isArchived && "opacity-70",
+				PRESS_SCALE,
+				TAPPABLE,
+				className
+			)}
 			style={{
+				...style,
 				borderLeftColor: account.color ?? undefined,
-				borderLeftWidth: account.color ? 3 : undefined,
+				borderLeftWidth: account.color ? 4 : undefined,
 			}}>
-			{/* Header row */}
+			<div
+				className="pointer-events-none absolute -top-10 -right-10 h-28 w-28 rounded-full opacity-15 blur-2xl"
+				style={{ backgroundColor: account.color ?? "var(--primary)" }}
+			/>
 			<div className="flex items-start justify-between gap-2">
 				<div className="min-w-0 flex-1">
 					<div className="flex items-center gap-2">
-						{account.icon && <span className="text-lg leading-none">{account.icon}</span>}
-						<p className="truncate font-semibold">{account.title}</p>
+						<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted text-lg leading-none shadow-sm">
+							{icon}
+						</span>
+						<div className="min-w-0">
+							<p className="truncate text-base font-semibold tracking-tight">{account.title}</p>
+							<p className="mt-0.5 truncate text-xs text-muted-foreground">
+								{account.accountType === "liability" ? "Liability account" : "Active balance"}
+							</p>
+						</div>
 					</div>
-					<p className="mt-0.5 text-xs tracking-wide text-muted-foreground uppercase">
-						{account.currency}
-					</p>
 				</div>
 
 				<DropdownMenu>
@@ -136,16 +184,22 @@ function AccountCard({ account, balance, onEdit, onSelect }: AccountCardProps) {
 				</DropdownMenu>
 			</div>
 
-			{/* Balance */}
-			<div className="mt-3 text-xl font-bold">
+			<div className="mt-5">
+				<div className="mb-1.5 flex items-center gap-2">
+					<span className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-[11px] font-bold tracking-[0.14em] text-muted-foreground uppercase">
+						{currency?.flag && <span className="text-xs tracking-normal">{currency.flag}</span>}
+						{account.currency}
+					</span>
+					{account.isArchived && (
+						<span className="rounded-full bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+							Archived
+						</span>
+					)}
+				</div>
 				<AccountBalance balance={balance} currency={account.currency} />
 			</div>
 
-			{account.isArchived && (
-				<span className="mt-2 inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-					Archived
-				</span>
-			)}
+			<ChevronRight className="absolute right-4 bottom-4 h-4 w-4 text-muted-foreground/45" />
 		</div>
 	);
 }
@@ -169,6 +223,7 @@ export function AccountList({
 }: AccountListProps) {
 	const openEditAccount = useUIStore((s) => s.openEditAccount);
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
+	const haptics = useHaptics();
 	const transactions = useLiveQuery(
 		() =>
 			db.transactions
@@ -207,11 +262,21 @@ export function AccountList({
 
 	const hasCurrentBalances = transactions !== undefined;
 
+	function handleEditAccount(accountId: string) {
+		haptics.light();
+		openEditAccount(accountId);
+	}
+
+	function handleAddAccount() {
+		haptics.light();
+		openAddAccount();
+	}
+
 	if (accounts === undefined) {
 		return (
 			<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{Array.from({ length: 3 }).map((_, i) => (
-					<SkeletonCard key={i} />
+					<SkeletonCard key={i} rows={2} className="min-h-36" />
 				))}
 			</div>
 		);
@@ -219,10 +284,12 @@ export function AccountList({
 
 	const visible = showArchived ? accounts : accounts.filter((a) => !a.isArchived);
 	const sortedAccounts = [...visible].sort((a, b) => {
-		const balanceA =
-			hasCurrentBalances ? (balanceByAccountId.get(a.id) ?? a.openingBalance) : a.openingBalance;
-		const balanceB =
-			hasCurrentBalances ? (balanceByAccountId.get(b.id) ?? b.openingBalance) : b.openingBalance;
+		const balanceA = hasCurrentBalances
+			? (balanceByAccountId.get(a.id) ?? a.openingBalance)
+			: a.openingBalance;
+		const balanceB = hasCurrentBalances
+			? (balanceByAccountId.get(b.id) ?? b.openingBalance)
+			: b.openingBalance;
 
 		switch (sortBy) {
 			case "balance-asc":
@@ -242,27 +309,35 @@ export function AccountList({
 			<EmptyState
 				title="No accounts yet"
 				description="Create your first account to start tracking your finances."
-				action={{ label: "Add Account", onClick: openAddAccount }}
+				action={{ label: "Add Account", onClick: handleAddAccount }}
 			/>
 		);
 	}
 
 	return (
 		<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-			{sortedAccounts.map((account) => (
+			{sortedAccounts.map((account, index) => (
 				<AccountCard
 					key={account.id}
 					account={account}
 					balance={hasCurrentBalances ? balanceByAccountId.get(account.id) : undefined}
-					onEdit={openEditAccount}
+					onEdit={handleEditAccount}
 					onSelect={onSelectAccount}
+					className={LIST_ROW}
+					style={staggerDelay(index, 35)}
 				/>
 			))}
-			{/* Add new card */}
 			<button
 				type="button"
-				onClick={openAddAccount}
-				className="flex min-h-30 items-center justify-center gap-2 rounded-xl border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary">
+				onClick={handleAddAccount}
+				className={cn(
+					CARD_SURFACE,
+					"flex min-h-36 items-center justify-center gap-2 border-dashed text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary",
+					PRESS_SCALE,
+					TAPPABLE,
+					LIST_ROW
+				)}
+				style={staggerDelay(sortedAccounts.length, 35)}>
 				<Plus className="h-4 w-4" />
 				Add Account
 			</button>

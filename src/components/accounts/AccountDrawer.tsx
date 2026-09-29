@@ -9,11 +9,12 @@ import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
 import {
 	Drawer,
+	DrawerClose,
 	DrawerContent,
+	DrawerDescription,
+	DrawerFooter,
 	DrawerHeader,
 	DrawerTitle,
-	DrawerFooter,
-	DrawerClose,
 } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +38,26 @@ const COLOR_SWATCHES = [
 	"#3b82f6", // blue
 	"#eab308", // yellow
 ];
+const ACCOUNT_FORM_ID = "account-drawer-form";
+const FORM_DRAWER_CONTENT_CLASS =
+	"overflow-hidden pb-0 data-[vaul-drawer-direction=bottom]:h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_1rem)] data-[vaul-drawer-direction=bottom]:max-h-[95dvh] data-[vaul-drawer-direction=bottom]:pb-0";
+const FOCUSABLE_FIELD_SELECTOR =
+	"input, textarea, select, button, [role='combobox'], [contenteditable='true']";
+const FOCUS_SCROLL_DELAY = 280;
+
+function scrollFocusedFieldIntoView(target: EventTarget | null) {
+	if (!(target instanceof HTMLElement)) return;
+
+	const field = target.closest(FOCUSABLE_FIELD_SELECTOR);
+	if (!(field instanceof HTMLElement)) return;
+
+	const scroll = () => {
+		field.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+	};
+
+	window.requestAnimationFrame(scroll);
+	window.setTimeout(scroll, FOCUS_SCROLL_DELAY);
+}
 
 interface AccountDrawerProps {
 	userId: string;
@@ -111,104 +132,142 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 	}
 
 	const selectedColor = watch("color");
+	const selectedCurrency = watch("currency");
+	const currencyOptions =
+		selectedCurrency && !currencyShortcuts.includes(selectedCurrency)
+			? [selectedCurrency, ...currencyShortcuts]
+			: currencyShortcuts;
 
 	return (
 		<Drawer open={isAccountDrawerOpen} onOpenChange={(open) => !open && closeAccountDrawer()}>
-			<DrawerContent>
-				<DrawerHeader>
-					<DrawerTitle>{editAccountId ? "Edit Account" : "Add Account"}</DrawerTitle>
+			<DrawerContent className={FORM_DRAWER_CONTENT_CLASS}>
+				<DrawerHeader className="shrink-0 border-b border-border/60 px-4 pb-3 text-left">
+					<div className="flex items-start justify-between gap-3">
+						<div>
+							<DrawerTitle>{editAccountId ? "Edit Account" : "Add Account"}</DrawerTitle>
+							<DrawerDescription className="sr-only">
+								Create or edit an account used for transaction tracking.
+							</DrawerDescription>
+						</div>
+						<DrawerClose asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								aria-label="Close account drawer"
+								onClick={closeAccountDrawer}>
+								<span aria-hidden="true" className="text-xl leading-none">
+									×
+								</span>
+							</Button>
+						</DrawerClose>
+					</div>
 				</DrawerHeader>
 
 				<form
+					id={ACCOUNT_FORM_ID}
 					onSubmit={(e) => {
 						void handleSubmit(onSubmit)(e);
 					}}
-					className="space-y-4 px-4 pb-2">
-					{/* Title */}
-					<div className="space-y-1.5">
-						<Label htmlFor="acc-title">Title *</Label>
-						<Input id="acc-title" placeholder="e.g. FAB Current Account" {...register("title")} />
-						{errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
-					</div>
+					className="flex min-h-0 flex-1 flex-col">
+					<div
+						className="min-h-0 flex-1 scroll-pb-[calc(8rem_+_var(--keyboard-inset,0px))] space-y-4 overflow-y-auto overscroll-contain px-4 py-4"
+						onFocusCapture={(event) => scrollFocusedFieldIntoView(event.target)}>
+						{/* Title */}
+						<div className="space-y-1.5">
+							<Label htmlFor="acc-title">Title *</Label>
+							<Input id="acc-title" placeholder="e.g. FAB Current Account" {...register("title")} />
+							{errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
+						</div>
 
-					{/* Currency */}
-					<div className="space-y-1.5">
-						<Label htmlFor="acc-currency">Currency *</Label>
-						<div className="mb-1 flex flex-wrap gap-1.5">
-							{currencyShortcuts.map((c) => {
-								const entry = getCurrencyByCode(c);
-								return (
+						{/* Currency */}
+						<div className="space-y-1.5">
+							<Label htmlFor="acc-currency">Currency *</Label>
+							<div className="mb-1 flex flex-wrap gap-1.5">
+								{currencyOptions.map((c) => {
+									const entry = getCurrencyByCode(c);
+									return (
+										<button
+											key={c}
+											type="button"
+											onClick={() => setValue("currency", c, { shouldValidate: true })}
+											className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
+												watch("currency") === c
+													? "border-primary bg-primary text-primary-foreground"
+													: "border-border hover:border-primary"
+											}`}>
+											{entry?.flag && <span>{entry.flag}</span>}
+											{c}
+											{!currencyShortcuts.includes(c) ? (
+												<span className="text-[10px] opacity-80">current</span>
+											) : null}
+										</button>
+									);
+								})}
+							</div>
+							{selectedCurrency && !currencyShortcuts.includes(selectedCurrency) && (
+								<p className="text-xs text-muted-foreground">
+									This account uses {selectedCurrency}, which is not in your enabled currency
+									shortcuts.
+								</p>
+							)}
+							<Input
+								id="acc-currency"
+								placeholder={defaultCurrency}
+								maxLength={3}
+								className="uppercase"
+								hidden
+								{...register("currency")}
+							/>
+							{errors.currency && (
+								<p className="text-xs text-destructive">{errors.currency.message}</p>
+							)}
+						</div>
+
+						{/* Opening Balance */}
+						<div className="space-y-1.5">
+							<Label htmlFor="acc-balance">Opening Balance</Label>
+							<Input
+								id="acc-balance"
+								type="number"
+								step="0.01"
+								placeholder="0.00"
+								{...register("openingBalance")}
+							/>
+							{errors.openingBalance && (
+								<p className="text-xs text-destructive">{errors.openingBalance.message}</p>
+							)}
+						</div>
+
+						{/* Color */}
+						<div className="space-y-1.5">
+							<Label>Color</Label>
+							<div className="flex gap-2">
+								{COLOR_SWATCHES.map((c) => (
 									<button
 										key={c}
 										type="button"
-										onClick={() => setValue("currency", c, { shouldValidate: true })}
-										className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
-											watch("currency") === c
-												? "border-primary bg-primary text-primary-foreground"
-												: "border-border hover:border-primary"
-										}`}>
-										{entry?.flag && <span>{entry.flag}</span>}
-										{c}
-									</button>
-								);
-							})}
+										onClick={() => setValue("color", selectedColor === c ? undefined : c)}
+										className="h-6 w-6 rounded-full transition-transform hover:scale-110"
+										style={{
+											backgroundColor: c,
+											outline: selectedColor === c ? `2px solid ${c}` : undefined,
+											outlineOffset: 2,
+										}}
+									/>
+								))}
+							</div>
 						</div>
-						<Input
-							id="acc-currency"
-							placeholder={defaultCurrency}
-							maxLength={3}
-							className="uppercase"
-							hidden
-							{...register("currency")}
-						/>
-						{errors.currency && (
-							<p className="text-xs text-destructive">{errors.currency.message}</p>
-						)}
-					</div>
 
-					{/* Opening Balance */}
-					<div className="space-y-1.5">
-						<Label htmlFor="acc-balance">Opening Balance</Label>
-						<Input
-							id="acc-balance"
-							type="number"
-							step="0.01"
-							placeholder="0.00"
-							{...register("openingBalance")}
-						/>
-						{errors.openingBalance && (
-							<p className="text-xs text-destructive">{errors.openingBalance.message}</p>
-						)}
-					</div>
-
-					{/* Color */}
-					<div className="space-y-1.5">
-						<Label>Color</Label>
-						<div className="flex gap-2">
-							{COLOR_SWATCHES.map((c) => (
-								<button
-									key={c}
-									type="button"
-									onClick={() => setValue("color", selectedColor === c ? undefined : c)}
-									className="h-6 w-6 rounded-full transition-transform hover:scale-110"
-									style={{
-										backgroundColor: c,
-										outline: selectedColor === c ? `2px solid ${c}` : undefined,
-										outlineOffset: 2,
-									}}
-								/>
-							))}
+						{/* Icon */}
+						<div className="space-y-1.5">
+							<Label htmlFor="acc-icon">Icon (emoji)</Label>
+							<Input id="acc-icon" placeholder="🏦" maxLength={2} {...register("icon")} />
 						</div>
 					</div>
 
-					{/* Icon */}
-					<div className="space-y-1.5">
-						<Label htmlFor="acc-icon">Icon (emoji)</Label>
-						<Input id="acc-icon" placeholder="🏦" maxLength={2} {...register("icon")} />
-					</div>
-
-					<DrawerFooter className="px-0">
-						<Button type="submit" disabled={isSubmitting} className="w-full">
+					<DrawerFooter className="pb-safe shrink-0 border-t border-border/60 bg-popover/95 px-4 pt-3 [padding-bottom:calc(env(safe-area-inset-bottom,0px)_+_var(--keyboard-inset,0px)_+_0.75rem)] supports-backdrop-filter:backdrop-blur">
+						<Button type="submit" form={ACCOUNT_FORM_ID} disabled={isSubmitting} className="w-full">
 							{isSubmitting ? "Saving…" : editAccountId ? "Save Changes" : "Add Account"}
 						</Button>
 						<DrawerClose asChild>

@@ -4,8 +4,12 @@ import Link from "next/link";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { SkeletonCard } from "@/components/shared/SkeletonCard";
+import { SkeletonBalance } from "@/components/shared/SkeletonBalance";
 import { useAccounts } from "@/hooks/useAccounts";
+import { useHaptics } from "@/hooks/useHaptics";
+import { getCurrencyByCode } from "@/lib/currencies";
+import { CARD_SURFACE, LIST_ROW, PRESS_SCALE, TAPPABLE, staggerDelay } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
@@ -17,16 +21,44 @@ interface BalanceCardProps {
 }
 
 function BalanceCard({ account, balance }: BalanceCardProps) {
+	const currency = getCurrencyByCode(account.currency);
+	const icon = account.icon ?? "💼";
+
 	return (
 		<div
-			className="flex min-w-44 flex-col gap-1.5 rounded-2xl border border-border/60 bg-card p-4 shadow-[var(--shadow-card)] transition-shadow hover:shadow-[var(--shadow-overlay)] active:scale-[0.98] active:shadow-[var(--shadow-card)] touch-manipulation"
+			className={cn(
+				CARD_SURFACE,
+				"relative flex min-w-48 flex-col gap-3 overflow-hidden p-4 transition-shadow duration-200 hover:shadow-[var(--shadow-sheet)]",
+				PRESS_SCALE,
+				TAPPABLE
+			)}
 			style={account.color ? { borderLeftColor: account.color, borderLeftWidth: 3 } : undefined}>
-			<div className="flex items-center gap-1.5">
-				{account.icon && <span className="text-base leading-none">{account.icon}</span>}
-				<p className="truncate text-sm font-semibold">{account.title}</p>
+			<div
+				className="pointer-events-none absolute -top-8 -right-8 h-24 w-24 rounded-full opacity-15 blur-2xl"
+				style={{ backgroundColor: account.color ?? "var(--primary)" }}
+			/>
+			<div className="flex items-center gap-2">
+				<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-muted text-base leading-none shadow-sm">
+					{icon}
+				</span>
+				<div className="min-w-0">
+					<p className="truncate text-sm font-semibold tracking-tight">{account.title}</p>
+					<p className="truncate text-[11px] text-muted-foreground">Available balance</p>
+				</div>
 			</div>
-			<p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">{account.currency}</p>
-			<CurrencyAmount amount={balance} currency={account.currency} colorized showNegativeSign className="text-xl font-bold" />
+			<div className="flex items-end justify-between gap-3">
+				<CurrencyAmount
+					amount={balance}
+					currency={account.currency}
+					colorized
+					showNegativeSign
+					className="text-xl leading-7"
+				/>
+				<span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-[10px] font-bold tracking-[0.14em] text-muted-foreground uppercase">
+					{currency?.flag && <span className="text-xs tracking-normal">{currency.flag}</span>}
+					{account.currency}
+				</span>
+			</div>
 		</div>
 	);
 }
@@ -38,16 +70,20 @@ interface BalanceCardsProps {
 
 export function BalanceCards({ userId, stats }: BalanceCardsProps) {
 	const { activeCurrency } = useFilterStore();
+	const haptics = useHaptics();
 	// Filter accounts by the active currency context from the header selector
 	const accounts = useAccounts(userId, { currency: activeCurrency ? activeCurrency : undefined });
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
 
+	function handleAddAccount() {
+		haptics.light();
+		openAddAccount();
+	}
+
 	if (accounts === undefined || stats?.id !== userId) {
 		return (
-			<div className="flex gap-3 overflow-x-auto pb-1">
-				{Array.from({ length: 3 }).map((_, i) => (
-					<SkeletonCard key={i} className="min-w-40" />
-				))}
+			<div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
+				<SkeletonBalance count={3} />
 			</div>
 		);
 	}
@@ -59,15 +95,20 @@ export function BalanceCards({ userId, stats }: BalanceCardsProps) {
 			<EmptyState
 				title="No accounts yet"
 				description="Create your first account to start tracking."
-				action={{ label: "Add Account", onClick: openAddAccount }}
+				action={{ label: "Add Account", onClick: handleAddAccount }}
 			/>
 		);
 	}
 
 	return (
-		<div className="flex gap-3 overflow-x-auto pb-1">
-			{activeAccounts.map((a) => (
-				<Link key={a.id} href="/accounts" className="shrink-0">
+		<div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
+			{activeAccounts.map((a, index) => (
+				<Link
+					key={a.id}
+					href="/accounts"
+					onClick={() => haptics.selection()}
+					className={cn("shrink-0", LIST_ROW)}
+					style={staggerDelay(index, 35)}>
 					<BalanceCard account={a} balance={stats.balances[a.id] ?? a.openingBalance} />
 				</Link>
 			))}
