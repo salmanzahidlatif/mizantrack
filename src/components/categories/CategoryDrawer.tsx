@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { useCategories } from "@/hooks/useCategories";
 import { useDbConfig } from "@/hooks/useDbConfig";
+import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
@@ -375,7 +376,8 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 										<SelectItem value="none">None (top-level)</SelectItem>
 										{parentOptions.map((c) => (
 											<SelectItem key={c.id} value={c.id}>
-												{c.icon} {c.title}
+												<span aria-hidden="true">{getCategoryIcon(c)}</span>
+												<span>{c.title}</span>
 												{c.currency ? ` · ${formatCurrency(c.currency)}` : ""}
 											</SelectItem>
 										))}

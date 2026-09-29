@@ -14,6 +14,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useHaptics } from "@/hooks/useHaptics";
+import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
 import { useUIStore } from "@/store/ui-store";
@@ -31,6 +32,7 @@ function CategoryRow({ category, isChild = false }: CategoryRowProps) {
 	const openEditCategory = useUIStore((s) => s.openEditCategory);
 	const haptics = useHaptics();
 	const currency = category.currency ? getCurrencyByCode(category.currency) : undefined;
+	const icon = getCategoryIcon(category);
 
 	async function handleDelete() {
 		await db.categories.update(category.id, {
@@ -48,7 +50,9 @@ function CategoryRow({ category, isChild = false }: CategoryRowProps) {
 			style={isChild && category.color ? { borderLeftColor: category.color } : undefined}>
 			<div className="flex min-w-0 flex-1 items-center gap-2">
 				{isChild && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-				{category.icon && <span className="text-base leading-none">{category.icon}</span>}
+				<span aria-hidden="true" className="text-base leading-none">
+					{icon}
+				</span>
 				<div className="flex min-w-0 flex-1 items-center gap-1.5">
 					<span className="truncate text-sm font-medium">{category.title}</span>
 					{category.color && (
