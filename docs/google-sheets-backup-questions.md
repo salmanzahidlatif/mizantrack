@@ -341,3 +341,31 @@ The recommended architecture (Q3, option A) means your financial data passes thr
 But that is a change from how the app works today, where your data goes straight from your device to your own Firebase project and touches nothing of mine. I think it's the right call, because the alternative puts a Google Drive write token inside your browser where any cross-site-scripting bug could steal it. But you should be making that trade deliberately rather than discovering it later.
 
 If it bothers you, say so. The alternative is buildable for roughly the same effort.
+
+---
+
+## Recorded decisions — 2026-09-29
+
+The user reviewed the blocking questions and gave the following answers. **Implementation is deferred**: this feature is approved in principle but is NOT scheduled for build yet. Revisit these answers before starting Phase 0, as some interact badly (see "Conflicts to resolve" below).
+
+| # | Question | Decision |
+|---|----------|----------|
+| Q1 | Build it now? | **No — deferred.** Design retained for a later decision. |
+| Q3 | Where do Google API calls run? | **Token broker.** Server mints short-lived access tokens; the browser calls Google directly. Financial data must never transit the app server. |
+| Q4 | One-way or two-way? | **Full two-way sync.** The user wants to edit the Sheet and have changes flow back into the app. |
+| Q7 | Relationship to Firebase sync? | **Sheets should eventually replace Firebase**, not merely supplement it. |
+| Q13 | Dataset size | **~10,000 transactions today, growing.** |
+
+### Conflicts to resolve before Phase 0
+
+These answers push the design well beyond the recommended starting point, and the plan's effort estimates no longer hold.
+
+1. **Token broker + two-way + replace-Firebase is the highest-risk combination in the design space.** The phased plan assumed server-proxy, one-way, coexist-with-Firebase. Re-estimate before committing; the optional Phase 5 (restore) becomes mandatory and grows.
+2. **Token broker exposes a Drive write token to the browser.** Mitigations are mandatory, not optional: shortest viable token lifetime, `drive.file` scope only, a strict Content-Security-Policy, and an XSS audit. Document the residual risk explicitly for the user.
+3. **Sheets as a Firebase replacement changes the durability story.** Firebase is the current source of truth for cross-device sync. A Google Sheet is user-editable and therefore corruptible — a malformed edit could destroy financial history. Before replacing Firebase, the design needs: strict zod validation of every inbound row, a versioned pre-import snapshot the user can roll back to, and a clear answer for what happens when two devices write concurrently.
+4. **10,000+ transactions strains full-snapshot rewrites.** The design's <=1.8 MB chunked snapshot approach needs re-validation at this scale, and delta writes move from "nice to have" to likely required. Benchmark before choosing.
+5. **Q11 remains outstanding and is a hard blocker whenever work starts:** the Google Cloud Console OAuth consent screen must be set to "In production", otherwise refresh tokens expire every 7 days and backups silently stop.
+
+### Still unanswered
+
+Questions Q2, Q5, Q6, Q8, Q9, Q10, Q11, Q12 and Q14 were not answered and must be revisited when this feature is scheduled.
