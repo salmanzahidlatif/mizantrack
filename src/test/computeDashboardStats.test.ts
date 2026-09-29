@@ -106,7 +106,7 @@ describe("computeDashboardStats", () => {
 		expect(stats.id).toBe(USER_ID);
 		expect(stats.balances).toEqual({
 			"acc-pkr": 1305,
-			"acc-usd": 525,
+			"acc-usd": 450,
 		});
 
 		expect(allCurrencies).toBeDefined();
@@ -148,6 +148,67 @@ describe("computeDashboardStats", () => {
 			accountTitle: "Cash PKR",
 			accountCurrency: "PKR",
 			toAccountId: "acc-usd",
+		});
+	});
+
+	it("does not credit source-currency amounts into cross-currency destination balances or totals", async () => {
+		const currentMonth = startOfMonth(new Date()).getTime() + 2 * 24 * 60 * 60 * 1000;
+
+		await db.accounts.bulkPut([
+			{
+				id: "acc-cross-pkr",
+				userId: USER_ID,
+				title: "Cash PKR",
+				openingBalance: 50000,
+				currency: "PKR",
+				isArchived: false,
+				updatedAt: Date.now(),
+			},
+			{
+				id: "acc-cross-aed",
+				userId: USER_ID,
+				title: "AED Wallet",
+				openingBalance: 10,
+				currency: "AED",
+				isArchived: false,
+				updatedAt: Date.now(),
+			},
+		]);
+
+		await db.transactions.bulkPut([
+			{
+				id: "txn-cross-transfer",
+				userId: USER_ID,
+				type: "Transfer",
+				date: currentMonth,
+				amount: 50000,
+				accountId: "acc-cross-pkr",
+				toAccountId: "acc-cross-aed",
+				description: "Legacy cross-currency transfer",
+				updatedAt: Date.now(),
+			},
+			{
+				id: "txn-aed-income",
+				userId: USER_ID,
+				type: "Income",
+				date: currentMonth + 1,
+				amount: 25,
+				accountId: "acc-cross-aed",
+				description: "AED income",
+				updatedAt: Date.now(),
+			},
+		]);
+
+		const stats = await computeDashboardStats(USER_ID);
+		const aed = stats.perCurrency.AED;
+
+		expect(stats.balances).toMatchObject({
+			"acc-cross-pkr": 0,
+			"acc-cross-aed": 35,
+		});
+		expect(aed).toMatchObject({
+			monthIncome: 25,
+			monthExpense: 0,
 		});
 	});
 });

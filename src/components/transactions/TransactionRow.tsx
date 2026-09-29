@@ -1,8 +1,12 @@
 "use client";
 
-import { ArrowLeftRight, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowLeftRight, ChevronRight, TrendingDown, TrendingUp } from "lucide-react";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
+import { useHaptics } from "@/hooks/useHaptics";
+import { getCurrencyByCode } from "@/lib/currencies";
+import { PRESS_SCALE, TAPPABLE } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui-store";
 
 import type { Account, Category, Transaction } from "@/types";
@@ -20,13 +24,20 @@ const TYPE_ICON = {
 } as const;
 
 const TYPE_COLOR = {
-	Expense: "text-red-500 bg-red-50 dark:bg-red-950",
-	Income: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950",
-	Transfer: "text-blue-500 bg-blue-50 dark:bg-blue-950",
+	Expense: "bg-red-50 text-red-600 ring-red-500/10 dark:bg-red-950/60 dark:text-red-400",
+	Income:
+		"bg-emerald-50 text-emerald-600 ring-emerald-500/10 dark:bg-emerald-950/60 dark:text-emerald-400",
+	Transfer: "bg-blue-50 text-blue-600 ring-blue-500/10 dark:bg-blue-950/60 dark:text-blue-400",
 } as const;
+
+function formatAccountLabel(account: Account | undefined, showCurrency: boolean): string {
+	const title = account?.title ?? "Unknown account";
+	return showCurrency && account?.currency ? `${title} (${account.currency})` : title;
+}
 
 export function TransactionRow({ transaction, accounts, categories }: TransactionRowProps) {
 	const openEditTransaction = useUIStore((s) => s.openEditTransaction);
+	const haptics = useHaptics();
 
 	const TypeIcon = TYPE_ICON[transaction.type];
 	const iconColor = TYPE_COLOR[transaction.type];
@@ -43,48 +54,73 @@ export function TransactionRow({ transaction, accounts, categories }: Transactio
 		category?.title ??
 		(transaction.type === "Transfer" ? "Transfer" : "Untitled");
 
+	const isCrossCurrencyTransfer =
+		transaction.type === "Transfer" &&
+		Boolean(account?.currency && toAccount?.currency && account.currency !== toAccount.currency);
 	const accountLabel =
-		transaction.type === "Transfer" && toAccount
-			? `${account?.title ?? "?"} → ${toAccount.title}`
-			: (account?.title ?? "—");
+		transaction.type === "Transfer"
+			? `${formatAccountLabel(account, isCrossCurrencyTransfer)} → ${formatAccountLabel(
+					toAccount,
+					isCrossCurrencyTransfer
+				)}`
+			: formatAccountLabel(account, false);
+	const categoryCurrency = category?.currency ? getCurrencyByCode(category.currency) : undefined;
+	const signedAmount = transaction.type === "Expense" ? -transaction.amount : transaction.amount;
+
+	function handleOpen() {
+		haptics.light();
+		openEditTransaction(transaction.id);
+	}
 
 	return (
 		<button
 			type="button"
-			onClick={() => openEditTransaction(transaction.id)}
-			className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 active:bg-muted/70 touch-manipulation">
-			{/* Type icon */}
+			onClick={handleOpen}
+			className={cn(
+				"flex min-h-[76px] w-full items-center gap-3 px-4 py-3.5 text-left transition-colors duration-150 hover:bg-muted/35 active:bg-muted/55",
+				PRESS_SCALE,
+				TAPPABLE
+			)}>
 			<div
-				className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconColor}`}>
-				<TypeIcon className="h-4 w-4" />
+				className={cn(
+					"flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1",
+					iconColor
+				)}>
+				<TypeIcon className="h-[18px] w-[18px]" />
 			</div>
 
-			{/* Description + meta */}
-			<div className="min-w-0 flex-1">
-				<p className="truncate text-sm font-medium">{label}</p>
-				<div className="mt-0.5 flex items-center gap-1.5">
-					<span className="truncate text-xs text-muted-foreground">{accountLabel}</span>
+			<div className="min-w-0 flex-1 space-y-1">
+				<p className="truncate text-[15px] leading-5 font-semibold tracking-tight">{label}</p>
+				<div className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground">
+					<span className="truncate">{accountLabel}</span>
 					{category && (
 						<>
-							<span className="text-xs text-muted-foreground">·</span>
+							<span className="shrink-0 text-muted-foreground/60">·</span>
 							<span
-								className="truncate text-xs text-muted-foreground"
+								className="truncate"
 								style={category.color ? { color: category.color } : undefined}>
 								{category.icon} {category.title}
 							</span>
+							{categoryCurrency && (
+								<span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+									{categoryCurrency.flag} {categoryCurrency.code}
+								</span>
+							)}
 						</>
 					)}
 				</div>
 			</div>
 
-			{/* Amount */}
-			<div className="shrink-0 text-right">
+			<div className="flex shrink-0 items-center gap-1 text-right">
 				<CurrencyAmount
-					amount={transaction.type === "Expense" ? -transaction.amount : transaction.amount}
-					currency={account?.currency ?? ""}
+					amount={signedAmount}
+					currency={account?.currency}
 					colorized
+					showNegativeSign
 					variant={transaction.type === "Transfer" ? "transfer" : undefined}
+					className="text-[15px] leading-5"
 				/>
+				<ChevronRight className="h-4 w-4 text-muted-foreground/45" aria-hidden="true" />
 			</div>
 		</button>
 	);

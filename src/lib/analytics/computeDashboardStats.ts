@@ -102,6 +102,20 @@ function matchesCurrency(transaction: Transaction, accountIds: Set<string> | nul
 	);
 }
 
+function isKnownCrossCurrencyTransfer(
+	transaction: Transaction,
+	accountById: Map<string, Account>
+): boolean {
+	if (transaction.type !== "Transfer" || !transaction.toAccountId) return false;
+
+	const sourceAccount = accountById.get(transaction.accountId);
+	const destinationAccount = accountById.get(transaction.toAccountId);
+
+	return Boolean(
+		sourceAccount && destinationAccount && sourceAccount.currency !== destinationAccount.currency
+	);
+}
+
 export async function computeDashboardStats(userId: string): Promise<DashboardStats> {
 	const [accounts, transactions] = await Promise.all([
 		db.accounts
@@ -144,6 +158,7 @@ export async function computeDashboardStats(userId: string): Promise<DashboardSt
 		} else if (transaction.type === "Expense" && sourceBalance !== undefined) {
 			balances[transaction.accountId] = sourceBalance - transaction.amount;
 		} else if (transaction.type === "Transfer") {
+			const isCrossCurrency = isKnownCrossCurrencyTransfer(transaction, accountById);
 			if (sourceBalance !== undefined) {
 				balances[transaction.accountId] = sourceBalance - transaction.amount;
 			}
@@ -151,6 +166,12 @@ export async function computeDashboardStats(userId: string): Promise<DashboardSt
 			if (transaction.toAccountId) {
 				const destinationBalance = balances[transaction.toAccountId];
 				if (destinationBalance !== undefined) {
+					if (isCrossCurrency) {
+						// `travelCurrency` is travel-spend display metadata, not a transfer FX
+						// contract. Without a destination amount/rate, adding source-currency
+						// `amount` would corrupt the destination currency's balance.
+						continue;
+					}
 					balances[transaction.toAccountId] = destinationBalance + transaction.amount;
 				}
 			}
