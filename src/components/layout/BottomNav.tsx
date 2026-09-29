@@ -1,47 +1,46 @@
 "use client";
 
-import { LayoutDashboard, ArrowLeftRight, Wallet, BarChart3, Moon } from "lucide-react";
+import { LayoutDashboard, ArrowLeftRight, Wallet, Tag, BarChart3, Moon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useHaptics } from "@/hooks/useHaptics";
 import { cn } from "@/lib/utils";
 
 import type { CSSProperties } from "react";
 
-export const BOTTOM_NAV_ROUTES = [
+const BOTTOM_NAV_ITEMS = [
 	{ href: "/dashboard", label: "Home" },
 	{ href: "/transactions", label: "Txns" },
 	{ href: "/accounts", label: "Accounts" },
+	{ href: "/categories", label: "Categories" },
 	{ href: "/reports", label: "Reports" },
 	{ href: "/zakat", label: "Zakat" },
-	{ href: "/settings", label: "Me" },
 ] as const;
 
-const BOTTOM_NAV_ITEMS = [
-	{ href: "/dashboard", label: "Home", icon: LayoutDashboard },
-	{ href: "/transactions", label: "Txns", icon: ArrowLeftRight },
-	{ href: "/accounts", label: "Accounts", icon: Wallet },
-	{ href: "/reports", label: "Reports", icon: BarChart3 },
-	{ href: "/zakat", label: "Zakat", icon: Moon },
-] as const;
+const BOTTOM_NAV_ICONS = {
+	"/dashboard": LayoutDashboard,
+	"/transactions": ArrowLeftRight,
+	"/accounts": Wallet,
+	"/categories": Tag,
+	"/reports": BarChart3,
+	"/zakat": Moon,
+} as const;
+
+export const BOTTOM_NAV_ROUTES = BOTTOM_NAV_ITEMS.map(({ href, label }) => ({ href, label }));
 
 interface BottomNavProps {
 	userImage?: string | null;
 	userName?: string | null;
 }
 
-export function BottomNav({ userImage, userName }: BottomNavProps) {
+export function BottomNav({ userImage: _userImage, userName: _userName }: BottomNavProps) {
 	const pathname = usePathname();
 	const haptics = useHaptics();
 
-	const settingsActive = pathname === "/settings" || pathname.startsWith("/settings");
-	const activeItemIndex = BOTTOM_NAV_ITEMS.findIndex(({ href }) => pathname === href);
-	const settingsIndex = BOTTOM_NAV_ITEMS.length;
-	const activeIndex = settingsActive ? settingsIndex : activeItemIndex;
-	const settingsTransitionType =
-		activeIndex >= 0 && settingsIndex < activeIndex ? "nav-back" : "nav-forward";
+	const activeIndex = BOTTOM_NAV_ITEMS.findIndex(
+		({ href }) => pathname === href || pathname.startsWith(`${href}/`)
+	);
 	const indicatorStyle = {
 		transform:
 			activeIndex >= 0 ? `translate3d(${activeIndex * 100}%, 0, 0)` : "translate3d(0, 0, 0)",
@@ -58,8 +57,9 @@ export function BottomNav({ userImage, userName }: BottomNavProps) {
 						activeIndex >= 0 ? "opacity-100" : "opacity-0"
 					)}
 				/>
-				{BOTTOM_NAV_ITEMS.map(({ href, label, icon: Icon }, index) => {
-					const active = pathname === href;
+				{BOTTOM_NAV_ITEMS.map(({ href, label }, index) => {
+					const Icon = BOTTOM_NAV_ICONS[href];
+					const active = pathname === href || pathname.startsWith(`${href}/`);
 					const transitionType =
 						activeIndex >= 0 && index < activeIndex ? "nav-back" : "nav-forward";
 					return (
@@ -92,40 +92,6 @@ export function BottomNav({ userImage, userName }: BottomNavProps) {
 						</Link>
 					);
 				})}
-
-				<Link
-					href="/settings"
-					transitionTypes={[settingsTransitionType]}
-					aria-current={settingsActive ? "page" : undefined}
-					onClick={() => {
-						if (!settingsActive) haptics.selection();
-					}}
-					className={cn(
-						"press-scale tappable relative z-10 flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-[1.25rem] px-1 text-[10px] font-semibold transition-[color,transform,text-shadow] duration-[var(--dur-base)] ease-[var(--ease-ios)] motion-reduce:transition-none",
-						settingsActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
-					)}>
-					<div
-						className={cn(
-							"mb-0.5 flex h-7 w-7 items-center justify-center rounded-full ring-2 transition-[transform,box-shadow,filter] duration-[var(--dur-base)] ease-[var(--ease-spring)] motion-reduce:transition-none",
-							settingsActive
-								? "liquid-glass-active-icon scale-110 shadow-sm ring-primary"
-								: "scale-100 ring-border"
-						)}>
-						<Avatar className="h-6 w-6">
-							<AvatarImage src={userImage ?? ""} referrerPolicy="no-referrer" />
-							<AvatarFallback className="text-[9px]">
-								{userName?.charAt(0).toUpperCase() ?? "U"}
-							</AvatarFallback>
-						</Avatar>
-					</div>
-					<span
-						className={cn(
-							"max-w-full truncate transition-transform duration-[var(--dur-base)] ease-[var(--ease-spring)] motion-reduce:transition-none",
-							settingsActive ? "scale-105" : "scale-100"
-						)}>
-						Me
-					</span>
-				</Link>
 			</div>
 		</nav>
 	);

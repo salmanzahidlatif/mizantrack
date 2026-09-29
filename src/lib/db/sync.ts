@@ -4,7 +4,9 @@ import {
 	getDocs,
 	getDoc,
 	getCountFromServer,
+	orderBy,
 	query,
+	serverTimestamp,
 	setDoc,
 	type Firestore,
 	writeBatch,
@@ -15,12 +17,15 @@ import { sanitizeDashboardStats } from "@/lib/analytics/computeDashboardStats";
 import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 
 import { getFirestoreForUser } from "./firebase";
-import { db as localDb } from "./local";
+import { db as localDb, withoutSyncDirtyTracking } from "./local";
 
+import type { SyncDirtyFields } from "./local";
 import type { Account, Category, DashboardStats, Transaction } from "@/types";
+import type { Table } from "dexie";
 
-type SyncableTable = "accounts" | "categories" | "transactions";
-type SyncableRecord = Account | Category | Transaction;
+export type SyncableTable = "accounts" | "categories" | "transactions";
+type SyncableRecord = (Account | Category | Transaction) & SyncDirtyFields;
+export type SyncScope = SyncableTable | "firebase" | "settings" | "dashboard";
 type OptionalSyncFieldsByTable = {
 	accounts: readonly (keyof Account)[];
 	categories: readonly (keyof Category)[];
@@ -37,6 +42,22 @@ function formatFirestoreLimit(limit: number): string {
 }
 
 export const FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE = `Sync failed: Firestore daily quota exceeded. Free tier allows ${formatFirestoreLimit(FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT)} writes and ${formatFirestoreLimit(FIRESTORE_FREE_TIER_DAILY_READ_LIMIT)} reads per day. Sync will resume tomorrow.`;
+
+function getFirebaseErrorCode(error: unknown): string | undefined {
+	if (error instanceof Error && "code" in error) {
+		const code = (error as { code?: unknown }).code;
+		return typeof code === "string" ? code : undefined;
+	}
+	if (typeof error === "object" && error !== null && "code" in error) {
+		const code = (error as { code?: unknown }).code;
+		return typeof code === "string" ? code : undefined;
+	}
+	return undefined;
+}
+
+function isQuotaError(error: unknown): boolean {
+	return getFirebaseErrorCode(error) === "resource-exhausted";
+}
 
 function withFirestoreTimeout<T>(
 	operation: Promise<T>,
@@ -61,23 +82,47 @@ function getPerTableSyncKey(table: SyncableTable): string {
 	return `lastSync:${table}`;
 }
 
-async function getTableLastSync(table: SyncableTable): Promise<number> {
-	const perTableMeta = await localDb.syncMeta.get(getPerTableSyncKey(table));
-	if (perTableMeta) return perTableMeta.timestamp;
+function getPerTableMigrationKey(table: SyncableTable): string {
+	return `syncedAtMigration:${table}:v1`;
+}
 
-	const legacyMeta = await localDb.syncMeta.get("lastSync");
-	return legacyMeta?.timestamp ?? 0;
+async function getTableSyncCursor(table: SyncableTable): Promise<number> {
+	const perTableMeta = await localDb.syncMeta.get(getPerTableSyncKey(table));
+	return perTableMeta?.timestamp ?? 0;
+}
+
+async function setTableSyncCursor(table: SyncableTable, timestamp: number): Promise<void> {
+	await localDb.syncMeta.put({ id: getPerTableSyncKey(table), timestamp });
 }
 
 export interface SyncTableResult {
 	pushed: number;
 	pulled: number;
+	migrated: boolean;
+	cursor: number;
+}
+
+export interface SyncErrorDetail {
+	/** Table/document area that failed. Core data tables use their table name. */
+	scope: SyncScope;
+	/** Sync phase that failed. UI can display this for precise diagnostics. */
+	phase: "opening" | "migration" | "push" | "pull" | "settings" | "dashboard";
+	/** Firebase SDK error code when present, e.g. "resource-exhausted". */
+	code?: string;
+	/** User-facing error text. Quota errors use FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE. */
+	message: string;
+	/** True when the failure is Firestore's daily quota/resource-exhausted condition. */
+	quotaExceeded: boolean;
 }
 
 export interface SyncResult {
+	/** True only when every sync scope completed successfully. */
 	synced: boolean;
-	reason?: string;
-	tables?: Record<SyncableTable, SyncTableResult>;
+	/** "success" = all scopes completed; "partial" = at least one scope completed and one failed; "failed" = none completed; "no-config" = sync disabled/unconfigured. */
+	status: "success" | "partial" | "failed" | "no-config";
+	reason?: "no-config" | "partial-failure" | "sync-failed";
+	tables?: Partial<Record<SyncableTable, SyncTableResult>>;
+	errors: SyncErrorDetail[];
 	totalPushed: number;
 	totalPulled: number;
 }
@@ -104,12 +149,21 @@ const OPTIONAL_SYNC_FIELDS = {
 	],
 } as const satisfies OptionalSyncFieldsByTable;
 
+const LOCAL_ONLY_SYNC_FIELDS = new Set(["pendingSync", "syncedAt"]);
+
+function getLocalSyncTable(tableName: SyncableTable): Table<SyncableRecord> {
+	return localDb[tableName] as unknown as Table<SyncableRecord>;
+}
+
 function toFirestoreSyncRecord(
 	tableName: SyncableTable,
-	record: SyncableRecord
+	record: SyncableRecord,
+	options: { includeSyncedAt?: boolean } = {}
 ): Record<string, unknown> {
 	const clean = Object.fromEntries(
-		Object.entries(record).filter(([, value]) => value !== undefined)
+		Object.entries(record).filter(
+			([key, value]) => value !== undefined && !LOCAL_ONLY_SYNC_FIELDS.has(key)
+		)
 	);
 
 	for (const field of OPTIONAL_SYNC_FIELDS[tableName]) {
@@ -118,11 +172,24 @@ function toFirestoreSyncRecord(
 		}
 	}
 
+	if (options.includeSyncedAt ?? true) {
+		clean.syncedAt = serverTimestamp();
+	}
+
 	return clean;
 }
 
-function fromFirestoreSyncRecord<T extends SyncableRecord>(tableName: SyncableTable, record: T): T {
+function fromFirestoreSyncRecord<T extends SyncableRecord>(
+	tableName: SyncableTable,
+	record: T,
+	fallbackId?: string
+): T {
 	const clean = { ...record } as Record<string, unknown>;
+	if (typeof clean.id !== "string" && fallbackId) {
+		clean.id = fallbackId;
+	}
+	delete clean.pendingSync;
+	delete clean.syncedAt;
 
 	for (const field of OPTIONAL_SYNC_FIELDS[tableName]) {
 		if (clean[field] === null || clean[field] === undefined) {
@@ -133,36 +200,190 @@ function fromFirestoreSyncRecord<T extends SyncableRecord>(tableName: SyncableTa
 	return clean as T;
 }
 
+function getSyncedAtMillis(value: unknown): number | null {
+	if (value === null || value === undefined) return null;
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	if (typeof value === "object") {
+		const maybeTimestamp = value as {
+			toMillis?: () => number;
+			seconds?: number;
+			nanoseconds?: number;
+		};
+		if (typeof maybeTimestamp.toMillis === "function") {
+			const millis = maybeTimestamp.toMillis();
+			return Number.isFinite(millis) ? millis : null;
+		}
+		if (typeof maybeTimestamp.seconds === "number") {
+			return (
+				maybeTimestamp.seconds * 1000 + Math.floor((maybeTimestamp.nanoseconds ?? 0) / 1_000_000)
+			);
+		}
+	}
+	return null;
+}
+
+function normalizeSyncError(
+	scope: SyncScope,
+	phase: SyncErrorDetail["phase"],
+	error: unknown
+): SyncErrorDetail {
+	const code = getFirebaseErrorCode(error);
+	const quotaExceeded = isQuotaError(error);
+	const message = quotaExceeded
+		? FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE
+		: code === "permission-denied"
+			? "Sync failed: permission denied. Check your Firestore security rules."
+			: error instanceof Error
+				? error.message
+				: `Sync failed while ${phase}.`;
+
+	return {
+		scope,
+		phase,
+		code,
+		message,
+		quotaExceeded,
+	};
+}
+
+function recordsMatchForPendingClear(
+	tableName: SyncableTable,
+	current: SyncableRecord,
+	pushed: SyncableRecord
+): boolean {
+	return (
+		JSON.stringify(toFirestoreSyncRecord(tableName, current, { includeSyncedAt: false })) ===
+		JSON.stringify(toFirestoreSyncRecord(tableName, pushed, { includeSyncedAt: false }))
+	);
+}
+
+async function putLocalRecord(tableName: SyncableTable, record: SyncableRecord): Promise<void> {
+	const localRecord = { ...record, pendingSync: false };
+	await withoutSyncDirtyTracking(async () => {
+		switch (tableName) {
+			case "accounts":
+				await localDb.accounts.put(localRecord as Account);
+				break;
+			case "categories":
+				await localDb.categories.put(localRecord as Category);
+				break;
+			case "transactions":
+				await localDb.transactions.put(localRecord as Transaction);
+				break;
+		}
+	});
+}
+
+async function clearPendingForPushedRecords(
+	tableName: SyncableTable,
+	records: SyncableRecord[]
+): Promise<void> {
+	if (records.length === 0) return;
+	const pushedById = new Map(records.map((record) => [record.id, record]));
+
+	await withoutSyncDirtyTracking(async () => {
+		await getLocalSyncTable(tableName)
+			.where("id")
+			.anyOf(records.map((record) => record.id))
+			.modify((current: SyncableRecord) => {
+				const pushed = pushedById.get(current.id);
+				if (!pushed) return;
+				if (recordsMatchForPendingClear(tableName, current, pushed)) {
+					current.pendingSync = false;
+				}
+			});
+	});
+}
+
+async function markLocalRecordPending(tableName: SyncableTable, id: string): Promise<void> {
+	await getLocalSyncTable(tableName).update(id, { pendingSync: true } as Partial<SyncableRecord>);
+}
+
 export async function syncAll(
 	userId: string,
 	onProgress?: SyncProgressCallback
 ): Promise<SyncResult> {
-	const firestore = await withFirestoreTimeout(getFirestoreForUser(userId), "opening Firebase");
-	if (!firestore) return { synced: false, reason: "no-config", totalPushed: 0, totalPulled: 0 };
+	let firestore: Firestore | null;
+	try {
+		firestore = await withFirestoreTimeout(getFirestoreForUser(userId), "opening Firebase");
+	} catch (error) {
+		return {
+			synced: false,
+			status: "failed",
+			reason: "sync-failed",
+			errors: [normalizeSyncError("firebase", "opening", error)],
+			totalPushed: 0,
+			totalPulled: 0,
+		};
+	}
+	if (!firestore) {
+		return {
+			synced: false,
+			status: "no-config",
+			reason: "no-config",
+			errors: [],
+			totalPushed: 0,
+			totalPulled: 0,
+		};
+	}
 
-	const tables = {} as Record<SyncableTable, SyncTableResult>;
+	const tables: Partial<Record<SyncableTable, SyncTableResult>> = {};
+	const errors: SyncErrorDetail[] = [];
 	let totalPushed = 0;
 	let totalPulled = 0;
 	let pulledCoreChanges = false;
+	let completedScopes = 0;
+	let stoppedForQuota = false;
 
 	for (const table of CORE_SYNC_TABLES) {
-		const syncStartedAt = Date.now();
-		const lastSync = await getTableLastSync(table);
-		const result = await syncCollection(userId, table, lastSync, firestore);
-		await localDb.syncMeta.put({ id: getPerTableSyncKey(table), timestamp: syncStartedAt });
-		tables[table] = result;
-		totalPushed += result.pushed;
-		totalPulled += result.pulled;
-		if (result.pulled > 0) pulledCoreChanges = true;
-		onProgress?.({ table, ...result, totalPushed, totalPulled });
+		try {
+			const result = await syncCollection(userId, table, firestore);
+			tables[table] = result;
+			completedScopes++;
+			totalPushed += result.pushed;
+			totalPulled += result.pulled;
+			if (result.pulled > 0) pulledCoreChanges = true;
+			onProgress?.({ table, ...result, totalPushed, totalPulled });
+		} catch (error) {
+			const phase = error instanceof SyncPhaseError ? error.phase : "pull";
+			errors.push(normalizeSyncError(table, phase, error));
+			onProgress?.({
+				table,
+				pushed: 0,
+				pulled: 0,
+				totalPushed,
+				totalPulled,
+			});
+			if (isQuotaError(error) || errors[errors.length - 1]?.quotaExceeded) {
+				stoppedForQuota = true;
+				break;
+			}
+		}
 	}
 
 	// Fixed doc-level sync cost after the 3 collection loops:
 	// - settings/prefs: 1 read + up to 1 write
 	// - analytics/dashboard: 1 read + up to 1 write
 	// No per-field reads/writes are introduced here.
-	await syncSettingsPrefs(userId, firestore);
-	await syncDashboardStats(userId, firestore);
+	if (!stoppedForQuota) {
+		try {
+			await syncSettingsPrefs(userId, firestore);
+			completedScopes++;
+		} catch (error) {
+			const syncError = normalizeSyncError("settings", "settings", error);
+			errors.push(syncError);
+			stoppedForQuota = syncError.quotaExceeded;
+		}
+
+		if (!stoppedForQuota) {
+			try {
+				await syncDashboardStats(userId, firestore);
+				completedScopes++;
+			} catch (error) {
+				errors.push(normalizeSyncError("dashboard", "dashboard", error));
+			}
+		}
+	}
 
 	if (pulledCoreChanges) {
 		try {
@@ -172,72 +393,226 @@ export async function syncAll(
 		}
 	}
 
-	return { synced: true, tables, totalPushed, totalPulled };
+	const status = errors.length === 0 ? "success" : completedScopes > 0 ? "partial" : "failed";
+
+	return {
+		synced: status === "success",
+		status,
+		reason:
+			status === "success" ? undefined : status === "partial" ? "partial-failure" : "sync-failed",
+		tables,
+		errors,
+		totalPushed,
+		totalPulled,
+	};
+}
+
+class SyncPhaseError extends Error {
+	phase: SyncErrorDetail["phase"];
+	cause: unknown;
+
+	constructor(phase: SyncErrorDetail["phase"], cause: unknown) {
+		super(cause instanceof Error ? cause.message : `Sync failed during ${phase}.`);
+		this.name = "SyncPhaseError";
+		this.phase = phase;
+		this.cause = cause;
+		const code = getFirebaseErrorCode(cause);
+		if (code) {
+			(this as Error & { code?: string }).code = code;
+		}
+	}
 }
 
 async function syncCollection(
 	userId: string,
 	tableName: SyncableTable,
-	lastSync: number,
 	firestore: Firestore
 ): Promise<SyncTableResult> {
-	const table = localDb[tableName];
-
-	// Push local changes
-	const localChanged = await table
-		.where("userId")
-		.equals(userId)
-		.and((r: SyncableRecord) => r.updatedAt > lastSync)
-		.toArray();
-
+	const table = getLocalSyncTable(tableName);
 	let pushed = 0;
-	if (localChanged.length > 0) {
-		// Firestore batch limit is 500
-		for (let i = 0; i < localChanged.length; i += 499) {
-			const chunk = localChanged.slice(i, i + 499);
-			const batch = writeBatch(firestore);
-			chunk.forEach((record: SyncableRecord) => {
-				const ref = doc(firestore, `users/${userId}/${tableName}`, record.id);
-				const clean = toFirestoreSyncRecord(tableName, record);
-				batch.set(ref, clean, { merge: true });
-			});
-			await withFirestoreTimeout(batch.commit(), `pushing ${tableName}`);
-			pushed += chunk.length;
-		}
+	let pulled = 0;
+	let migrated = false;
+
+	try {
+		const migration = await migrateTableToServerCursor(userId, tableName, firestore);
+		migrated = migration.migrated;
+		pushed += migration.pushed;
+	} catch (error) {
+		throw new SyncPhaseError("migration", error);
 	}
 
-	// Pull remote changes
+	try {
+		const localChanged = await table
+			.where("userId")
+			.equals(userId)
+			.and((r: SyncableRecord) => r.pendingSync === true)
+			.toArray();
+
+		pushed += await pushLocalRecords(userId, tableName, firestore, localChanged);
+	} catch (error) {
+		throw new SyncPhaseError("push", error);
+	}
+
+	let cursor: number;
+	try {
+		const result = await pullRemoteRecords(userId, tableName, firestore);
+		pulled += result.pulled;
+		cursor = result.cursor;
+	} catch (error) {
+		throw new SyncPhaseError("pull", error);
+	}
+
+	return { pushed, pulled, migrated, cursor };
+}
+
+async function pushLocalRecords(
+	userId: string,
+	tableName: SyncableTable,
+	firestore: Firestore,
+	records: SyncableRecord[]
+): Promise<number> {
+	let pushed = 0;
+	for (let i = 0; i < records.length; i += 499) {
+		const chunk = records.slice(i, i + 499);
+		const batch = writeBatch(firestore);
+		chunk.forEach((record: SyncableRecord) => {
+			const ref = doc(firestore, `users/${userId}/${tableName}`, record.id);
+			const clean = toFirestoreSyncRecord(tableName, record);
+			batch.set(ref, clean, { merge: true });
+		});
+		await withFirestoreTimeout(batch.commit(), `pushing ${tableName}`);
+		await clearPendingForPushedRecords(tableName, chunk);
+		pushed += chunk.length;
+	}
+	return pushed;
+}
+
+async function pullRemoteRecords(
+	userId: string,
+	tableName: SyncableTable,
+	firestore: Firestore
+): Promise<{ pulled: number; cursor: number }> {
+	const table = getLocalSyncTable(tableName);
+	const cursor = await getTableSyncCursor(tableName);
 	const remoteSnap = await withFirestoreTimeout(
 		getDocs(
 			query(
 				collection(firestore, `users/${userId}/${tableName}`),
-				where("updatedAt", ">", lastSync)
+				where("syncedAt", ">", cursor),
+				orderBy("syncedAt")
 			)
 		),
 		`pulling ${tableName}`
 	);
 
 	let pulled = 0;
+	let maxSyncedAt = cursor;
 	for (const docSnap of remoteSnap.docs) {
-		const remote = fromFirestoreSyncRecord(tableName, docSnap.data() as SyncableRecord);
-		const local = await table.get(remote.id);
+		const rawRemote = docSnap.data() as SyncableRecord & { syncedAt?: unknown };
+		const remoteSyncedAt = getSyncedAtMillis(rawRemote.syncedAt);
+		if (remoteSyncedAt === null) continue;
+		maxSyncedAt = Math.max(maxSyncedAt, remoteSyncedAt);
+
+		const remote = fromFirestoreSyncRecord(tableName, rawRemote, docSnap.id);
+		const local = (await table.get(remote.id)) as SyncableRecord | undefined;
 		if (!local || remote.updatedAt > local.updatedAt) {
-			switch (tableName) {
-				case "accounts":
-					await localDb.accounts.put(remote as Account);
-					break;
-				case "categories":
-					await localDb.categories.put(remote as Category);
-					break;
-				case "transactions":
-					await localDb.transactions.put(remote as Transaction);
-					break;
-			}
+			await putLocalRecord(tableName, remote);
 			pulled++;
+		} else if (local.updatedAt > remote.updatedAt && local.pendingSync !== true) {
+			await markLocalRecordPending(tableName, local.id);
 		}
 	}
 
-	return { pushed, pulled };
+	if (maxSyncedAt > cursor) {
+		await setTableSyncCursor(tableName, maxSyncedAt);
+	}
+
+	return { pulled, cursor: maxSyncedAt };
+}
+
+async function migrateTableToServerCursor(
+	userId: string,
+	tableName: SyncableTable,
+	firestore: Firestore
+): Promise<{ migrated: boolean; pushed: number }> {
+	const migrationKey = getPerTableMigrationKey(tableName);
+	const migrationDone = await localDb.syncMeta.get(migrationKey);
+	if (migrationDone) return { migrated: false, pushed: 0 };
+
+	const table = getLocalSyncTable(tableName);
+	const remoteSnap = await withFirestoreTimeout(
+		getDocs(collection(firestore, `users/${userId}/${tableName}`)),
+		`backfilling ${tableName}`
+	);
+	const remoteIds = new Set<string>();
+	const fullPushes: SyncableRecord[] = [];
+	const stampOnlyIds: string[] = [];
+
+	for (const docSnap of remoteSnap.docs) {
+		const rawRemote = docSnap.data() as SyncableRecord & { syncedAt?: unknown };
+		const remote = fromFirestoreSyncRecord(tableName, rawRemote, docSnap.id);
+		remoteIds.add(remote.id);
+
+		const local = (await table.get(remote.id)) as SyncableRecord | undefined;
+		if (!local) {
+			await putLocalRecord(tableName, remote);
+			if (getSyncedAtMillis(rawRemote.syncedAt) === null) {
+				stampOnlyIds.push(remote.id);
+			}
+			continue;
+		}
+
+		if (remote.updatedAt > local.updatedAt) {
+			await putLocalRecord(tableName, remote);
+			if (getSyncedAtMillis(rawRemote.syncedAt) === null) {
+				stampOnlyIds.push(remote.id);
+			}
+			continue;
+		}
+
+		if (local.updatedAt > remote.updatedAt) {
+			fullPushes.push(local);
+		} else if (getSyncedAtMillis(rawRemote.syncedAt) === null) {
+			stampOnlyIds.push(remote.id);
+		}
+	}
+
+	const localOnly = (await table
+		.where("userId")
+		.equals(userId)
+		.and((record: SyncableRecord) => !remoteIds.has(record.id))
+		.toArray()) as SyncableRecord[];
+	fullPushes.push(...localOnly);
+
+	const fullPushCount = await pushLocalRecords(userId, tableName, firestore, fullPushes);
+	const stampOnlyCount = await stampRemoteRecords(userId, tableName, firestore, stampOnlyIds);
+
+	await localDb.syncMeta.bulkPut([
+		{ id: migrationKey, timestamp: 1 },
+		{ id: getPerTableSyncKey(tableName), timestamp: 0 },
+	]);
+
+	return { migrated: true, pushed: fullPushCount + stampOnlyCount };
+}
+
+async function stampRemoteRecords(
+	userId: string,
+	tableName: SyncableTable,
+	firestore: Firestore,
+	ids: string[]
+): Promise<number> {
+	let stamped = 0;
+	for (let i = 0; i < ids.length; i += 499) {
+		const chunk = ids.slice(i, i + 499);
+		const batch = writeBatch(firestore);
+		chunk.forEach((id) => {
+			const ref = doc(firestore, `users/${userId}/${tableName}`, id);
+			batch.set(ref, { syncedAt: serverTimestamp() }, { merge: true });
+		});
+		await withFirestoreTimeout(batch.commit(), `stamping ${tableName}`);
+		stamped += chunk.length;
+	}
+	return stamped;
 }
 
 /** Fields synced to Firestore settings/prefs document. biometricCredentialId is intentionally excluded. */
@@ -339,10 +714,9 @@ export interface SyncBackupCounts {
 /**
  * Compares local (non-deleted) record counts against remote Firestore document
  * counts per table, so the UI can show "X of Y backed up" / "Z left to sync".
- * Remote count is a proxy for "already backed up" — a record only counts as
- * pending if it exists locally but the remote collection is smaller overall
- * (exact per-record diffing would require reading every doc, which we avoid
- * here to keep this cheap — it only uses aggregate getCountFromServer reads).
+ * Remote count uses aggregate getCountFromServer reads; pending is local-only
+ * and comes from the dirty flag used by sync pushes, so it does not require
+ * reading every remote document.
  */
 export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCounts | null> {
 	try {
@@ -351,11 +725,16 @@ export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCou
 
 		const tables = await Promise.all(
 			CORE_SYNC_TABLES.map(async (table): Promise<SyncBackupTableCount> => {
-				const [localCount, remoteSnap] = await Promise.all([
-					localDb[table]
+				const [localCount, pendingCount, remoteSnap] = await Promise.all([
+					getLocalSyncTable(table)
 						.where("userId")
 						.equals(userId)
 						.and((r: SyncableRecord) => !r.deletedAt)
+						.count(),
+					getLocalSyncTable(table)
+						.where("userId")
+						.equals(userId)
+						.and((r: SyncableRecord) => !r.deletedAt && r.pendingSync === true)
 						.count(),
 					withFirestoreTimeout(
 						getCountFromServer(collection(firestore, `users/${userId}/${table}`)),
@@ -367,7 +746,7 @@ export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCou
 					table,
 					local: localCount,
 					remote: remoteCount,
-					pending: Math.max(0, localCount - remoteCount),
+					pending: pendingCount,
 				};
 			})
 		);
@@ -474,11 +853,25 @@ export async function clearFirestoreForUser(
 		// Non-critical — continue
 	}
 
-	// Reset both legacy and per-table watermarks so next sync re-uploads everything.
+	// Reset cursors/migration state and mark local records dirty so next sync
+	// re-uploads everything into the now-empty Firestore collections.
+	await localDb.syncMeta.bulkDelete(
+		CORE_SYNC_TABLES.map((table) => getPerTableMigrationKey(table))
+	);
 	await localDb.syncMeta.bulkPut([
 		{ id: "lastSync", timestamp: 0 },
 		...CORE_SYNC_TABLES.map((table) => ({ id: getPerTableSyncKey(table), timestamp: 0 })),
 	]);
+	await Promise.all(
+		CORE_SYNC_TABLES.map((table) =>
+			getLocalSyncTable(table)
+				.where("userId")
+				.equals(userId)
+				.modify((record: SyncableRecord) => {
+					record.pendingSync = true;
+				})
+		)
+	);
 
 	return { deleted: totalDeleted, collections: collectionCounts };
 }

@@ -60,7 +60,7 @@ const NAV_ITEMS = [
 	{ href: "/settings", label: "Settings", icon: Settings },
 ];
 
-function getPageTitle(pathname: string) {
+export function getPageTitle(pathname: string) {
 	return (
 		NAV_ITEMS.find(({ href }) => pathname === href || pathname.startsWith(`${href}/`))?.label ??
 		"Mizan Track"
@@ -142,6 +142,14 @@ export function AppShell({ user, children }: AppShellProps) {
 
 	const canLock = Boolean(config?.appLockEnabled && config?.pinHash);
 	const handleLockNow = () => useLockStore.getState().lock();
+	const renderSettingsMenuItem = () => (
+		<DropdownMenuItem asChild className="gap-2">
+			<Link href="/settings">
+				<Settings className="h-4 w-4" />
+				Settings
+			</Link>
+		</DropdownMenuItem>
+	);
 	const handleAddTransaction = () => {
 		haptics.medium();
 		openAddTransaction();
@@ -271,17 +279,17 @@ export function AppShell({ user, children }: AppShellProps) {
 										</div>
 									</DropdownMenuLabel>
 									<DropdownMenuSeparator />
+									{renderSettingsMenuItem()}
 									{canLock && (
 										<DropdownMenuItem onSelect={handleLockNow} className="gap-2">
 											<Lock className="h-4 w-4" />
 											Lock now
 										</DropdownMenuItem>
 									)}
-									<DropdownMenuItem asChild>
+									<DropdownMenuSeparator />
+									<DropdownMenuItem asChild variant="destructive">
 										<form action={signOutAction}>
-											<button
-												type="submit"
-												className="flex w-full items-center gap-2 text-destructive">
+											<button type="submit" className="flex w-full items-center gap-2">
 												<LogOut className="h-4 w-4" />
 												Sign out
 											</button>
@@ -328,20 +336,17 @@ export function AppShell({ user, children }: AppShellProps) {
 									</button>
 								</DropdownMenuTrigger>
 								<DropdownMenuContent side="top" align="start" className="w-56">
+									{renderSettingsMenuItem()}
 									{canLock && (
-										<>
-											<DropdownMenuItem onSelect={handleLockNow} className="gap-2">
-												<Lock className="h-4 w-4" />
-												Lock now
-											</DropdownMenuItem>
-											<DropdownMenuSeparator />
-										</>
+										<DropdownMenuItem onSelect={handleLockNow} className="gap-2">
+											<Lock className="h-4 w-4" />
+											Lock now
+										</DropdownMenuItem>
 									)}
-									<DropdownMenuItem asChild>
+									<DropdownMenuSeparator />
+									<DropdownMenuItem asChild variant="destructive">
 										<form action={signOutAction}>
-											<button
-												type="submit"
-												className="flex w-full items-center gap-2 text-destructive">
+											<button type="submit" className="flex w-full items-center gap-2">
 												<LogOut className="h-4 w-4" />
 												Sign out
 											</button>

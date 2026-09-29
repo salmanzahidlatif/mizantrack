@@ -12,6 +12,43 @@ import type {
 	ZakatPayment,
 } from "@/types";
 
+export interface SyncDirtyFields {
+	pendingSync?: boolean;
+}
+
+let suppressSyncDirtyTracking = 0;
+
+export async function withoutSyncDirtyTracking<T>(operation: () => Promise<T>): Promise<T> {
+	suppressSyncDirtyTracking++;
+	try {
+		return await operation();
+	} finally {
+		suppressSyncDirtyTracking--;
+	}
+}
+
+function isSyncDirtyTrackingSuppressed(): boolean {
+	return suppressSyncDirtyTracking > 0;
+}
+
+function installSyncDirtyHooks<T extends object>(table: Table<T>): void {
+	const trackedTable = table as Table<T & SyncDirtyFields>;
+
+	trackedTable.hook("creating", (_primaryKey, obj) => {
+		if (isSyncDirtyTrackingSuppressed()) return;
+		obj.pendingSync = true;
+	});
+
+	trackedTable.hook("updating", (modifications) => {
+		if (isSyncDirtyTrackingSuppressed()) return;
+
+		return {
+			...modifications,
+			pendingSync: true,
+		};
+	});
+}
+
 class MizanTrackDB extends Dexie {
 	accounts!: Table<Account>;
 	categories!: Table<Category>;
@@ -73,6 +110,23 @@ class MizanTrackDB extends Dexie {
 			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
 			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
 		});
+
+		this.version(5).stores({
+			accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt, pendingSync",
+			categories: "id, userId, type, currency, updatedAt, deletedAt, pendingSync",
+			transactions:
+				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt, pendingSync",
+			dbConfig: "id",
+			syncMeta: "id",
+			dashboardStats: "id, updatedAt",
+			goldItems: "id, userId, purity, updatedAt, deletedAt",
+			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
+			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
+		});
+
+		installSyncDirtyHooks(this.accounts);
+		installSyncDirtyHooks(this.categories);
+		installSyncDirtyHooks(this.transactions);
 
 		this.on("blocked", (event) => {
 			console.warn("MizanTrack IndexedDB upgrade is blocked by another open app instance.", event);
