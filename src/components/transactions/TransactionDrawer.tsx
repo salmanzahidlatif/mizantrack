@@ -75,14 +75,21 @@ function getCurrencyLabel(currency?: string): ReactNode {
 	);
 }
 
-function includeRecordsById<T extends { id: string }>(
+export function includeRecordsById<T extends { id: string }>(
 	records: T[],
 	extraRecords: T[],
 	ids: Array<string | undefined>
 ): T[] {
 	const wantedIds = new Set(ids.filter((id): id is string => Boolean(id)));
-	const seenIds = new Set(records.map((record) => record.id));
-	const merged = [...records];
+	const seenIds = new Set<string>();
+	const merged: T[] = [];
+
+	for (const record of records) {
+		if (!seenIds.has(record.id)) {
+			merged.push(record);
+			seenIds.add(record.id);
+		}
+	}
 
 	for (const record of extraRecords) {
 		if (wantedIds.has(record.id) && !seenIds.has(record.id)) {
@@ -92,6 +99,19 @@ function includeRecordsById<T extends { id: string }>(
 	}
 
 	return merged;
+}
+
+export function getTransactionAccountOptions(
+	accounts: Account[],
+	editAccounts: Account[],
+	currency: string | undefined,
+	selectedAccountId: string | undefined
+): Account[] {
+	const currencyAccounts = currency
+		? accounts.filter((account) => account.currency === currency)
+		: accounts;
+
+	return includeRecordsById(currencyAccounts, editAccounts, [selectedAccountId]);
 }
 
 export function getTransferDestinationAccounts(
@@ -106,7 +126,7 @@ export function getTransferDestinationAccounts(
 	]);
 	const sourceAccount = allKnownAccounts.find((account) => account.id === sourceAccountId);
 	const sameCurrencyAccounts = sourceAccount
-		? accounts.filter(
+		? allKnownAccounts.filter(
 				(account) => account.id !== sourceAccount.id && account.currency === sourceAccount.currency
 			)
 		: [];
@@ -114,6 +134,23 @@ export function getTransferDestinationAccounts(
 	return includeRecordsById(sameCurrencyAccounts, editAccounts, [
 		selectedDestinationAccountId,
 	]).filter((account) => account.id !== sourceAccountId);
+}
+
+export function getTransactionCategoryOptions(
+	categories: Category[],
+	editCategory: Category | null,
+	selectedCategoryId: string | undefined,
+	transactionType: TransactionType
+): Category[] {
+	const typeCategories = categories.filter((category) => {
+		if (transactionType === "Expense") return category.type === "Expense";
+		if (transactionType === "Income") return category.type === "Income";
+		return false;
+	});
+
+	return includeRecordsById(typeCategories, editCategory ? [editCategory] : [], [
+		selectedCategoryId,
+	]);
 }
 
 function errorMessage(error: unknown): string {
@@ -193,10 +230,12 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 	const watchedDate = watch("date");
 	const currency = activeCurrency || undefined;
 	const baseAccounts = accounts ?? [];
-	const currencyAccounts = currency
-		? baseAccounts.filter((account) => account.currency === currency)
-		: baseAccounts;
-	const accountOptions = includeRecordsById(currencyAccounts, editAccounts, [watchedAccount]);
+	const accountOptions = getTransactionAccountOptions(
+		baseAccounts,
+		editAccounts,
+		currency,
+		watchedAccount
+	);
 	const selectedAccount = accountOptions.find((account) => account.id === watchedAccount);
 	const destAccounts =
 		watchedType === "Transfer"
@@ -215,14 +254,12 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 			: undefined;
 	const amountCurrencyLabel = getCurrencyLabel(selectedAccount?.currency ?? currency);
 
-	const typeCategories = (allCategories ?? []).filter((c) => {
-		if (watchedType === "Expense") return c.type === "Expense";
-		if (watchedType === "Income") return c.type === "Income";
-		return false;
-	});
-	const categories = includeRecordsById(typeCategories, editCategory ? [editCategory] : [], [
+	const categories = getTransactionCategoryOptions(
+		allCategories ?? [],
+		editCategory,
 		watchedCategory,
-	]);
+		watchedType
+	);
 
 	useEffect(() => {
 		function handleBlocked() {
