@@ -74,6 +74,28 @@ export interface SyncMeta {
 	timestamp: number;
 }
 
+export type CategoryCurrencyBackfillDecisionAction =
+	| "tagged"
+	| "skipped-explicit-currency"
+	| "skipped-unused"
+	| "skipped-multi-currency"
+	| "skipped-tree-conflict";
+
+export interface CategoryCurrencyBackfillDecision {
+	id: string;
+	userId: string;
+	categoryId: string;
+	categoryTitle: string;
+	action: CategoryCurrencyBackfillDecisionAction;
+	currencies: string[];
+	assignedCurrency?: string;
+	assignedAt: number;
+	categoryUpdatedAt?: number;
+	resetAt?: number;
+	reason?: string;
+	version: 1;
+}
+
 export interface DashboardStats {
 	id: string; // userId
 	updatedAt: number; // Unix ms

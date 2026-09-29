@@ -4,6 +4,7 @@ import { ArrowLeftRight, ChevronRight, TrendingDown, TrendingUp } from "lucide-r
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { useHaptics } from "@/hooks/useHaptics";
+import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { PRESS_SCALE, TAPPABLE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -99,7 +100,8 @@ export function TransactionRow({ transaction, accounts, categories }: Transactio
 							<span
 								className="truncate"
 								style={category.color ? { color: category.color } : undefined}>
-								{category.icon} {category.title}
+								<span aria-hidden="true">{getCategoryIcon(category)}</span>{" "}
+								<span>{category.title}</span>
 							</span>
 							{categoryCurrency && (
 								<span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">

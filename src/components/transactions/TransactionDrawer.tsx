@@ -2,8 +2,9 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
+import { useLiveQuery } from "dexie-react-hooks";
 import { CalendarIcon, ChevronDown } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useForm, type FieldErrors, type Resolver, type SubmitErrorHandler } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -35,8 +36,15 @@ import {
 	deleteTransaction,
 	updateTransaction,
 } from "@/lib/actions/transactions";
+import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyDisplay } from "@/lib/currencySymbols";
 import { db } from "@/lib/db/local";
+import {
+	EMPTY_TRANSACTION_USAGE_RANKING,
+	loadRecentTransactionUsageRanking,
+	sortRecordsByUsage,
+	type UsageCounts,
+} from "@/lib/usageRanking";
 import { transactionSchema, type TransactionFormValues } from "@/lib/validations/transaction";
 import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
@@ -105,20 +113,25 @@ export function getTransactionAccountOptions(
 	accounts: Account[],
 	editAccounts: Account[],
 	currency: string | undefined,
-	selectedAccountId: string | undefined
+	selectedAccountId: string | undefined,
+	usageCounts?: UsageCounts
 ): Account[] {
 	const currencyAccounts = currency
 		? accounts.filter((account) => account.currency === currency)
 		: accounts;
+	const sortedCurrencyAccounts = usageCounts
+		? sortRecordsByUsage(currencyAccounts, usageCounts)
+		: currencyAccounts;
 
-	return includeRecordsById(currencyAccounts, editAccounts, [selectedAccountId]);
+	return includeRecordsById(sortedCurrencyAccounts, editAccounts, [selectedAccountId]);
 }
 
 export function getTransferDestinationAccounts(
 	accounts: Account[],
 	editAccounts: Account[],
 	sourceAccountId: string | undefined,
-	selectedDestinationAccountId: string | undefined
+	selectedDestinationAccountId: string | undefined,
+	usageCounts?: UsageCounts
 ): Account[] {
 	const allKnownAccounts = includeRecordsById(accounts, editAccounts, [
 		sourceAccountId,
@@ -130,8 +143,11 @@ export function getTransferDestinationAccounts(
 				(account) => account.id !== sourceAccount.id && account.currency === sourceAccount.currency
 			)
 		: [];
+	const sortedSameCurrencyAccounts = usageCounts
+		? sortRecordsByUsage(sameCurrencyAccounts, usageCounts)
+		: sameCurrencyAccounts;
 
-	return includeRecordsById(sameCurrencyAccounts, editAccounts, [
+	return includeRecordsById(sortedSameCurrencyAccounts, editAccounts, [
 		selectedDestinationAccountId,
 	]).filter((account) => account.id !== sourceAccountId);
 }
@@ -140,15 +156,19 @@ export function getTransactionCategoryOptions(
 	categories: Category[],
 	editCategory: Category | null,
 	selectedCategoryId: string | undefined,
-	transactionType: TransactionType
+	transactionType: TransactionType,
+	usageCounts?: UsageCounts
 ): Category[] {
 	const typeCategories = categories.filter((category) => {
 		if (transactionType === "Expense") return category.type === "Expense";
 		if (transactionType === "Income") return category.type === "Income";
 		return false;
 	});
+	const sortedTypeCategories = usageCounts
+		? sortRecordsByUsage(typeCategories, usageCounts)
+		: typeCategories;
 
-	return includeRecordsById(typeCategories, editCategory ? [editCategory] : [], [
+	return includeRecordsById(sortedTypeCategories, editCategory ? [editCategory] : [], [
 		selectedCategoryId,
 	]);
 }
@@ -199,6 +219,11 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 	const { activeCurrency } = useFilterStore();
 	const accounts = useActiveAccounts(userId);
 	const allCategories = useCategories(userId, undefined, activeCurrency || undefined);
+	const usageRanking = useLiveQuery(
+		() => loadRecentTransactionUsageRanking(userId),
+		[userId],
+		EMPTY_TRANSACTION_USAGE_RANKING
+	);
 	const [editAccounts, setEditAccounts] = useState<Account[]>([]);
 	const [editCategory, setEditCategory] = useState<Category | null>(null);
 	const [showTravel, setShowTravel] = useState(false);
@@ -230,17 +255,38 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 	const watchedDate = watch("date");
 	const currency = activeCurrency || undefined;
 	const baseAccounts = accounts ?? [];
-	const accountOptions = getTransactionAccountOptions(
-		baseAccounts,
-		editAccounts,
-		currency,
-		watchedAccount
+	const accountOptions = useMemo(
+		() =>
+			getTransactionAccountOptions(
+				baseAccounts,
+				editAccounts,
+				currency,
+				watchedAccount,
+				usageRanking.accountUsage
+			),
+		[baseAccounts, editAccounts, currency, watchedAccount, usageRanking.accountUsage]
 	);
 	const selectedAccount = accountOptions.find((account) => account.id === watchedAccount);
-	const destAccounts =
-		watchedType === "Transfer"
-			? getTransferDestinationAccounts(baseAccounts, editAccounts, watchedAccount, watchedToAccount)
-			: [];
+	const destAccounts = useMemo(
+		() =>
+			watchedType === "Transfer"
+				? getTransferDestinationAccounts(
+						baseAccounts,
+						editAccounts,
+						watchedAccount,
+						watchedToAccount,
+						usageRanking.accountUsage
+					)
+				: [],
+		[
+			baseAccounts,
+			editAccounts,
+			watchedAccount,
+			watchedToAccount,
+			watchedType,
+			usageRanking.accountUsage,
+		]
+	);
 	const selectedDestinationAccount = destAccounts.find(
 		(account) => account.id === watchedToAccount
 	);
@@ -254,11 +300,16 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 			: undefined;
 	const amountCurrencyLabel = getCurrencyLabel(selectedAccount?.currency ?? currency);
 
-	const categories = getTransactionCategoryOptions(
-		allCategories ?? [],
-		editCategory,
-		watchedCategory,
-		watchedType
+	const categories = useMemo(
+		() =>
+			getTransactionCategoryOptions(
+				allCategories ?? [],
+				editCategory,
+				watchedCategory,
+				watchedType,
+				usageRanking.categoryUsage
+			),
+		[allCategories, editCategory, watchedCategory, watchedType, usageRanking.categoryUsage]
 	);
 
 	useEffect(() => {
@@ -610,7 +661,8 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 										<SelectItem value="none">Uncategorized</SelectItem>
 										{categories.map((c) => (
 											<SelectItem key={c.id} value={c.id}>
-												{c.icon} {c.title}
+												<span aria-hidden="true">{getCategoryIcon(c)}</span>
+												<span>{c.title}</span>
 											</SelectItem>
 										))}
 									</SelectContent>

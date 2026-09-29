@@ -7,6 +7,7 @@ import type {
 	DbConfig,
 	DashboardStats,
 	SyncMeta,
+	CategoryCurrencyBackfillDecision,
 	GoldItem,
 	ZakatCalculation,
 	ZakatPayment,
@@ -55,6 +56,7 @@ class MizanTrackDB extends Dexie {
 	transactions!: Table<Transaction>;
 	dbConfig!: Table<DbConfig>;
 	syncMeta!: Table<SyncMeta>;
+	categoryCurrencyBackfillDecisions!: Table<CategoryCurrencyBackfillDecision>;
 	dashboardStats!: Table<DashboardStats>;
 	goldItems!: Table<GoldItem>;
 	zakatCalculations!: Table<ZakatCalculation>;
@@ -118,6 +120,34 @@ class MizanTrackDB extends Dexie {
 				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt, pendingSync",
 			dbConfig: "id",
 			syncMeta: "id",
+			dashboardStats: "id, updatedAt",
+			goldItems: "id, userId, purity, updatedAt, deletedAt",
+			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
+			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
+		});
+
+		this.version(6).stores({
+			accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt, pendingSync",
+			categories: "id, userId, type, currency, updatedAt, deletedAt, pendingSync",
+			transactions:
+				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt, pendingSync",
+			dbConfig: "id",
+			syncMeta: "id",
+			categoryCurrencyBackfillDecisions: "id, userId, categoryId, action, assignedAt",
+			dashboardStats: "id, updatedAt",
+			goldItems: "id, userId, purity, updatedAt, deletedAt",
+			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
+			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
+		});
+
+		this.version(7).stores({
+			accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt, pendingSync",
+			categories: "id, userId, type, currency, updatedAt, deletedAt, pendingSync",
+			transactions:
+				"id, userId, [userId+date], type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt, pendingSync",
+			dbConfig: "id",
+			syncMeta: "id",
+			categoryCurrencyBackfillDecisions: "id, userId, categoryId, action, assignedAt",
 			dashboardStats: "id, updatedAt",
 			goldItems: "id, userId, purity, updatedAt, deletedAt",
 			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",

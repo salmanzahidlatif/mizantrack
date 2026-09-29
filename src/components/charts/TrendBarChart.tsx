@@ -14,18 +14,10 @@ import {
 import { getDashboardMonthRange, getTrendWindow } from "@/components/dashboard/monthData";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { SkeletonChart } from "@/components/shared/SkeletonChart";
-import { useMonthlySummary } from "@/hooks/useMonthlySummary";
+import { useAnalyticsMonthSummaries } from "@/hooks/useAnalyticsMonthSummaries";
 import { useFilterStore } from "@/store/filter-store";
 
-import type { DashboardStatsQuery } from "@/components/dashboard/monthData";
 import type { DashboardStats } from "@/types";
-
-type MonthlySummaryHook = (
-	userId: string,
-	months?: number,
-	currency?: string,
-	query?: DashboardStatsQuery
-) => ReturnType<typeof useMonthlySummary>;
 
 interface TrendChartProps {
 	userId?: string;
@@ -81,17 +73,21 @@ export function TrendChart({
 	const selectedCurrency = activeCurrency.length > 0 ? activeCurrency : undefined;
 	const displayCurrency = selectedCurrency ?? currency ?? "PKR";
 	const selectedMonthRange = getDashboardMonthRange(selectedMonth);
-	const liveData = (useMonthlySummary as MonthlySummaryHook)(
+	const liveData = useAnalyticsMonthSummaries(
 		userId ?? "",
-		months,
-		selectedCurrency ?? currency,
-		{
-			month: selectedMonthRange.key,
-			from: selectedMonthRange.from,
-			to: selectedMonthRange.to,
-			currency: selectedCurrency ?? currency,
-		}
-	);
+		displayCurrency
+			? {
+					currency: displayCurrency,
+					months,
+					anchorDate: selectedMonth,
+					mode: "ending",
+				}
+			: undefined
+	)?.map((item) => ({
+		month: item.month,
+		income: item.income,
+		expense: item.expense,
+	}));
 	const data =
 		stats !== undefined ? getTrendWindow(stats, selectedCurrency, selectedMonth, months) : liveData;
 

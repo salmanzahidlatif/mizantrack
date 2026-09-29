@@ -3,6 +3,8 @@ import { create } from "zustand";
 import type { FilterPeriod, TransactionType, DateRange } from "@/types";
 
 const ACTIVE_CURRENCY_KEY = "mizantrack:activeCurrency";
+export const UNCATEGORIZED_CATEGORY_FILTER = Symbol("uncategorized-category-filter");
+export type CategoryFilterValue = string | typeof UNCATEGORIZED_CATEGORY_FILTER;
 
 /** Read persisted currency from localStorage (SSR-safe). */
 function readPersistedCurrency(): string {
@@ -13,7 +15,7 @@ function readPersistedCurrency(): string {
 interface FilterStore {
 	period: FilterPeriod;
 	accountId: string | null;
-	categoryId: string | null;
+	categoryId: CategoryFilterValue | null;
 	transactionType: TransactionType | "All";
 	searchQuery: string;
 	customRange: DateRange | null;
@@ -24,7 +26,7 @@ interface FilterStore {
 
 	setPeriod: (period: FilterPeriod) => void;
 	setAccountId: (accountId: string | null) => void;
-	setCategoryId: (categoryId: string | null) => void;
+	setCategoryId: (categoryId: CategoryFilterValue | null) => void;
 	setTransactionType: (type: TransactionType | "All") => void;
 	setSearchQuery: (query: string) => void;
 	setCustomRange: (range: DateRange | null) => void;

@@ -1,15 +1,6 @@
 "use client";
 
-import { useLiveQuery } from "dexie-react-hooks";
-import {
-	Archive,
-	ArchiveRestore,
-	ChevronRight,
-	MoreVertical,
-	Pencil,
-	Plus,
-	Trash2,
-} from "lucide-react";
+import { Archive, ArchiveRestore, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 
@@ -25,13 +16,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useHaptics } from "@/hooks/useHaptics";
 import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
-import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
 import { CARD_SURFACE, LIST_ROW, PRESS_SCALE, TAPPABLE, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui-store";
 
 import type { AccountSort } from "@/components/accounts/accountSort";
+import type { AccountsAnalytics } from "@/lib/analytics/periodAnalytics";
 import type { Account } from "@/types";
 
 // ─── AccountBalance ────────────────────────────────────────────────────────
@@ -47,14 +38,14 @@ function AccountBalance({ balance, currency }: { balance: number | undefined; cu
 			currency={currency}
 			colorized
 			showNegativeSign
-			className="text-2xl leading-8"
+			className="text-base leading-6 sm:text-lg"
 		/>
 	);
 }
 
-// ─── AccountCard ───────────────────────────────────────────────────────────
+// ─── AccountRow ────────────────────────────────────────────────────────────
 
-interface AccountCardProps {
+interface AccountRowProps {
 	account: Account;
 	balance: number | undefined;
 	onEdit: (id: string) => void;
@@ -63,10 +54,9 @@ interface AccountCardProps {
 	style?: CSSProperties;
 }
 
-function AccountCard({ account, balance, onEdit, onSelect, className, style }: AccountCardProps) {
+function AccountRow({ account, balance, onEdit, onSelect, className, style }: AccountRowProps) {
 	const [confirming, setConfirming] = useState(false);
 	const haptics = useHaptics();
-	const currency = getCurrencyByCode(account.currency);
 	const icon = account.icon ?? "💼";
 
 	function handleSelect() {
@@ -101,10 +91,8 @@ function AccountCard({ account, balance, onEdit, onSelect, className, style }: A
 		<div
 			className={cn(
 				CARD_SURFACE,
-				"relative min-h-36 overflow-hidden transition-shadow duration-200 hover:shadow-[var(--shadow-sheet)]",
-				account.isArchived && "opacity-70",
-				PRESS_SCALE,
-				TAPPABLE,
+				"relative flex min-h-20 overflow-hidden transition-shadow duration-200 hover:shadow-[var(--shadow-sheet)]",
+				account.isArchived && "bg-card/80",
 				className
 			)}
 			style={{
@@ -119,43 +107,40 @@ function AccountCard({ account, balance, onEdit, onSelect, className, style }: A
 			<button
 				type="button"
 				onClick={handleSelect}
-				className="relative block min-h-36 w-full cursor-pointer rounded-2xl p-4 text-left text-card-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
-				<div className="flex items-start gap-2 pr-10">
-					<div className="min-w-0 flex-1">
-						<div className="flex items-center gap-2">
-							<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted text-lg leading-none shadow-sm">
-								{icon}
-							</span>
-							<div className="min-w-0">
-								<p className="truncate text-base font-semibold tracking-tight">{account.title}</p>
-								<p className="mt-0.5 truncate text-xs text-muted-foreground">
-									{account.accountType === "liability" ? "Liability account" : "Active balance"}
-								</p>
-							</div>
-						</div>
-					</div>
-				</div>
-
-				<div className="mt-5">
-					<div className="mb-1.5 flex items-center gap-2">
-						<span className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-[11px] font-bold tracking-[0.14em] text-muted-foreground uppercase">
-							{currency?.flag && <span className="text-xs tracking-normal">{currency.flag}</span>}
-							{account.currency}
+				className={cn(
+					"relative flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-2xl py-3 pr-2 pl-3 text-left text-card-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+					PRESS_SCALE,
+					TAPPABLE
+				)}>
+				<span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-muted text-lg leading-none shadow-sm">
+					{icon}
+				</span>
+				<span className="min-w-0 flex-1">
+					<span className="block truncate text-base font-semibold tracking-tight">
+						{account.title}
+					</span>
+					{account.isArchived ? (
+						<span className="mt-0.5 block text-xs font-semibold text-red-600 dark:text-red-400">
+							(Inactive)
 						</span>
-						{account.isArchived && (
-							<span className="rounded-full bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
-								Archived
-							</span>
-						)}
-					</div>
+					) : (
+						<span className="mt-0.5 block truncate text-xs text-muted-foreground">
+							{account.accountType === "liability" ? "Liability" : account.currency}
+						</span>
+					)}
+				</span>
+				<span className="ml-2 flex shrink-0 flex-col items-end">
 					<AccountBalance balance={balance} currency={account.currency} />
-				</div>
-
-				<ChevronRight className="absolute right-4 bottom-4 h-4 w-4 text-muted-foreground/45" />
+					{balance === 0 && (
+						<span className="mt-0.5 text-[11px] font-medium text-muted-foreground">
+							zero balance
+						</span>
+					)}
+				</span>
 			</button>
 
 			<div
-				className="absolute top-4 right-4 z-10"
+				className="relative z-10 flex items-center pr-2"
 				onPointerDown={(event) => event.stopPropagation()}
 				onClick={(event) => event.stopPropagation()}>
 				<DropdownMenu>
@@ -163,14 +148,14 @@ function AccountCard({ account, balance, onEdit, onSelect, className, style }: A
 						<Button
 							variant="ghost"
 							size="icon"
-							className="h-7 w-7 shrink-0"
+							className="h-9 w-9 shrink-0 rounded-full"
+							aria-label={`Account options for ${account.title}`}
 							onPointerDown={(event) => event.stopPropagation()}
 							onClick={(event) => {
 								event.preventDefault();
 								event.stopPropagation();
 							}}>
 							<MoreVertical className="h-4 w-4" />
-							<span className="sr-only">Account options</span>
 						</Button>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent
@@ -222,59 +207,48 @@ function AccountCard({ account, balance, onEdit, onSelect, className, style }: A
 
 interface AccountListProps {
 	accounts: Account[] | undefined;
+	analytics?: AccountsAnalytics | undefined;
 	showArchived: boolean;
 	sortBy: AccountSort;
 	userId: string;
 	onSelectAccount: (id: string) => void;
 }
 
+function getBalance(account: Account, balanceByAccountId: Map<string, number>) {
+	return balanceByAccountId.get(account.id) ?? account.openingBalance;
+}
+
+function compareBalancePriority(
+	accountA: Account,
+	accountB: Account,
+	balanceA: number,
+	balanceB: number
+) {
+	const zeroA = balanceA === 0 ? 1 : 0;
+	const zeroB = balanceB === 0 ? 1 : 0;
+	if (zeroA !== zeroB) return zeroA - zeroB;
+
+	const archivedA = accountA.isArchived ? 1 : 0;
+	const archivedB = accountB.isArchived ? 1 : 0;
+	return archivedA - archivedB;
+}
+
 export function AccountList({
 	accounts,
+	analytics,
 	showArchived,
 	sortBy,
-	userId,
+	userId: _userId,
 	onSelectAccount,
 }: AccountListProps) {
 	const openEditAccount = useUIStore((s) => s.openEditAccount);
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
 	const haptics = useHaptics();
-	const transactions = useLiveQuery(
-		() =>
-			db.transactions
-				.where("userId")
-				.equals(userId)
-				.filter((t) => !t.deletedAt)
-				.toArray(),
-		[userId]
-	);
 
 	const balanceByAccountId = useMemo(() => {
-		const map = new Map<string, number>();
-		if (!accounts) return map;
-
-		for (const account of accounts) {
-			map.set(account.id, account.openingBalance);
-		}
-
-		if (!transactions) return map;
-
-		for (const t of transactions) {
-			if (t.type === "Income") {
-				map.set(t.accountId, (map.get(t.accountId) ?? 0) + t.amount);
-			} else if (t.type === "Expense") {
-				map.set(t.accountId, (map.get(t.accountId) ?? 0) - t.amount);
-			} else if (t.type === "Transfer") {
-				map.set(t.accountId, (map.get(t.accountId) ?? 0) - t.amount);
-				if (t.toAccountId) {
-					map.set(t.toAccountId, (map.get(t.toAccountId) ?? 0) + t.amount);
-				}
-			}
-		}
-
-		return map;
-	}, [accounts, transactions]);
-
-	const hasCurrentBalances = transactions !== undefined;
+		return new Map(analytics?.accounts.map((account) => [account.accountId, account.balance]));
+	}, [analytics]);
+	const hasCurrentBalances = analytics !== undefined;
 
 	function handleEditAccount(accountId: string) {
 		haptics.light();
@@ -288,9 +262,9 @@ export function AccountList({
 
 	if (accounts === undefined) {
 		return (
-			<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				{Array.from({ length: 3 }).map((_, i) => (
-					<SkeletonCard key={i} rows={2} className="min-h-36" />
+			<div className="space-y-2">
+				{Array.from({ length: 5 }).map((_, i) => (
+					<SkeletonCard key={i} rows={1} className="min-h-20" />
 				))}
 			</div>
 		);
@@ -298,23 +272,25 @@ export function AccountList({
 
 	const visible = showArchived ? accounts : accounts.filter((a) => !a.isArchived);
 	const sortedAccounts = [...visible].sort((a, b) => {
-		const balanceA = hasCurrentBalances
-			? (balanceByAccountId.get(a.id) ?? a.openingBalance)
-			: a.openingBalance;
-		const balanceB = hasCurrentBalances
-			? (balanceByAccountId.get(b.id) ?? b.openingBalance)
-			: b.openingBalance;
+		const balanceA = getBalance(a, balanceByAccountId);
+		const balanceB = getBalance(b, balanceByAccountId);
 
 		switch (sortBy) {
-			case "balance-asc":
+			case "balance-asc": {
+				const priority = compareBalancePriority(a, b, balanceA, balanceB);
+				if (priority !== 0) return priority;
 				return balanceA - balanceB || a.title.localeCompare(b.title);
+			}
 			case "title-asc":
 				return a.title.localeCompare(b.title);
 			case "updated-desc":
 				return b.updatedAt - a.updatedAt || a.title.localeCompare(b.title);
 			case "balance-desc":
-			default:
+			default: {
+				const priority = compareBalancePriority(a, b, balanceA, balanceB);
+				if (priority !== 0) return priority;
 				return balanceB - balanceA || a.title.localeCompare(b.title);
+			}
 		}
 	});
 
@@ -329,9 +305,9 @@ export function AccountList({
 	}
 
 	return (
-		<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+		<div className="space-y-2">
 			{sortedAccounts.map((account, index) => (
-				<AccountCard
+				<AccountRow
 					key={account.id}
 					account={account}
 					balance={hasCurrentBalances ? balanceByAccountId.get(account.id) : undefined}
@@ -346,7 +322,7 @@ export function AccountList({
 				onClick={handleAddAccount}
 				className={cn(
 					CARD_SURFACE,
-					"flex min-h-36 items-center justify-center gap-2 border-dashed text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary",
+					"flex min-h-20 w-full items-center justify-center gap-2 border-dashed text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary",
 					PRESS_SCALE,
 					TAPPABLE,
 					LIST_ROW

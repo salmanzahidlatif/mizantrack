@@ -4,10 +4,11 @@ import { useEffect } from "react";
 
 import { TransactionFilters } from "@/components/transactions/TransactionFilters";
 import { TransactionList } from "@/components/transactions/TransactionList";
+import { TransactionMonthStrip } from "@/components/transactions/TransactionMonthStrip";
 import { useActiveAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { useTransactions } from "@/hooks/useTransactions";
-import { getDateRange } from "@/lib/dateRange";
+import { getDateRange, getLocalTimeZoneOffsetMinutes, getMonthRange } from "@/lib/dateRange";
 import { useFilterStore } from "@/store/filter-store";
 
 interface TransactionsPageClientProps {
@@ -20,14 +21,19 @@ export function TransactionsPageClient({ userId }: TransactionsPageClientProps) 
 	const {
 		period,
 		accountId,
+		categoryId,
 		transactionType,
 		searchQuery,
 		customRange,
 		activeCurrency,
+		setPeriod,
 		setAccountId,
+		setCustomRange,
 	} = useFilterStore();
 
 	const currency = activeCurrency || undefined;
+	const now = new Date();
+	const timeZoneOffsetMinutes = getLocalTimeZoneOffsetMinutes(now);
 	const accountList = accounts ?? [];
 	const currencyAccounts = currency
 		? accountList.filter((account) => account.currency === currency)
@@ -38,6 +44,11 @@ export function TransactionsPageClient({ userId }: TransactionsPageClientProps) 
 	const categories = useCategories(userId, undefined, currency);
 
 	const { from, to } = getDateRange(period, 7, customRange ?? undefined);
+	const currentMonth = getMonthRange(now, { timeZoneOffsetMinutes });
+	const selectedMonth =
+		period === "custom" && customRange
+			? getMonthRange(customRange.from, { timeZoneOffsetMinutes })
+			: currentMonth;
 
 	useEffect(() => {
 		if (!accounts || !currency || !accountId || accountIdInCurrency) return;
@@ -46,6 +57,7 @@ export function TransactionsPageClient({ userId }: TransactionsPageClientProps) 
 
 	const transactions = useTransactions(userId, {
 		accountId: effectiveAccountId,
+		categoryId,
 		type: transactionType,
 		from: from.getTime(),
 		to: to.getTime(),
@@ -63,7 +75,22 @@ export function TransactionsPageClient({ userId }: TransactionsPageClientProps) 
 				)}
 			</div>
 
-			<TransactionFilters accounts={currencyAccounts} />
+			<TransactionMonthStrip
+				selectedMonth={selectedMonth}
+				timeZoneOffsetMinutes={timeZoneOffsetMinutes}
+				now={now}
+				onSelectMonth={(month) => {
+					if (month.key === currentMonth.key) {
+						setPeriod("month");
+						setCustomRange(null);
+						return;
+					}
+					setCustomRange({ from: month.from, to: month.to });
+					setPeriod("custom");
+				}}
+			/>
+
+			<TransactionFilters accounts={currencyAccounts} userId={userId} />
 
 			<TransactionList
 				transactions={transactions}

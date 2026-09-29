@@ -5,6 +5,7 @@ import {
 	getTransactionCategoryOptions,
 	getTransferDestinationAccounts,
 } from "@/components/transactions/TransactionDrawer";
+import { getTransactionFilterAccountOptions } from "@/components/transactions/TransactionFilters";
 
 import type { Account, Category } from "@/types";
 
@@ -40,6 +41,21 @@ function expectUniqueIds(records: Array<{ id: string }>) {
 }
 
 describe("TransactionDrawer option lists", () => {
+	it("orders account options by recent usage with alphabetical tie-breaking", () => {
+		const cash = account("cash", "PKR");
+		const wallet = account("wallet", "PKR");
+		const bank = account("bank", "PKR");
+
+		const options = getTransactionAccountOptions([bank, wallet, cash], [], "PKR", undefined, {
+			bank: 2,
+			cash: 5,
+			wallet: 5,
+		});
+
+		expect(ids(options)).toEqual(["cash", "wallet", "bank"]);
+		expectUniqueIds(options);
+	});
+
 	it("deduplicates account options while preserving the edited selected account", () => {
 		const selectedAccount = account("cash", "PKR");
 		const otherAccount = account("bank", "PKR");
@@ -68,6 +84,40 @@ describe("TransactionDrawer option lists", () => {
 			hiddenEditedAccount.id,
 		]);
 		expectUniqueIds(hiddenOptions);
+	});
+
+	it("keeps currency filtering and appends an edited out-of-filter account without duplicates", () => {
+		const pkrAccount = account("cash", "PKR");
+		const anotherPkrAccount = account("bank", "PKR");
+		const hiddenEditedAccount = account("wallet", "AED");
+
+		const options = getTransactionAccountOptions(
+			[pkrAccount, anotherPkrAccount, hiddenEditedAccount],
+			[hiddenEditedAccount],
+			"PKR",
+			hiddenEditedAccount.id,
+			{ wallet: 99, bank: 3, cash: 1 }
+		);
+
+		expect(ids(options)).toEqual(["bank", "cash", "wallet"]);
+		expectUniqueIds(options);
+	});
+
+	it("orders category options by recent usage with stable tie-breaking", () => {
+		const groceries = category("groceries", "Expense", "PKR");
+		const fuel = category("fuel", "Expense", "PKR");
+		const zakat = category("zakat", "Expense", "PKR");
+
+		const options = getTransactionCategoryOptions(
+			[zakat, fuel, groceries],
+			null,
+			undefined,
+			"Expense",
+			{ fuel: 3, groceries: 7, zakat: 3 }
+		);
+
+		expect(ids(options)).toEqual(["groceries", "fuel", "zakat"]);
+		expectUniqueIds(options);
 	});
 
 	it("deduplicates category options when the edited category is already in the filtered list", () => {
@@ -99,6 +149,41 @@ describe("TransactionDrawer option lists", () => {
 			hiddenEditedCategory.id,
 		]);
 		expectUniqueIds(hiddenOptions);
+	});
+
+	it("preserves an edited out-of-filter category after ranked in-filter options", () => {
+		const groceries = category("groceries", "Expense", "PKR");
+		const food = category("food", "Expense");
+		const hiddenEditedCategory = category("travel", "Expense", "AED");
+
+		const options = getTransactionCategoryOptions(
+			[groceries, food],
+			hiddenEditedCategory,
+			hiddenEditedCategory.id,
+			"Expense",
+			{ travel: 99, food: 5, groceries: 1 }
+		);
+
+		expect(ids(options)).toEqual(["food", "groceries", "travel"]);
+		expectUniqueIds(options);
+	});
+
+	it("orders transfer destinations by usage while excluding cross-currency accounts", () => {
+		const source = account("source-pkr", "PKR");
+		const cash = account("cash-pkr", "PKR");
+		const bank = account("bank-pkr", "PKR");
+		const crossCurrency = account("wallet-aed", "AED");
+
+		const options = getTransferDestinationAccounts(
+			[source, cash, bank, crossCurrency],
+			[],
+			source.id,
+			undefined,
+			{ "wallet-aed": 99, "cash-pkr": 2, "bank-pkr": 5 }
+		);
+
+		expect(ids(options)).toEqual(["bank-pkr", "cash-pkr"]);
+		expectUniqueIds(options);
 	});
 
 	it("deduplicates transfer destinations while preserving a selected legacy destination", () => {
@@ -150,5 +235,22 @@ describe("TransactionDrawer transfer destinations", () => {
 			sameCurrencyDestination.id,
 			legacyCrossCurrencyDestination.id,
 		]);
+	});
+});
+
+describe("TransactionFilters option lists", () => {
+	it("orders filter account options by usage with stable tie-breaking", () => {
+		const cash = account("cash", "PKR");
+		const wallet = account("wallet", "PKR");
+		const bank = account("bank", "PKR");
+
+		const options = getTransactionFilterAccountOptions([wallet, bank, cash], {
+			bank: 1,
+			cash: 4,
+			wallet: 4,
+		});
+
+		expect(ids(options)).toEqual(["cash", "wallet", "bank"]);
+		expectUniqueIds(options);
 	});
 });
