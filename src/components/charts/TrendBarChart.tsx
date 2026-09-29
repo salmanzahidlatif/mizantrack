@@ -11,46 +11,118 @@ import {
 	YAxis,
 } from "recharts";
 
+import { getDashboardMonthRange, getTrendWindow } from "@/components/dashboard/monthData";
+import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { SkeletonChart } from "@/components/shared/SkeletonChart";
 import { useMonthlySummary } from "@/hooks/useMonthlySummary";
-import { ALL_CURRENCIES_KEY } from "@/lib/analytics/computeDashboardStats";
 import { useFilterStore } from "@/store/filter-store";
 
+import type { DashboardStatsQuery } from "@/components/dashboard/monthData";
 import type { DashboardStats } from "@/types";
+
+type MonthlySummaryHook = (
+	userId: string,
+	months?: number,
+	currency?: string,
+	query?: DashboardStatsQuery
+) => ReturnType<typeof useMonthlySummary>;
 
 interface TrendChartProps {
 	userId?: string;
 	months?: number;
 	stats?: DashboardStats;
+	selectedMonth?: Date;
+	currency?: string;
 }
 
-export function TrendChart({ userId, months = 6, stats }: TrendChartProps) {
+interface TrendTooltipProps {
+	active?: boolean;
+	label?: string;
+	payload?: Array<{
+		name?: string;
+		value?: number;
+		color?: string;
+	}>;
+	currency: string;
+}
+
+function TrendTooltip({ active, label, payload, currency }: TrendTooltipProps) {
+	if (!active || !payload?.length) return null;
+
+	return (
+		<div className="rounded-xl border border-border/70 bg-popover/95 p-3 text-xs shadow-[var(--shadow-card)] backdrop-blur">
+			<p className="mb-2 font-semibold">{label}</p>
+			<div className="space-y-1.5">
+				{payload.map((item) => (
+					<div key={item.name} className="flex items-center justify-between gap-4">
+						<span className="flex items-center gap-1.5 text-muted-foreground">
+							<span
+								className="h-2 w-2 rounded-full"
+								style={{ backgroundColor: item.color ?? "currentColor" }}
+							/>
+							{item.name}
+						</span>
+						<CurrencyAmount amount={item.value ?? 0} currency={currency} className="text-xs" />
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}
+
+export function TrendChart({
+	userId,
+	months = 6,
+	stats,
+	selectedMonth = new Date(),
+	currency,
+}: TrendChartProps) {
 	const { activeCurrency } = useFilterStore();
-	const liveData = useMonthlySummary(userId ?? "", months, activeCurrency || undefined);
-	const data = stats?.perCurrency[activeCurrency || ALL_CURRENCIES_KEY]?.trend ?? liveData;
+	const selectedCurrency = activeCurrency.length > 0 ? activeCurrency : undefined;
+	const displayCurrency = selectedCurrency ?? currency ?? "PKR";
+	const selectedMonthRange = getDashboardMonthRange(selectedMonth);
+	const liveData = (useMonthlySummary as MonthlySummaryHook)(
+		userId ?? "",
+		months,
+		selectedCurrency ?? currency,
+		{
+			month: selectedMonthRange.key,
+			from: selectedMonthRange.from,
+			to: selectedMonthRange.to,
+			currency: selectedCurrency ?? currency,
+		}
+	);
+	const data =
+		stats !== undefined ? getTrendWindow(stats, selectedCurrency, selectedMonth, months) : liveData;
 
 	if (data === undefined) {
 		return <SkeletonChart height={224} />;
 	}
 
+	const hasData = data.some((item) => item.income > 0 || item.expense > 0);
+
+	if (!hasData) {
+		return (
+			<div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border/70 bg-card p-6 text-center shadow-[var(--shadow-card)]">
+				<p className="text-sm font-semibold">No trend data for {selectedMonthRange.label}</p>
+				<p className="mt-1 max-w-64 text-xs leading-5 text-muted-foreground">
+					Income and expenses will appear here once this month has activity.
+				</p>
+			</div>
+		);
+	}
+
 	return (
 		<div className="rounded-xl border border-border/60 bg-card p-4 shadow-[var(--shadow-card)]">
-			<p className="mb-3 text-sm font-semibold">Income vs Expenses ({months}M)</p>
+			<p className="mb-3 text-sm font-semibold">
+				Income vs Expenses through {selectedMonthRange.label}
+			</p>
 			<ResponsiveContainer width="100%" height={200}>
 				<BarChart data={data} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
 					<CartesianGrid strokeDasharray="3 3" className="stroke-border" />
 					<XAxis dataKey="month" tick={{ fontSize: 11 }} />
 					<YAxis tick={{ fontSize: 11 }} />
-					<Tooltip
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						formatter={(value: any) =>
-							String(
-								typeof value === "number"
-									? value.toLocaleString("en-US", { maximumFractionDigits: 0 })
-									: (value ?? "")
-							)
-						}
-					/>
+					<Tooltip content={<TrendTooltip currency={displayCurrency} />} />
 					<Legend wrapperStyle={{ fontSize: 12 }} />
 					<Bar dataKey="income" name="Income" fill="#22c55e" radius={[3, 3, 0, 0]} />
 					<Bar dataKey="expense" name="Expense" fill="#ef4444" radius={[3, 3, 0, 0]} />

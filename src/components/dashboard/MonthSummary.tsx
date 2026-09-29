@@ -2,8 +2,8 @@
 
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
+import { getDashboardMonthRange, getMonthlyTotals } from "@/components/dashboard/monthData";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
-import { ALL_CURRENCIES_KEY } from "@/lib/analytics/computeDashboardStats";
 import { CARD_SURFACE, LIST_ROW, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
@@ -13,19 +13,21 @@ import type { DashboardStats } from "@/types";
 interface MonthSummaryProps {
 	currency?: string;
 	stats?: DashboardStats;
+	selectedMonth?: Date;
 }
 
-export function MonthSummary({ currency = "PKR", stats }: MonthSummaryProps) {
+export function MonthSummary({
+	currency = "PKR",
+	stats,
+	selectedMonth = new Date(),
+}: MonthSummaryProps) {
 	const { activeCurrency } = useFilterStore();
 	// Use the live currency selector if set, otherwise fall back to prop
 	const displayCurrency = activeCurrency || currency;
-	const bucket = stats?.perCurrency[activeCurrency || ALL_CURRENCIES_KEY] ?? {
-		monthIncome: 0,
-		monthExpense: 0,
-		trend: [],
-	};
-	const income = bucket.monthIncome;
-	const expense = bucket.monthExpense;
+	const selectedMonthRange = getDashboardMonthRange(selectedMonth);
+	const totals = getMonthlyTotals(stats, activeCurrency || undefined, selectedMonth);
+	const income = totals?.income ?? 0;
+	const expense = totals?.expense ?? 0;
 	const net = income - expense;
 
 	const items = [
@@ -40,10 +42,11 @@ export function MonthSummary({ currency = "PKR", stats }: MonthSummaryProps) {
 	];
 
 	return (
-		<div className="grid grid-cols-3 gap-3">
+		<div className="grid grid-cols-3 gap-3" aria-label="Dashboard month summary">
 			{items.map(({ label, amount, variant, icon: Icon }, index) => (
 				<div
 					key={label}
+					aria-label={`${label} for ${selectedMonthRange.label}`}
 					className={cn(CARD_SURFACE, LIST_ROW, "min-h-28 overflow-hidden p-3")}
 					style={staggerDelay(index, 45)}>
 					<div className="mb-3 flex items-center justify-between gap-2">

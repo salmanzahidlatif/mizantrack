@@ -1,8 +1,9 @@
 "use client";
 
-import { format } from "date-fns";
+import { format, isWithinInterval } from "date-fns";
 import { ArrowLeftRight, ChevronRight, TrendingDown, TrendingUp } from "lucide-react";
 
+import { getDashboardMonthRange } from "@/components/dashboard/monthData";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { SkeletonTransactionRow } from "@/components/shared/SkeletonTransactionRow";
@@ -16,6 +17,7 @@ import type { DashboardStats } from "@/types";
 
 interface RecentTransactionsProps {
 	stats?: DashboardStats;
+	selectedMonth?: Date;
 }
 
 const TYPE_ICON = {
@@ -30,11 +32,12 @@ const TYPE_COLOR = {
 	Transfer: "bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400",
 } as const;
 
-export function RecentTransactions({ stats }: RecentTransactionsProps) {
+export function RecentTransactions({ stats, selectedMonth }: RecentTransactionsProps) {
 	const { activeCurrency } = useFilterStore();
 	const openEditTransaction = useUIStore((s) => s.openEditTransaction);
 	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 	const haptics = useHaptics();
+	const selectedMonthRange = selectedMonth ? getDashboardMonthRange(selectedMonth) : undefined;
 
 	function handleOpenTransaction(transactionId: string) {
 		haptics.light();
@@ -51,13 +54,27 @@ export function RecentTransactions({ stats }: RecentTransactionsProps) {
 
 	const recent = stats.recent
 		.filter((txn) => !activeCurrency || txn.accountCurrency === activeCurrency)
+		.filter((txn) => {
+			if (!selectedMonthRange) return true;
+
+			return isWithinInterval(new Date(txn.date), {
+				start: new Date(selectedMonthRange.from),
+				end: new Date(selectedMonthRange.to),
+			});
+		})
 		.slice(0, 10);
 
 	if (recent.length === 0) {
 		return (
 			<EmptyState
-				title="No transactions yet"
-				description="Tap the + button to record your first transaction."
+				title={
+					selectedMonthRange ? `No activity in ${selectedMonthRange.label}` : "No transactions yet"
+				}
+				description={
+					selectedMonthRange
+						? "Transactions for this month will appear here."
+						: "Tap the + button to record your first transaction."
+				}
 				action={{ label: "Add Transaction", onClick: openAddTransaction }}
 			/>
 		);

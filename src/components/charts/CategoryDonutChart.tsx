@@ -3,9 +3,17 @@
 import { useMemo } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import {
+	getCategoryBreakdown,
+	getDashboardMonthRange,
+	type CategoryBreakdownItem,
+} from "@/components/dashboard/monthData";
+import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
+import { SkeletonChart } from "@/components/shared/SkeletonChart";
 import { useCategories } from "@/hooks/useCategories";
+import { useFilterStore } from "@/store/filter-store";
 
-import type { Transaction } from "@/types";
+import type { DashboardStats, Transaction } from "@/types";
 
 const PALETTE = [
 	"#6366f1",
@@ -22,14 +30,63 @@ const PALETTE = [
 
 interface CategoryBreakdownChartProps {
 	userId: string;
-	transactions: Transaction[];
+	transactions?: Transaction[];
+	stats?: DashboardStats;
+	selectedMonth?: Date;
+	currency?: string;
+	isLoading?: boolean;
 }
 
-export function CategoryBreakdownChart({ userId, transactions }: CategoryBreakdownChartProps) {
-	const categories = useCategories(userId);
+interface CategoryTooltipProps {
+	active?: boolean;
+	payload?: Array<{
+		payload?: CategoryBreakdownItem;
+		value?: number;
+	}>;
+	total: number;
+	currency: string;
+}
 
-	const chartData = useMemo(() => {
-		if (!categories) return [];
+function CategoryTooltip({ active, payload, total, currency }: CategoryTooltipProps) {
+	const item = payload?.[0]?.payload;
+	if (!active || !item) return null;
+
+	return (
+		<div className="rounded-xl border border-border/70 bg-popover/95 p-3 text-xs shadow-[var(--shadow-card)] backdrop-blur">
+			<p className="mb-1 font-semibold">{item.name}</p>
+			<div className="flex items-center gap-3">
+				<CurrencyAmount amount={item.value} currency={currency} className="text-xs" />
+				<span className="text-muted-foreground">
+					{total > 0 ? `${((item.value / total) * 100).toFixed(1)}%` : "0.0%"}
+				</span>
+			</div>
+		</div>
+	);
+}
+
+export function CategoryBreakdownChart({
+	userId,
+	transactions,
+	stats,
+	selectedMonth = new Date(),
+	currency,
+	isLoading,
+}: CategoryBreakdownChartProps) {
+	const { activeCurrency } = useFilterStore();
+	const categories = useCategories(userId);
+	const selectedCurrency = activeCurrency.length > 0 ? activeCurrency : undefined;
+	const displayCurrency = selectedCurrency ?? currency ?? "PKR";
+	const selectedMonthRange = getDashboardMonthRange(selectedMonth);
+
+	const statsChartData = useMemo(
+		() => getCategoryBreakdown(stats, selectedCurrency, selectedMonth),
+		[selectedCurrency, selectedMonth, stats]
+	);
+
+	const transactionChartData = useMemo<CategoryBreakdownItem[] | undefined>(() => {
+		if (statsChartData !== undefined) return undefined;
+		if (!transactions || !categories) return undefined;
+
 		const map = new Map<string, number>();
 		for (const t of transactions) {
 			if (t.type !== "Expense") continue;
@@ -45,12 +102,24 @@ export function CategoryBreakdownChart({ userId, transactions }: CategoryBreakdo
 				value: total,
 			}))
 			.sort((a, b) => b.value - a.value);
-	}, [transactions, categories]);
+	}, [transactions, categories, statsChartData]);
 
-	if (chartData.length === 0) {
+	const chartData = statsChartData ?? transactionChartData;
+	const isResolvingTransactions = Boolean(
+		transactions && statsChartData === undefined && !categories
+	);
+
+	if (isLoading || (!stats && !transactions) || isResolvingTransactions) {
+		return <SkeletonChart height={280} />;
+	}
+
+	if (!chartData?.length) {
 		return (
-			<div className="flex h-48 items-center justify-center rounded-xl border border-border bg-card">
-				<p className="text-sm text-muted-foreground">No expense data for this period</p>
+			<div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border/70 bg-card p-6 text-center shadow-[var(--shadow-card)]">
+				<p className="text-sm font-semibold">No category spending for {selectedMonthRange.label}</p>
+				<p className="mt-1 max-w-64 text-xs leading-5 text-muted-foreground">
+					Expense categories will appear here when this month has spending.
+				</p>
 			</div>
 		);
 	}
@@ -59,7 +128,9 @@ export function CategoryBreakdownChart({ userId, transactions }: CategoryBreakdo
 
 	return (
 		<div className="rounded-xl border border-border bg-card p-4">
-			<p className="mb-3 text-sm font-semibold">Expenses by Category</p>
+			<p className="mb-3 text-sm font-semibold">
+				Expenses by Category · {selectedMonthRange.label}
+			</p>
 			<ResponsiveContainer width="100%" height={240}>
 				<PieChart>
 					<Pie
@@ -74,15 +145,7 @@ export function CategoryBreakdownChart({ userId, transactions }: CategoryBreakdo
 							<Cell key={index} fill={PALETTE[index % PALETTE.length]} />
 						))}
 					</Pie>
-					<Tooltip
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						formatter={(value: any) => {
-							const n = typeof value === "number" ? value : parseFloat(String(value ?? "0"));
-							return [
-								`${n.toLocaleString("en-US", { maximumFractionDigits: 0 })} (${((n / total) * 100).toFixed(1)}%)`,
-							];
-						}}
-					/>
+					<Tooltip content={<CategoryTooltip total={total} currency={displayCurrency} />} />
 					<Legend wrapperStyle={{ fontSize: 12 }} />
 				</PieChart>
 			</ResponsiveContainer>
@@ -100,9 +163,11 @@ export function CategoryBreakdownChart({ userId, transactions }: CategoryBreakdo
 						</div>
 						<div className="flex items-center gap-3 text-xs text-muted-foreground">
 							<span>{((item.value / total) * 100).toFixed(1)}%</span>
-							<span className="font-medium text-foreground">
-								{item.value.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-							</span>
+							<CurrencyAmount
+								amount={item.value}
+								currency={displayCurrency}
+								className="text-xs text-foreground"
+							/>
 						</div>
 					</div>
 				))}
