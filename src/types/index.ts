@@ -20,6 +20,7 @@ export interface Category {
 	userId: string;
 	title: string;
 	type: CategoryType;
+	currency?: string; // undefined/empty = shared across all currencies
 	icon?: string;
 	color?: string;
 	parentId?: string;
