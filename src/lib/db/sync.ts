@@ -21,17 +21,41 @@ import type { Account, Category, DashboardStats, Transaction } from "@/types";
 
 type SyncableTable = "accounts" | "categories" | "transactions";
 type SyncableRecord = Account | Category | Transaction;
+type OptionalSyncFieldsByTable = {
+	accounts: readonly (keyof Account)[];
+	categories: readonly (keyof Category)[];
+	transactions: readonly (keyof Transaction)[];
+};
 
 export const FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT = 20_000;
 export const FIRESTORE_FREE_TIER_DAILY_READ_LIMIT = 50_000;
+export const FIRESTORE_SYNC_TIMEOUT_MS = 15_000;
 export const CORE_SYNC_TABLES = ["accounts", "categories", "transactions"] as const;
 
 function formatFirestoreLimit(limit: number): string {
 	return new Intl.NumberFormat("en-US").format(limit);
 }
 
-export const FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE =
-	`Sync failed: Firestore daily quota exceeded. Free tier allows ${formatFirestoreLimit(FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT)} writes and ${formatFirestoreLimit(FIRESTORE_FREE_TIER_DAILY_READ_LIMIT)} reads per day. Sync will resume tomorrow.`;
+export const FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE = `Sync failed: Firestore daily quota exceeded. Free tier allows ${formatFirestoreLimit(FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT)} writes and ${formatFirestoreLimit(FIRESTORE_FREE_TIER_DAILY_READ_LIMIT)} reads per day. Sync will resume tomorrow.`;
+
+function withFirestoreTimeout<T>(
+	operation: Promise<T>,
+	description: string,
+	timeoutMs = FIRESTORE_SYNC_TIMEOUT_MS
+): Promise<T> {
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<never>((_, reject) => {
+		timeoutId = setTimeout(() => {
+			reject(
+				new Error(`Sync timed out while ${description}. Check your connection and try again.`)
+			);
+		}, timeoutMs);
+	});
+
+	return Promise.race([operation, timeout]).finally(() => {
+		if (timeoutId) clearTimeout(timeoutId);
+	});
+}
 
 function getPerTableSyncKey(table: SyncableTable): string {
 	return `lastSync:${table}`;
@@ -66,11 +90,54 @@ export type SyncProgressCallback = (progress: {
 	totalPulled: number;
 }) => void;
 
+const OPTIONAL_SYNC_FIELDS = {
+	accounts: ["color", "icon", "accountType", "deletedAt"],
+	categories: ["currency", "icon", "color", "parentId", "deletedAt"],
+	transactions: [
+		"description",
+		"categoryId",
+		"toAccountId",
+		"tags",
+		"place",
+		"travelCurrency",
+		"deletedAt",
+	],
+} as const satisfies OptionalSyncFieldsByTable;
+
+function toFirestoreSyncRecord(
+	tableName: SyncableTable,
+	record: SyncableRecord
+): Record<string, unknown> {
+	const clean = Object.fromEntries(
+		Object.entries(record).filter(([, value]) => value !== undefined)
+	);
+
+	for (const field of OPTIONAL_SYNC_FIELDS[tableName]) {
+		if ((record as unknown as Record<string, unknown>)[field] === undefined) {
+			clean[field] = null;
+		}
+	}
+
+	return clean;
+}
+
+function fromFirestoreSyncRecord<T extends SyncableRecord>(tableName: SyncableTable, record: T): T {
+	const clean = { ...record } as Record<string, unknown>;
+
+	for (const field of OPTIONAL_SYNC_FIELDS[tableName]) {
+		if (clean[field] === null || clean[field] === undefined) {
+			delete clean[field];
+		}
+	}
+
+	return clean as T;
+}
+
 export async function syncAll(
 	userId: string,
 	onProgress?: SyncProgressCallback
 ): Promise<SyncResult> {
-	const firestore = await getFirestoreForUser(userId);
+	const firestore = await withFirestoreTimeout(getFirestoreForUser(userId), "opening Firebase");
 	if (!firestore) return { synced: false, reason: "no-config", totalPushed: 0, totalPulled: 0 };
 
 	const tables = {} as Record<SyncableTable, SyncTableResult>;
@@ -98,7 +165,11 @@ export async function syncAll(
 	await syncDashboardStats(userId, firestore);
 
 	if (pulledCoreChanges) {
-		scheduleAnalyticsRecompute(userId);
+		try {
+			scheduleAnalyticsRecompute(userId);
+		} catch (error) {
+			console.error("Failed to schedule dashboard analytics recompute after sync:", error);
+		}
 	}
 
 	return { synced: true, tables, totalPushed, totalPulled };
@@ -127,25 +198,28 @@ async function syncCollection(
 			const batch = writeBatch(firestore);
 			chunk.forEach((record: SyncableRecord) => {
 				const ref = doc(firestore, `users/${userId}/${tableName}`, record.id);
-				// Firestore rejects documents with `undefined` values — strip them before writing
-				const clean = Object.fromEntries(
-					Object.entries(record).filter(([, v]) => v !== undefined)
-				);
+				const clean = toFirestoreSyncRecord(tableName, record);
 				batch.set(ref, clean, { merge: true });
 			});
-			await batch.commit();
+			await withFirestoreTimeout(batch.commit(), `pushing ${tableName}`);
 			pushed += chunk.length;
 		}
 	}
 
 	// Pull remote changes
-	const remoteSnap = await getDocs(
-		query(collection(firestore, `users/${userId}/${tableName}`), where("updatedAt", ">", lastSync))
+	const remoteSnap = await withFirestoreTimeout(
+		getDocs(
+			query(
+				collection(firestore, `users/${userId}/${tableName}`),
+				where("updatedAt", ">", lastSync)
+			)
+		),
+		`pulling ${tableName}`
 	);
 
 	let pulled = 0;
 	for (const docSnap of remoteSnap.docs) {
-		const remote = docSnap.data() as SyncableRecord;
+		const remote = fromFirestoreSyncRecord(tableName, docSnap.data() as SyncableRecord);
 		const local = await table.get(remote.id);
 		if (!local || remote.updatedAt > local.updatedAt) {
 			switch (tableName) {
@@ -188,9 +262,10 @@ async function syncSettingsPrefs(userId: string, firestore: Firestore): Promise<
 	const prefsRef = doc(firestore, `users/${userId}/settings`, "prefs");
 
 	// On a fresh device prefsUpdatedAt is undefined — default to 0 so Firebase always wins.
-	const localUpdatedAt = (localConfig as unknown as Record<string, unknown>).prefsUpdatedAt as number | undefined ?? 0;
+	const localUpdatedAt =
+		((localConfig as unknown as Record<string, unknown>).prefsUpdatedAt as number | undefined) ?? 0;
 
-	const remoteSnap = await getDoc(prefsRef);
+	const remoteSnap = await withFirestoreTimeout(getDoc(prefsRef), "pulling settings");
 
 	if (remoteSnap.exists()) {
 		const remote = remoteSnap.data() as Record<string, unknown>;
@@ -217,13 +292,16 @@ async function syncSettingsPrefs(userId: string, firestore: Firestore): Promise<
 		const val = (localConfig as unknown as Record<string, unknown>)[field];
 		if (val !== undefined) prefs[field] = val;
 	}
-	await setDoc(prefsRef, prefs, { merge: true });
+	await withFirestoreTimeout(setDoc(prefsRef, prefs, { merge: true }), "pushing settings");
 }
 
 async function syncDashboardStats(userId: string, firestore: Firestore): Promise<void> {
 	const analyticsRef = doc(firestore, `users/${userId}/analytics`, "dashboard");
 	const local = await localDb.dashboardStats.get(userId);
-	const remoteSnap = await getDoc(analyticsRef);
+	const remoteSnap = await withFirestoreTimeout(
+		getDoc(analyticsRef),
+		"pulling dashboard analytics"
+	);
 
 	if (remoteSnap.exists()) {
 		const remote = remoteSnap.data() as DashboardStats;
@@ -237,7 +315,10 @@ async function syncDashboardStats(userId: string, firestore: Firestore): Promise
 	}
 
 	if (local) {
-		await setDoc(analyticsRef, sanitizeDashboardStats(local));
+		await withFirestoreTimeout(
+			setDoc(analyticsRef, sanitizeDashboardStats(local)),
+			"pushing dashboard analytics"
+		);
 	}
 }
 
@@ -264,10 +345,10 @@ export interface SyncBackupCounts {
  * here to keep this cheap — it only uses aggregate getCountFromServer reads).
  */
 export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCounts | null> {
-	const firestore = await getFirestoreForUser(userId);
-	if (!firestore) return null;
-
 	try {
+		const firestore = await withFirestoreTimeout(getFirestoreForUser(userId), "opening Firebase");
+		if (!firestore) return null;
+
 		const tables = await Promise.all(
 			CORE_SYNC_TABLES.map(async (table): Promise<SyncBackupTableCount> => {
 				const [localCount, remoteSnap] = await Promise.all([
@@ -276,7 +357,10 @@ export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCou
 						.equals(userId)
 						.and((r: SyncableRecord) => !r.deletedAt)
 						.count(),
-					getCountFromServer(collection(firestore, `users/${userId}/${table}`)),
+					withFirestoreTimeout(
+						getCountFromServer(collection(firestore, `users/${userId}/${table}`)),
+						`counting ${table}`
+					),
 				]);
 				const remoteCount = remoteSnap.data().count;
 				return {
@@ -300,13 +384,16 @@ export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCou
 }
 
 export async function getFirestoreUsage(userId: string) {
-	const firestore = await getFirestoreForUser(userId);
-	if (!firestore) return null;
-
 	try {
+		const firestore = await withFirestoreTimeout(getFirestoreForUser(userId), "opening Firebase");
+		if (!firestore) return null;
+
 		const counts = await Promise.all(
 			CORE_SYNC_TABLES.map(async (col) => {
-				const snap = await getCountFromServer(collection(firestore, `users/${userId}/${col}`));
+				const snap = await withFirestoreTimeout(
+					getCountFromServer(collection(firestore, `users/${userId}/${col}`)),
+					`counting ${col}`
+				);
 				return { col, count: snap.data().count };
 			})
 		);
@@ -342,20 +429,23 @@ export async function clearFirestoreForUser(
 	userId: string,
 	onProgress?: (deleted: number) => void
 ): Promise<ClearResult> {
-	const firestore = await getFirestoreForUser(userId);
+	const firestore = await withFirestoreTimeout(getFirestoreForUser(userId), "opening Firebase");
 	if (!firestore) throw new Error("Firebase not configured.");
 
 	let totalDeleted = 0;
 	const collectionCounts: Record<string, number> = {};
 
 	for (const col of CORE_SYNC_TABLES) {
-		const snap = await getDocs(collection(firestore, `users/${userId}/${col}`));
+		const snap = await withFirestoreTimeout(
+			getDocs(collection(firestore, `users/${userId}/${col}`)),
+			`listing ${col} for deletion`
+		);
 		let count = 0;
 		for (let i = 0; i < snap.docs.length; i += 499) {
 			const chunk = snap.docs.slice(i, i + 499);
 			const batch = writeBatch(firestore);
 			chunk.forEach((d) => batch.delete(d.ref));
-			await batch.commit();
+			await withFirestoreTimeout(batch.commit(), `deleting ${col}`);
 			count += chunk.length;
 			totalDeleted += chunk.length;
 			onProgress?.(totalDeleted);
@@ -371,12 +461,12 @@ export async function clearFirestoreForUser(
 		];
 
 		for (const { key, ref } of docsToDelete) {
-			const snap = await getDoc(ref);
+			const snap = await withFirestoreTimeout(getDoc(ref), `checking ${key} document`);
 			if (!snap.exists()) continue;
 
 			const batch = writeBatch(firestore);
 			batch.delete(ref);
-			await batch.commit();
+			await withFirestoreTimeout(batch.commit(), `deleting ${key} document`);
 			totalDeleted++;
 			collectionCounts[key] = 1;
 		}
