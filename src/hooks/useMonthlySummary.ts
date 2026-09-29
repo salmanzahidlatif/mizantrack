@@ -19,29 +19,27 @@ export function useMonthlySummary(
 	const from = startOfMonth(subMonths(now, months - 1)).getTime();
 	const to = Date.now();
 
-	const transactions = useLiveQuery(
-		async () => {
-			let accountIds: Set<string> | null = null;
-			if (currency) {
-				const accs = await db.accounts
-					.where("userId")
-					.equals(userId)
-					.filter((a) => !a.deletedAt && a.currency === currency)
-					.primaryKeys();
-				accountIds = new Set(accs as string[]);
-			}
-			return db.transactions
+	const transactions = useLiveQuery(async () => {
+		let accountIds: Set<string> | null = null;
+		if (currency) {
+			const accs = await db.accounts
 				.where("userId")
 				.equals(userId)
-				.filter((t) => {
-					if (t.deletedAt || t.date < from || t.date > to) return false;
-					if (accountIds) return accountIds.has(t.accountId) || (!!t.toAccountId && accountIds.has(t.toAccountId));
-					return true;
-				})
-				.toArray();
-		},
-		[userId, from, to, currency]
-	);
+				.filter((a) => !a.deletedAt && a.currency === currency)
+				.primaryKeys();
+			accountIds = new Set(accs as string[]);
+		}
+		return db.transactions
+			.where("userId")
+			.equals(userId)
+			.filter((t) => {
+				if (t.deletedAt || t.date < from || t.date > to) return false;
+				if (accountIds)
+					return accountIds.has(t.accountId) || (!!t.toAccountId && accountIds.has(t.toAccountId));
+				return true;
+			})
+			.toArray();
+	}, [userId, from, to, currency]);
 
 	return useMemo(() => {
 		if (transactions === undefined) return undefined;

@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+
 import { TransactionFilters } from "@/components/transactions/TransactionFilters";
 import { TransactionList } from "@/components/transactions/TransactionList";
 import { useActiveAccounts } from "@/hooks/useAccounts";
@@ -14,19 +16,41 @@ interface TransactionsPageClientProps {
 
 export function TransactionsPageClient({ userId }: TransactionsPageClientProps) {
 	const accounts = useActiveAccounts(userId);
-	const allAccounts = useActiveAccounts(userId);
-	const categories = useCategories(userId);
 
-	const { period, accountId, transactionType, searchQuery, customRange } = useFilterStore();
+	const {
+		period,
+		accountId,
+		transactionType,
+		searchQuery,
+		customRange,
+		activeCurrency,
+		setAccountId,
+	} = useFilterStore();
+
+	const currency = activeCurrency || undefined;
+	const accountList = accounts ?? [];
+	const currencyAccounts = currency
+		? accountList.filter((account) => account.currency === currency)
+		: accountList;
+	const accountIdInCurrency =
+		!accountId || !currency || currencyAccounts.some((account) => account.id === accountId);
+	const effectiveAccountId = accountIdInCurrency ? (accountId ?? undefined) : undefined;
+	const categories = useCategories(userId, undefined, currency);
 
 	const { from, to } = getDateRange(period, 7, customRange ?? undefined);
 
+	useEffect(() => {
+		if (!accounts || !currency || !accountId || accountIdInCurrency) return;
+		setAccountId(null);
+	}, [accountId, accountIdInCurrency, accounts, currency, setAccountId]);
+
 	const transactions = useTransactions(userId, {
-		accountId: accountId ?? undefined,
+		accountId: effectiveAccountId,
 		type: transactionType,
 		from: from.getTime(),
 		to: to.getTime(),
 		search: searchQuery || undefined,
+		currency,
 	});
 
 	return (
@@ -39,11 +63,11 @@ export function TransactionsPageClient({ userId }: TransactionsPageClientProps) 
 				)}
 			</div>
 
-			<TransactionFilters accounts={allAccounts ?? []} />
+			<TransactionFilters accounts={currencyAccounts} />
 
 			<TransactionList
 				transactions={transactions}
-				accounts={accounts ?? []}
+				accounts={accountList}
 				categories={categories ?? []}
 			/>
 		</div>

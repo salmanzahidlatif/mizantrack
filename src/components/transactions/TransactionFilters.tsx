@@ -43,6 +43,7 @@ export function TransactionFilters({ accounts }: TransactionFiltersProps) {
 		accountId,
 		transactionType,
 		searchQuery,
+		activeCurrency,
 		setPeriod,
 		setAccountId,
 		setTransactionType,
@@ -50,6 +51,11 @@ export function TransactionFilters({ accounts }: TransactionFiltersProps) {
 		reset,
 	} = useFilterStore();
 
+	const visibleAccounts = activeCurrency
+		? accounts.filter((account) => account.currency === activeCurrency)
+		: accounts;
+	const selectedAccountId =
+		accountId && visibleAccounts.some((account) => account.id === accountId) ? accountId : "all";
 	const isFiltered =
 		period !== "month" || accountId !== null || transactionType !== "All" || searchQuery !== "";
 
@@ -72,7 +78,7 @@ export function TransactionFilters({ accounts }: TransactionFiltersProps) {
 
 				{/* Account */}
 				<Select
-					value={accountId ?? "all"}
+					value={selectedAccountId}
 					onValueChange={(v) => setAccountId(v === "all" ? null : v)}>
 					<SelectTrigger className="h-8 w-auto min-w-[130px] text-xs">
 						<SelectValue placeholder="All Accounts" />
@@ -81,7 +87,7 @@ export function TransactionFilters({ accounts }: TransactionFiltersProps) {
 						<SelectItem value="all" className="text-xs">
 							All Accounts
 						</SelectItem>
-						{accounts.map((a) => (
+						{visibleAccounts.map((a) => (
 							<SelectItem key={a.id} value={a.id} className="text-xs">
 								{a.title}
 							</SelectItem>
