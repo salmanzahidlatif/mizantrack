@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { useState } from "react";
 
+import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { Button } from "@/components/ui/button";
 import { db } from "@/lib/db/local";
 
@@ -111,15 +112,25 @@ export function ZakatHistory({ userId }: ZakatHistoryProps) {
 								<div className="flex items-center gap-4">
 									{calc.isLiable && (
 										<div className="text-right">
-											<p className="text-sm font-bold text-primary tabular-nums">
-												{calc.zakatObligation.toLocaleString("en-US", {
-													minimumFractionDigits: 2,
-												})}{" "}
-												{calc.referenceCurrency}
-											</p>
+											<CurrencyAmount
+												amount={calc.zakatObligation}
+												currency={calc.referenceCurrency}
+												className="text-sm font-bold text-primary"
+											/>
 											{paidAmount > 0 && (
 												<p className="text-xs text-muted-foreground">
-													Paid: {paidAmount.toFixed(2)} • Remaining: {remaining.toFixed(2)}
+													Paid:{" "}
+													<CurrencyAmount
+														amount={paidAmount}
+														currency={calc.referenceCurrency}
+														className="font-normal tracking-normal"
+													/>{" "}
+													• Remaining:{" "}
+													<CurrencyAmount
+														amount={remaining}
+														currency={calc.referenceCurrency}
+														className="font-normal tracking-normal"
+													/>
 												</p>
 											)}
 										</div>
@@ -147,16 +158,20 @@ export function ZakatHistory({ userId }: ZakatHistoryProps) {
 												</div>
 												<div className="flex justify-between">
 													<span className="text-muted-foreground">Gold Price/gram:</span>
-													<span className="tabular-nums">
-														{calc.goldPricePerGram.toFixed(2)} USD
-													</span>
+													<CurrencyAmount
+														amount={calc.goldPricePerGram}
+														currency="USD"
+														className="font-normal tracking-normal"
+													/>
 												</div>
 												{calc.silverPricePerGram && (
 													<div className="flex justify-between">
 														<span className="text-muted-foreground">Silver Price/gram:</span>
-														<span className="tabular-nums">
-															{calc.silverPricePerGram.toFixed(2)} USD
-														</span>
+														<CurrencyAmount
+															amount={calc.silverPricePerGram}
+															currency="USD"
+															className="font-normal tracking-normal"
+														/>
 													</div>
 												)}
 											</div>
@@ -168,30 +183,27 @@ export function ZakatHistory({ userId }: ZakatHistoryProps) {
 											<div className="space-y-1 text-sm">
 												<div className="flex justify-between">
 													<span className="text-muted-foreground">Total Zakatable:</span>
-													<span className="tabular-nums">
-														{calc.totalZakatable.toLocaleString("en-US", {
-															minimumFractionDigits: 2,
-														})}{" "}
-														{calc.referenceCurrency}
-													</span>
+													<CurrencyAmount
+														amount={calc.totalZakatable}
+														currency={calc.referenceCurrency}
+														className="font-normal tracking-normal"
+													/>
 												</div>
 												<div className="flex justify-between">
 													<span className="text-muted-foreground">Nisab Threshold:</span>
-													<span className="tabular-nums">
-														{calc.nisabThreshold.toLocaleString("en-US", {
-															minimumFractionDigits: 2,
-														})}{" "}
-														{calc.referenceCurrency}
-													</span>
+													<CurrencyAmount
+														amount={calc.nisabThreshold}
+														currency={calc.referenceCurrency}
+														className="font-normal tracking-normal"
+													/>
 												</div>
 												<div className="flex justify-between font-medium">
 													<span>Zakat Obligation:</span>
-													<span className="text-primary tabular-nums">
-														{calc.zakatObligation.toLocaleString("en-US", {
-															minimumFractionDigits: 2,
-														})}{" "}
-														{calc.referenceCurrency}
-													</span>
+													<CurrencyAmount
+														amount={calc.zakatObligation}
+														currency={calc.referenceCurrency}
+														className="text-primary"
+													/>
 												</div>
 											</div>
 										</div>
@@ -209,12 +221,11 @@ export function ZakatHistory({ userId }: ZakatHistoryProps) {
 													</div>
 													<div className="flex justify-between">
 														<span className="text-muted-foreground">Total Value:</span>
-														<span className="tabular-nums">
-															{calc.totalGoldValue.toLocaleString("en-US", {
-																minimumFractionDigits: 2,
-															})}{" "}
-															{calc.referenceCurrency}
-														</span>
+														<CurrencyAmount
+															amount={calc.totalGoldValue}
+															currency={calc.referenceCurrency}
+															className="font-normal tracking-normal"
+														/>
 													</div>
 												</div>
 											</div>

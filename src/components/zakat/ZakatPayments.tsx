@@ -6,6 +6,7 @@ import { Plus, Trash2, Edit2, Save, X } from "lucide-react";
 import { useState } from "react";
 import { v4 as uuid } from "uuid";
 
+import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -94,7 +95,11 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 			<div className="rounded-lg border bg-card p-3">
 				<p className="text-xs text-muted-foreground">Total Paid (All Time)</p>
 				<p className="text-lg font-bold tabular-nums">
-					{totalPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })} {referenceCurrency}
+					<CurrencyAmount
+						amount={totalPaid}
+						currency={referenceCurrency}
+						className="text-lg font-bold"
+					/>
 				</p>
 			</div>
 
@@ -126,10 +131,11 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 							className="flex items-center justify-between rounded-lg border bg-card p-3 text-sm">
 							<div className="flex-1">
 								<div className="flex items-center gap-2">
-									<span className="font-medium">
-										{payment.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}{" "}
-										{payment.currency}
-									</span>
+									<CurrencyAmount
+										amount={payment.amount}
+										currency={payment.currency}
+										className="font-medium"
+									/>
 									<span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
 										{payment.islamicYear}
 									</span>

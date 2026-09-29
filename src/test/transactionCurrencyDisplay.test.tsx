@@ -1,11 +1,25 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { TransactionRow } from "@/components/transactions/TransactionRow";
 
 import type { Account, Transaction } from "@/types";
 
 describe("transaction currency display", () => {
+	it("renders the AED Dirham glyph before the numerals in DOM order", () => {
+		const { container } = render(<CurrencyAmount amount={1234.5} currency="AED" />);
+		const amount = container.querySelector("[data-currency-amount]");
+		const glyph = screen.getByTestId("dirham-sign");
+		const numerals = screen.getByText("1,234.50");
+
+		expect(amount).toHaveAttribute("dir", "ltr");
+		expect(glyph.tagName.toLowerCase()).toBe("svg");
+		expect(glyph.compareDocumentPosition(numerals) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+			Node.DOCUMENT_POSITION_FOLLOWING
+		);
+	});
+
 	it("renders a transfer source currency when the source account is outside the active currency", () => {
 		const accounts: Account[] = [
 			{

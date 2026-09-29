@@ -1,4 +1,7 @@
+import { getCurrencyDisplay, type CurrencySymbol } from "@/lib/currencySymbols";
 import { cn } from "@/lib/utils";
+
+import type { ReactNode } from "react";
 
 interface CurrencyAmountProps {
 	amount: number;
@@ -14,39 +17,51 @@ interface CurrencyAmountProps {
 	className?: string;
 }
 
-const CURRENCY_SYMBOLS: Record<string, string> = {
-	AED: "د.إ",
-	PKR: "₨",
-	USD: "$",
-	EUR: "€",
-	GBP: "£",
-	SAR: "﷼",
-	INR: "₹",
-};
-
-function resolveCurrencyCode(currency: string | undefined, fallbackCurrency: string): string {
-	const currencyCode = currency?.trim().toUpperCase() ?? "";
-	if (currencyCode) return currencyCode;
-
-	const fallbackCode = fallbackCurrency.trim().toUpperCase();
-	return fallbackCode || "XXX";
-}
+const RTL_SYMBOL_PATTERN = /[\u0590-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 
 function formatAmount(
 	amount: number,
 	currency: string | undefined,
 	fallbackCurrency: string,
 	showNegativeSign: boolean
-): string {
-	const currencyCode = resolveCurrencyCode(currency, fallbackCurrency);
-	const symbol = CURRENCY_SYMBOLS[currencyCode] ?? currencyCode;
+): ReactNode {
+	const { code, symbol } = getCurrencyDisplay(currency, fallbackCurrency);
 	const abs = Math.abs(amount);
 	const formatted = abs.toLocaleString("en-US", {
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2,
 	});
 	const prefix = showNegativeSign && amount < 0 ? "-" : "";
-	return symbol ? `${symbol} ${prefix}${formatted}` : `${prefix}${formatted}`;
+
+	if (typeof symbol === "string" && !RTL_SYMBOL_PATTERN.test(symbol)) {
+		return `${symbol} ${prefix}${formatted}`;
+	}
+
+	return (
+		<>
+			{renderCurrencySymbol(code, symbol)}{" "}
+			<span className="inline-block">{prefix + formatted}</span>
+		</>
+	);
+}
+
+function renderCurrencySymbol(code: string, symbol: CurrencySymbol) {
+	if (code === "AED" && typeof symbol !== "string") {
+		return (
+			<>
+				<span className="sr-only">UAE Dirham</span>
+				<span aria-hidden="true" className="inline-block">
+					{symbol}
+				</span>
+			</>
+		);
+	}
+
+	return (
+		<span className="inline-block" dir="ltr">
+			{symbol}
+		</span>
+	);
 }
 
 export function CurrencyAmount({
@@ -63,11 +78,14 @@ export function CurrencyAmount({
 
 	return (
 		<span
+			data-currency-amount
+			dir="ltr"
 			className={cn(
-				"font-semibold tracking-tight tabular-nums transition-colors duration-200",
+				"inline-block font-semibold tracking-tight tabular-nums transition-colors duration-200",
 				resolvedVariant === "positive" && "text-emerald-600 dark:text-emerald-400",
 				resolvedVariant === "negative" && "text-red-600 dark:text-red-400",
 				resolvedVariant === "transfer" && "text-blue-600 dark:text-blue-400",
+				"[unicode-bidi:isolate]",
 				className
 			)}>
 			{formatAmount(amount, currency, fallbackCurrency, showNegativeSign)}

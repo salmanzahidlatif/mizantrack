@@ -4,6 +4,7 @@ import { endOfDay } from "date-fns";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useMemo } from "react";
 
+import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { db } from "@/lib/db/local";
 import { getZakatYearMonths } from "@/lib/islamicCalendar";
 import { ISLAMIC_MONTHS, type Account, type IslamicMonth } from "@/types";
@@ -138,7 +139,11 @@ export function ZakatMonthlyBalances({
 				<div className="rounded-lg border bg-accent/50 px-3 py-2 text-right">
 					<p className="text-xs text-muted-foreground">Minimum Zakatable Wealth</p>
 					<p className="text-lg font-bold tabular-nums">
-						{minimumTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })} {referenceCurrency}
+						<CurrencyAmount
+							amount={minimumTotal}
+							currency={referenceCurrency}
+							className="text-lg font-bold"
+						/>
 					</p>
 				</div>
 			</div>

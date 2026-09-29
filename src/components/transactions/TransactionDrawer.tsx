@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
 import { CalendarIcon, ChevronDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useForm, type FieldErrors, type Resolver, type SubmitErrorHandler } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -35,6 +35,7 @@ import {
 	deleteTransaction,
 	updateTransaction,
 } from "@/lib/actions/transactions";
+import { getCurrencyDisplay } from "@/lib/currencySymbols";
 import { db } from "@/lib/db/local";
 import { transactionSchema, type TransactionFormValues } from "@/lib/validations/transaction";
 import { useFilterStore } from "@/store/filter-store";
@@ -58,21 +59,19 @@ const FOCUSABLE_FIELD_SELECTOR =
 	"input, textarea, select, button, [role='combobox'], [contenteditable='true']";
 const FOCUS_SCROLL_DELAY = 280;
 
-const CURRENCY_SYMBOLS: Record<string, string> = {
-	AED: "د.إ",
-	PKR: "₨",
-	USD: "$",
-	EUR: "€",
-	GBP: "£",
-	SAR: "﷼",
-	INR: "₹",
-};
+function getCurrencyLabel(currency?: string): ReactNode {
+	if (!currency) return null;
+	const { code, symbol, hasSymbol } = getCurrencyDisplay(currency);
+	if (!hasSymbol) return code;
 
-function getCurrencyLabel(currency?: string): string {
-	if (!currency) return "";
-	const code = currency.toUpperCase();
-	const symbol = CURRENCY_SYMBOLS[code] ?? code;
-	return symbol === code ? code : `${symbol} ${code}`;
+	return (
+		<span className="inline-flex items-baseline gap-1 [unicode-bidi:isolate]" dir="ltr">
+			<span aria-hidden="true" className="inline-block">
+				{symbol}
+			</span>
+			<span>{code}</span>
+		</span>
+	);
 }
 
 function includeRecordsById<T extends { id: string }>(

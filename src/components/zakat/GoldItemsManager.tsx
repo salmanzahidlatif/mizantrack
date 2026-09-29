@@ -5,6 +5,7 @@ import { Plus, Trash2, Edit2, Save, X } from "lucide-react";
 import { useState } from "react";
 import { v4 as uuid } from "uuid";
 
+import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -100,7 +101,11 @@ export function GoldItemsManager({
 				<div>
 					<p className="text-xs text-muted-foreground">Total Value</p>
 					<p className="text-lg font-bold tabular-nums">
-						{totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })} {referenceCurrency}
+						<CurrencyAmount
+							amount={totalValue}
+							currency={referenceCurrency}
+							className="text-lg font-bold"
+						/>
 					</p>
 				</div>
 			</div>
@@ -143,7 +148,17 @@ export function GoldItemsManager({
 								{item.purchaseDate && (
 									<p className="text-xs text-muted-foreground">
 										Purchased: {new Date(item.purchaseDate).toLocaleDateString()}
-										{item.purchasePrice && ` • ${item.purchasePrice} ${referenceCurrency}`}
+										{item.purchasePrice && (
+											<>
+												{" "}
+												•{" "}
+												<CurrencyAmount
+													amount={item.purchasePrice}
+													currency={referenceCurrency}
+													className="font-normal tracking-normal"
+												/>
+											</>
+										)}
 									</p>
 								)}
 							</div>

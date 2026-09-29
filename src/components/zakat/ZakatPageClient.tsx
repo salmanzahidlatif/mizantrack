@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { CalendarIcon, Check, Download, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -394,14 +395,26 @@ export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 					{[
 						{
 							label: "Total Zakatable Wealth",
-							value: `${totalZakatable.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${referenceCurrency}`,
+							value: (
+								<CurrencyAmount
+									amount={totalZakatable}
+									currency={referenceCurrency}
+									className="font-medium"
+								/>
+							),
 						},
 						{
 							label: `Nisab Threshold (${nisab === "gold" ? "85g gold" : "595g silver"})`,
 							value:
-								nisabThreshold > 0
-									? `${nisabThreshold.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${referenceCurrency}`
-									: "—",
+								nisabThreshold > 0 ? (
+									<CurrencyAmount
+										amount={nisabThreshold}
+										currency={referenceCurrency}
+										className="font-medium"
+									/>
+								) : (
+									"—"
+								),
 						},
 					].map(({ label, value }) => (
 						<div key={label} className="flex justify-between">
@@ -418,11 +431,11 @@ export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 						<>
 							<p className="text-xs text-muted-foreground">Zakat Obligation (2.5%)</p>
 							<p className="mt-1 text-2xl font-bold text-primary">
-								{zakatObligation.toLocaleString("en-US", {
-									minimumFractionDigits: 2,
-									maximumFractionDigits: 2,
-								})}{" "}
-								{referenceCurrency}
+								<CurrencyAmount
+									amount={zakatObligation}
+									currency={referenceCurrency}
+									className="text-2xl font-bold text-primary"
+								/>
 							</p>
 						</>
 					) : (
