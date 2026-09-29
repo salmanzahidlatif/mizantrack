@@ -60,6 +60,19 @@ class MizanTrackDB extends Dexie {
 			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
 			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
 		});
+
+		this.version(4).stores({
+			accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt",
+			categories: "id, userId, type, currency, updatedAt, deletedAt",
+			transactions:
+				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt",
+			dbConfig: "id",
+			syncMeta: "id",
+			dashboardStats: "id, updatedAt",
+			goldItems: "id, userId, purity, updatedAt, deletedAt",
+			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
+			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
+		});
 	}
 }
 
