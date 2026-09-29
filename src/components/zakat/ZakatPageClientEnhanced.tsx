@@ -261,7 +261,7 @@ export function ZakatPageClientEnhanced({ userId }: ZakatPageClientProps) {
 			{/* Header */}
 			<div className="flex items-start justify-between">
 				<div>
-					<h1 className="text-2xl font-bold">Zakat Calculator</h1>
+					<h1 className="hidden text-2xl font-bold md:block">Zakat Calculator</h1>
 					<p className="text-sm text-muted-foreground">
 						Calculate your annual Zakat obligation • Islamic Year {currentIslamicYear}
 					</p>

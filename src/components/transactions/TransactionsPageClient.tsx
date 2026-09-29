@@ -57,7 +57,7 @@ export function TransactionsPageClient({ userId }: TransactionsPageClientProps) 
 		<div className="space-y-3">
 			{/* Header */}
 			<div>
-				<h1 className="text-2xl font-bold">Transactions</h1>
+				<h1 className="hidden text-2xl font-bold md:block">Transactions</h1>
 				{transactions !== undefined && (
 					<p className="text-sm text-muted-foreground">{transactions.length} transactions</p>
 				)}

@@ -55,7 +55,7 @@ export function CategoriesPageClient({ userId }: CategoriesPageClientProps) {
 			{/* Header */}
 			<div className="flex items-center justify-between gap-2">
 				<div>
-					<h1 className="text-2xl font-bold">Categories</h1>
+					<h1 className="hidden text-2xl font-bold md:block">Categories</h1>
 					{categories !== undefined && (
 						<p className="text-sm text-muted-foreground">
 							{categories.filter((c) => !c.deletedAt).length} categories

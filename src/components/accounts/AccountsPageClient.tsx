@@ -61,7 +61,7 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 			{/* Header */}
 			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 				<div>
-					<h1 className="text-2xl font-bold">Accounts</h1>
+					<h1 className="hidden text-2xl font-bold md:block">Accounts</h1>
 					{accounts !== undefined && (
 						<p className="text-sm text-muted-foreground">
 							{accounts.filter((a) => !a.isArchived && !a.deletedAt).length} active

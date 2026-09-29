@@ -356,10 +356,7 @@ export function AppShell({ user, children }: AppShellProps) {
 					<main ref={mainRef} className="pb-safe-nav flex-1 overflow-auto md:pb-0">
 						<div className="mx-auto max-w-4xl p-4" style={swipeNavigation.style}>
 							<div key={pathname} className="page-enter">
-								<div className="mb-5 md:hidden">
-									<p className="text-xs font-semibold tracking-[0.18em] text-muted-foreground/70 uppercase">
-										Mizan Track
-									</p>
+								<div className="mb-3 md:hidden">
 									<h1
 										className={cn(
 											"mt-1 origin-left text-3xl font-bold tracking-tight transition-all duration-[var(--dur-base)] ease-[var(--ease-out-expo)] motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-none",

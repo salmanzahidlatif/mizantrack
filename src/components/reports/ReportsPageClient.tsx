@@ -89,7 +89,7 @@ export function ReportsPageClient({ userId }: ReportsPageClientProps) {
 			{/* Header */}
 			<div className="flex items-start justify-between gap-2">
 				<div>
-					<h1 className="text-2xl font-bold">Reports</h1>
+					<h1 className="hidden text-2xl font-bold md:block">Reports</h1>
 					<p className="text-sm text-muted-foreground">Analyse your spending</p>
 				</div>
 				<Button

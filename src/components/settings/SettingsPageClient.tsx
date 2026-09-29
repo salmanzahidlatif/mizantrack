@@ -16,7 +16,7 @@ export function SettingsPageClient({ userId, userDisplay }: SettingsPageClientPr
 	return (
 		<div className="space-y-5">
 			<div>
-				<h1 className="text-2xl font-bold">Settings</h1>
+				<h1 className="hidden text-2xl font-bold md:block">Settings</h1>
 				<p className="text-sm text-muted-foreground">Manage your preferences and data</p>
 			</div>
 
