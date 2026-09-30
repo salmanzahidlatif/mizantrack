@@ -112,7 +112,7 @@ describe("computeDashboardStats", () => {
 		expect(stats.id).toBe(USER_ID);
 		expect(stats.balances).toEqual({
 			"acc-pkr": 1305,
-			"acc-usd": 450,
+			"acc-usd": 525,
 		});
 
 		expect(allCurrencies).toBeDefined();
@@ -158,7 +158,7 @@ describe("computeDashboardStats", () => {
 		expect(stats.warnings).toHaveLength(1);
 	});
 
-	it("does not credit source-currency amounts into cross-currency destination balances or totals", async () => {
+	it("credits cross-currency destination balances while warning about legacy FX ambiguity", async () => {
 		const currentMonth = startOfMonth(new Date()).getTime() + 2 * 24 * 60 * 60 * 1000;
 
 		await db.accounts.bulkPut([
@@ -211,7 +211,7 @@ describe("computeDashboardStats", () => {
 
 		expect(stats.balances).toMatchObject({
 			"acc-cross-pkr": 0,
-			"acc-cross-aed": 35,
+			"acc-cross-aed": 50035,
 		});
 		expect(aed).toMatchObject({
 			monthIncome: 25,
@@ -222,12 +222,12 @@ describe("computeDashboardStats", () => {
 				code: "cross_currency_transfer_destination_skipped",
 				transactionId: "txn-cross-transfer",
 				message:
-					"Cross-currency transfer destination balance was not adjusted because no destination amount or FX contract is stored.",
+					"Cross-currency transfer used the stored source amount for the destination balance to preserve legacy balance arithmetic; review or repair it if an FX amount is available.",
 			},
 		]);
 	});
 
-	it("skips destination-less transfers with a warning instead of destroying account value", async () => {
+	it("preserves destination-less transfer source debits with a warning", async () => {
 		await db.accounts.bulkPut([
 			{
 				id: "acc-cash",
@@ -264,19 +264,19 @@ describe("computeDashboardStats", () => {
 		const legacyLeakyBalance = 378.09 - 532154.23;
 
 		expect(legacyLeakyBalance).toBeCloseTo(-531776.14, 2);
-		expect(stats.balances["acc-cash"]).toBeCloseTo(378.09, 2);
+		expect(stats.balances["acc-cash"]).toBeCloseTo(-531776.14, 2);
 		expect(stats.warnings).toEqual([
 			{
 				code: "invalid_transfer_counterparty_skipped",
 				transactionId: "txn-leaky-transfer-1",
 				message:
-					"Transfer balance impact was skipped because the destination account is missing or deleted.",
+					"Transfer destination is missing or deleted; the source account was still debited to preserve legacy balance arithmetic.",
 			},
 			{
 				code: "invalid_transfer_counterparty_skipped",
 				transactionId: "txn-leaky-transfer-2",
 				message:
-					"Transfer balance impact was skipped because the destination account is missing or deleted.",
+					"Transfer destination is missing or deleted; the source account was still debited to preserve legacy balance arithmetic.",
 			},
 		]);
 	});
@@ -456,7 +456,7 @@ describe("computeDashboardStats", () => {
 		expect(stats.balances).toEqual({
 			"acc-aed-active": -15198,
 			"acc-aed-archived": -3200,
-			"acc-usd-active": 510,
+			"acc-usd-active": 710,
 		});
 		expect(stats.recent.map((transaction) => transaction.id)).not.toContain(
 			"txn-aed-deleted-account"

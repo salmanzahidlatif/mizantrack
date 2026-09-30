@@ -1,32 +1,9 @@
 import { useLiveQuery } from "dexie-react-hooks";
 
+import { computeAccountBalances } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 
-import type { Account, Transaction } from "@/types";
-
-function isKnownCrossCurrencyTransfer(
-	transaction: Transaction,
-	accountById: Map<string, Account>
-): boolean {
-	if (transaction.type !== "Transfer" || !transaction.toAccountId) return false;
-
-	const sourceAccount = accountById.get(transaction.accountId);
-	const destinationAccount = accountById.get(transaction.toAccountId);
-
-	return Boolean(
-		sourceAccount && destinationAccount && sourceAccount.currency !== destinationAccount.currency
-	);
-}
-
-function hasInvalidTransferCounterparty(
-	transaction: Transaction,
-	accountById: Map<string, Account>
-): boolean {
-	return (
-		transaction.type === "Transfer" &&
-		(!transaction.toAccountId || !accountById.has(transaction.toAccountId))
-	);
-}
+import type { Account } from "@/types";
 
 export function useAccountBalance(accountId: string, userId: string): number | undefined {
 	return useLiveQuery(async () => {
@@ -51,29 +28,8 @@ export function useAccountBalance(accountId: string, userId: string): number | u
 			if (referencedAccount) accountById.set(referencedAccount.id, referencedAccount);
 		}
 
-		let balance = account.openingBalance;
-		for (const t of transactions) {
-			if (t.type === "Income" && t.accountId === accountId) {
-				balance += t.amount;
-			} else if (t.type === "Expense" && t.accountId === accountId) {
-				balance -= t.amount;
-			} else if (t.type === "Transfer") {
-				if (hasInvalidTransferCounterparty(t, accountById)) continue;
+		const { balances } = computeAccountBalances(userId, [...accountById.values()], transactions);
 
-				const isCrossCurrency = isKnownCrossCurrencyTransfer(t, accountById);
-				if (t.accountId === accountId) {
-					balance -= t.amount; // source
-				} else if (t.toAccountId === accountId) {
-					if (isCrossCurrency) {
-						// `amount` is stored in the source account currency. Without a transfer FX
-						// amount/rate for the destination currency, adding it would corrupt this balance.
-						continue;
-					}
-					balance += t.amount; // destination
-				}
-			}
-		}
-
-		return balance;
+		return balances.get(accountId) ?? account.openingBalance;
 	}, [accountId, userId]);
 }

@@ -126,10 +126,11 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 	const analyticsQuery = useMemo(
 		() => ({
 			currency: resolvedCurrency,
+			enabledCurrencies: config?.enabledCurrencies,
 			asOf,
 			period: { interval: "all-time" as const },
 		}),
-		[asOf, resolvedCurrency]
+		[asOf, config?.enabledCurrencies, resolvedCurrency]
 	);
 	const analytics = useAccountsAnalytics(userId, analyticsQuery);
 
@@ -145,15 +146,13 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 		router.push("/transactions");
 	}
 
-	// Respect active currency filter from global store
+	// Keep every account reachable; income/expense analytics remain scoped by currency.
 	const accounts = useAccounts(userId, {
-		currency: resolvedCurrency,
 		showArchived: showArchivedAccounts,
 	});
 
 	// Also fetch archived count to show/hide toggle
 	const allAccounts = useAccounts(userId, {
-		currency: resolvedCurrency,
 		showArchived: true,
 	});
 	const hasArchived = allAccounts?.some((a) => a.isArchived) ?? false;

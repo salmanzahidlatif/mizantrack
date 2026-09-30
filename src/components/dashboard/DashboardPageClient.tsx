@@ -336,6 +336,8 @@ function WhatYouHaveCard({ analytics, currency, onAddAccount }: WhatYouHaveCardP
 					<CurrencyAmount
 						amount={analytics.netWorth}
 						currency={currency}
+						colorized
+						showNegativeSign
 						className="mt-2 block text-3xl leading-9"
 					/>
 				</div>
@@ -358,7 +360,7 @@ function WhatYouHaveCard({ analytics, currency, onAddAccount }: WhatYouHaveCardP
 						<p className="truncate text-xs font-medium text-muted-foreground">{account.title}</p>
 						<CurrencyAmount
 							amount={account.balance}
-							currency={currency}
+							currency={account.currency || currency}
 							colorized
 							showNegativeSign
 							className="mt-1 block truncate text-sm leading-5"
@@ -478,6 +480,7 @@ export function DashboardPageClient({ userId }: DashboardPageClientProps) {
 	const periodAnalytics = usePeriodAnalytics(userId, periodQuery);
 	const accountAnalytics = useAccountsAnalytics(userId, {
 		currency,
+		enabledCurrencies: config?.enabledCurrencies,
 		asOf: interval === "all-time" ? now : resolvedPeriod.to,
 		period: {
 			interval,

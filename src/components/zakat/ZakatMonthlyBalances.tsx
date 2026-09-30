@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useMemo } from "react";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
+import { computeAccountBalances } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import { getZakatYearMonths } from "@/lib/islamicCalendar";
 import { ISLAMIC_MONTHS, type Account, type IslamicMonth } from "@/types";
@@ -54,31 +55,20 @@ export function ZakatMonthlyBalances({
 		// Calculate balance at end of each month
 		for (const { month, endDate } of monthsData) {
 			const asOf = endOfDay(endDate).getTime();
+			const computedBalances = computeAccountBalances(userId, accounts, allTransactions, {
+				asOfMs: asOf,
+			}).balances;
 
 			for (const account of accounts) {
 				if (!zakatableIds.has(account.id)) continue;
-
-				let balance = account.openingBalance;
-
-				// Apply all transactions up to this date
-				for (const t of allTransactions) {
-					if (t.date > asOf) continue;
-
-					if (t.accountId === account.id) {
-						if (t.type === "Income") balance += t.amount;
-						else if (t.type === "Expense") balance -= t.amount;
-						else if (t.type === "Transfer") balance -= t.amount;
-					} else if (t.toAccountId === account.id && t.type === "Transfer") {
-						balance += t.amount;
-					}
-				}
-
-				balances.get(account.id)?.set(month, balance);
+				balances
+					.get(account.id)
+					?.set(month, computedBalances.get(account.id) ?? account.openingBalance);
 			}
 		}
 
 		return balances;
-	}, [accounts, allTransactions, monthsData, zakatableIds]);
+	}, [accounts, allTransactions, monthsData, userId, zakatableIds]);
 
 	// Calculate totals for each month (in reference currency)
 	const monthlyTotals = useMemo(() => {

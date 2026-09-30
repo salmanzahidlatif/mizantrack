@@ -138,13 +138,13 @@ function buildAnalytics(interval: "monthly" | "quarterly", empty = false): Perio
 	};
 }
 
-function buildAccountsAnalytics(): AccountsAnalytics {
+function buildAccountsAnalytics(netWorth = 97218.91): AccountsAnalytics {
 	return {
 		userId: USER_ID,
 		currency: "AED",
 		asOf: NOW,
 		period: buildAnalytics("monthly").period,
-		netWorth: 97218.91,
+		netWorth,
 		inflow: 1000,
 		outflow: 600,
 		netFlow: 400,
@@ -214,6 +214,15 @@ describe("dashboard UI rebuild", () => {
 		expect(screen.getByLabelText("Swipe dashboard month summary")).toHaveAttribute(
 			"data-swipe-navigation-ignore"
 		);
+	});
+
+	it("shows the same negative net-worth sign as accounts analytics", async () => {
+		const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
+		vi.mocked(useAccountsAnalytics).mockReturnValue(buildAccountsAnalytics(-4355391.13));
+
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		expect(screen.getByText((text) => text.includes("-4,355,391.13"))).toBeInTheDocument();
 	});
 
 	it("changing interval updates every figure on the reports screen", async () => {

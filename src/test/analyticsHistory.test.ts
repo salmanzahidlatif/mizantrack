@@ -2,7 +2,9 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { computeAccountBalances } from "@/lib/analytics/balanceMath";
 import {
+	aggregateAccountsAnalytics,
 	getAccountsAnalytics,
 	getMonthlySummaries,
 	getPeriodAnalytics,
@@ -11,12 +13,319 @@ import {
 import { getDateRange, getMonthStripRanges, resolveAnalyticsPeriod } from "@/lib/dateRange";
 import { db } from "@/lib/db/local";
 
+import type { Account, Transaction } from "@/types";
+
 const USER_ID = "analytics-history-user";
 const OTHER_USER_ID = "analytics-history-other-user";
 const GST_OFFSET_MINUTES = 4 * 60;
 
 function gst(date: string): number {
 	return new Date(date).getTime();
+}
+
+function buildBalanceRegressionFixture(cashOpeningBalance = 1848.59): {
+	accounts: Account[];
+	transactions: Transaction[];
+} {
+	const now = gst("2026-09-29T18:00:00.000+04:00");
+	const crossCurrencyAmounts = [
+		532154.23, 481000.19, 625410.77, 398225.61, 712004.44, 288901.34, 802330.55, 690120.18,
+		495212.84,
+	];
+	const crossCurrencyTotal = crossCurrencyAmounts.reduce((sum, amount) => sum + amount, 0);
+	const accounts: Account[] = [
+		{
+			id: "cash-aed",
+			userId: USER_ID,
+			title: "Cash",
+			openingBalance: cashOpeningBalance,
+			currency: "AED",
+			isArchived: false,
+			updatedAt: now,
+		},
+		{
+			id: "aed-import-contra",
+			userId: USER_ID,
+			title: "Imported AED Contra",
+			openingBalance: 96993.03 - crossCurrencyTotal,
+			currency: "AED",
+			isArchived: false,
+			updatedAt: now,
+		},
+		{
+			id: "aed-archived-zero",
+			userId: USER_ID,
+			title: "Archived AED Zero",
+			openingBalance: 0,
+			currency: "AED",
+			isArchived: true,
+			updatedAt: now,
+		},
+		{
+			id: "aed-history-offset",
+			userId: USER_ID,
+			title: "Historical Inflow Outflow Offset",
+			openingBalance: -302341.06,
+			currency: "AED",
+			isArchived: true,
+			updatedAt: now,
+		},
+		{
+			id: "aed-liability-legacy",
+			userId: USER_ID,
+			title: "Legacy Liability",
+			openingBalance: -35799,
+			currency: "AED",
+			isArchived: false,
+			accountType: "liability",
+			updatedAt: now,
+		},
+		{
+			id: "aed-offset-asset",
+			userId: USER_ID,
+			title: "Legacy Offset Asset",
+			openingBalance: 35799,
+			currency: "AED",
+			isArchived: true,
+			updatedAt: now,
+		},
+		{
+			id: "aed-deleted-noise",
+			userId: USER_ID,
+			title: "Deleted Noise",
+			openingBalance: 999999,
+			currency: "AED",
+			isArchived: true,
+			updatedAt: now,
+			deletedAt: now,
+		},
+		...crossCurrencyAmounts.map((amount, index) => ({
+			id: `pkr-source-${index + 1}`,
+			userId: USER_ID,
+			title: `PKR Source ${index + 1}`,
+			openingBalance: amount,
+			currency: "PKR",
+			isArchived: index % 2 === 0,
+			updatedAt: now,
+		})),
+	];
+	const transactions: Transaction[] = [
+		{
+			id: "cash-sep-income",
+			userId: USER_ID,
+			type: "Income",
+			date: gst("2026-09-05T09:00:00.000+04:00"),
+			amount: 8884.73,
+			accountId: "cash-aed",
+			updatedAt: now,
+		},
+		{
+			id: "cash-sep-expense",
+			userId: USER_ID,
+			type: "Expense",
+			date: gst("2026-09-20T20:00:00.000+04:00"),
+			amount: 10355.23,
+			accountId: "cash-aed",
+			updatedAt: now,
+		},
+		{
+			id: "cash-to-import-contra",
+			userId: USER_ID,
+			type: "Transfer",
+			date: gst("2026-09-21T10:00:00.000+04:00"),
+			amount: crossCurrencyTotal,
+			accountId: "cash-aed",
+			toAccountId: "aed-import-contra",
+			updatedAt: now,
+		},
+		{
+			id: "soft-deleted-cash-noise",
+			userId: USER_ID,
+			type: "Expense",
+			date: gst("2026-09-22T10:00:00.000+04:00"),
+			amount: 123456,
+			accountId: "cash-aed",
+			updatedAt: now,
+			deletedAt: now,
+		},
+		{
+			id: "aed-all-time-income",
+			userId: USER_ID,
+			type: "Income",
+			date: gst("2026-08-05T09:00:00.000+04:00"),
+			amount: 2425885.83,
+			accountId: "aed-history-offset",
+			updatedAt: now,
+		},
+		{
+			id: "aed-all-time-expense",
+			userId: USER_ID,
+			type: "Expense",
+			date: gst("2026-08-20T20:00:00.000+04:00"),
+			amount: 2123544.77,
+			accountId: "aed-history-offset",
+			updatedAt: now,
+		},
+		...crossCurrencyAmounts.map((amount, index) => ({
+			id: `pkr-to-cash-${index + 1}`,
+			userId: USER_ID,
+			type: "Transfer" as const,
+			date: gst(`2026-09-${String(index + 1).padStart(2, "0")}T12:00:00.000+04:00`),
+			amount,
+			accountId: `pkr-source-${index + 1}`,
+			toAccountId: "cash-aed",
+			updatedAt: now,
+		})),
+	];
+
+	for (let i = transactions.length; i < 10000; i++) {
+		const sourceIndex = (i % crossCurrencyAmounts.length) + 1;
+		transactions.push({
+			id: `pkr-noise-${i}`,
+			userId: USER_ID,
+			type: i % 2 === 0 ? "Income" : "Expense",
+			date: gst("2026-08-15T12:00:00.000+04:00") + i,
+			amount: 1,
+			accountId: `pkr-source-${sourceIndex}`,
+			updatedAt: now,
+			deletedAt: now,
+		});
+	}
+
+	return { accounts, transactions };
+}
+
+function aggregateWithRegressedTransferSemantics(
+	accounts: Account[],
+	transactions: Transaction[],
+	currency = "AED"
+): { cashBalance: number; netWorth: number } {
+	const activeAccounts = accounts.filter(
+		(account) => account.userId === USER_ID && !account.deletedAt
+	);
+	const accountById = new Map(activeAccounts.map((account) => [account.id, account]));
+	const scopedAccounts = activeAccounts.filter((account) => account.currency === currency);
+	const balances = new Map(scopedAccounts.map((account) => [account.id, account.openingBalance]));
+
+	for (const transaction of transactions) {
+		if (transaction.userId !== USER_ID || transaction.deletedAt) continue;
+
+		if (transaction.type === "Income" && balances.has(transaction.accountId)) {
+			balances.set(
+				transaction.accountId,
+				balances.get(transaction.accountId)! + transaction.amount
+			);
+		} else if (transaction.type === "Expense" && balances.has(transaction.accountId)) {
+			balances.set(
+				transaction.accountId,
+				balances.get(transaction.accountId)! - transaction.amount
+			);
+		} else if (transaction.type === "Transfer") {
+			if (!transaction.toAccountId || !accountById.has(transaction.toAccountId)) continue;
+
+			if (balances.has(transaction.accountId)) {
+				balances.set(
+					transaction.accountId,
+					balances.get(transaction.accountId)! - transaction.amount
+				);
+			}
+
+			if (transaction.toAccountId && balances.has(transaction.toAccountId)) {
+				const source = accountById.get(transaction.accountId);
+				const destination = accountById.get(transaction.toAccountId);
+				if (source && destination && source.currency !== destination.currency) continue;
+				balances.set(
+					transaction.toAccountId,
+					balances.get(transaction.toAccountId)! + transaction.amount
+				);
+			}
+		}
+	}
+
+	return {
+		cashBalance: balances.get("cash-aed") ?? 0,
+		netWorth: [...balances.values()].reduce((sum, balance) => sum + balance, 0),
+	};
+}
+
+function assertBalanceConservation(
+	accounts: Account[],
+	transactions: Transaction[],
+	balances: Map<string, number>
+) {
+	const activeAccounts = accounts.filter((account) => !account.deletedAt);
+	const accountById = new Map(activeAccounts.map((account) => [account.id, account]));
+	const currencies = new Set(activeAccounts.map((account) => account.currency));
+	let globalTransferDelta = 0;
+
+	for (const currency of currencies) {
+		let expected = 0;
+		let transferDelta = 0;
+		const accountIds = new Set(
+			activeAccounts.filter((account) => account.currency === currency).map((account) => account.id)
+		);
+
+		for (const account of activeAccounts) {
+			if (account.currency === currency) expected += account.openingBalance;
+		}
+
+		for (const transaction of transactions) {
+			if (transaction.deletedAt) continue;
+
+			if (transaction.type === "Income" && accountIds.has(transaction.accountId)) {
+				expected += transaction.amount;
+			} else if (transaction.type === "Expense" && accountIds.has(transaction.accountId)) {
+				expected -= transaction.amount;
+			} else if (transaction.type === "Transfer") {
+				const source = accountById.get(transaction.accountId);
+				const destination = transaction.toAccountId
+					? accountById.get(transaction.toAccountId)
+					: undefined;
+				if (source) {
+					globalTransferDelta -= transaction.amount;
+					if (source.currency === currency) transferDelta -= transaction.amount;
+				}
+				if (destination) {
+					globalTransferDelta += transaction.amount;
+					if (destination.currency === currency) transferDelta += transaction.amount;
+				}
+			}
+		}
+
+		const actual = [...accountIds].reduce(
+			(sum, accountId) => sum + (balances.get(accountId) ?? 0),
+			0
+		);
+		expect(actual).toBeCloseTo(expected + transferDelta, 2);
+	}
+
+	expect(globalTransferDelta).toBeCloseTo(0, 2);
+}
+
+function assertTransferLegsVisible(
+	accounts: Account[],
+	transactions: Transaction[],
+	visibleAccountIds: Set<string>
+) {
+	const activeAccountIds = new Set(
+		accounts.filter((account) => !account.deletedAt).map((account) => account.id)
+	);
+
+	for (const transaction of transactions) {
+		if (transaction.type !== "Transfer" || transaction.deletedAt || !transaction.toAccountId) {
+			continue;
+		}
+		if (
+			!activeAccountIds.has(transaction.accountId) ||
+			!activeAccountIds.has(transaction.toAccountId)
+		) {
+			continue;
+		}
+
+		expect(visibleAccountIds.has(transaction.accountId)).toBe(
+			visibleAccountIds.has(transaction.toAccountId)
+		);
+	}
 }
 
 async function seedAnalyticsHistoryData() {
@@ -432,6 +741,7 @@ describe("historical analytics queries", () => {
 			"aed-active",
 			"aed-archived",
 			"aed-liability",
+			"usd-active",
 		]);
 		expect(
 			Object.fromEntries(analytics.accounts.map((account) => [account.accountId, account.balance]))
@@ -439,11 +749,12 @@ describe("historical analytics queries", () => {
 			"aed-active": 1489,
 			"aed-archived": 330,
 			"aed-liability": -500,
+			"usd-active": -250,
 		});
-		expect(analytics.netWorth).toBe(1319);
+		expect(analytics.netWorth).toBe(1069);
 	});
 
-	it("does not let invalid transfers affect historical account balances", async () => {
+	it("warns while preserving legacy invalid-transfer source debits", async () => {
 		await db.transactions.put({
 			id: "aed-invalid-transfer",
 			userId: USER_ID,
@@ -466,13 +777,219 @@ describe("historical analytics queries", () => {
 		});
 
 		expect(analytics.accounts.find((account) => account.accountId === "aed-active")?.balance).toBe(
-			1489
+			-530665.23
 		);
 		expect(analytics.warnings).toContainEqual({
 			code: "invalid_transfer_counterparty_skipped",
 			transactionId: "aed-invalid-transfer",
 			message:
-				"Transfer balance impact was skipped because the destination account is missing or deleted.",
+				"Transfer destination is missing or deleted; the source account was still debited to preserve legacy balance arithmetic.",
 		});
+	});
+
+	it("reconciles the balance regression fixture against imported ground truth", () => {
+		const regressedFixture = buildBalanceRegressionFixture(532154.23);
+		const regressed = aggregateWithRegressedTransferSemantics(
+			regressedFixture.accounts,
+			regressedFixture.transactions
+		);
+
+		expect(regressed.cashBalance).toBeCloseTo(-4494676.42, 2);
+
+		const { accounts, transactions } = buildBalanceRegressionFixture(1848.59);
+		const analytics = aggregateAccountsAnalytics(USER_ID, accounts, transactions, {
+			currency: "AED",
+			asOf: new Date("2026-09-30T23:30:00.000+04:00"),
+			timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			period: {
+				interval: "monthly",
+				anchorDate: new Date("2026-09-15T12:00:00.000+04:00"),
+				timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			},
+		});
+		const cash = analytics.accounts.find((account) => account.accountId === "cash-aed");
+		const balances = computeAccountBalances(USER_ID, accounts, transactions, {
+			asOfMs: new Date("2026-09-30T23:30:00.000+04:00").getTime(),
+		}).balances;
+
+		expect(transactions).toHaveLength(10000);
+		expect(cash?.balance).toBeCloseTo(378.09, 2);
+		expect(analytics.netWorth).toBeCloseTo(97371.12, 2);
+		expect(analytics.inflow).toBeCloseTo(8884.73, 2);
+		expect(analytics.outflow).toBeCloseTo(10355.23, 2);
+		expect(analytics.warnings).toHaveLength(9);
+		assertBalanceConservation(accounts, transactions, balances);
+
+		const allTime = aggregateAccountsAnalytics(USER_ID, accounts, transactions, {
+			currency: "AED",
+			asOf: new Date("2026-09-30T23:30:00.000+04:00"),
+			timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			period: {
+				interval: "all-time",
+				anchorDate: new Date("2026-09-15T12:00:00.000+04:00"),
+				timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			},
+		});
+
+		expect(allTime.inflow).toBeCloseTo(2434770.56, 2);
+		expect(allTime.outflow).toBeCloseTo(2133900, 2);
+	});
+
+	it("keeps bad-currency transfer counterparties visible and applies transfer legs symmetrically", () => {
+		const now = gst("2026-09-29T12:00:00.000+04:00");
+		const accounts: Account[] = [
+			{
+				id: "cash-aed",
+				userId: USER_ID,
+				title: "Cash",
+				openingBalance: 1000,
+				currency: "AED",
+				isArchived: false,
+				updatedAt: now,
+			},
+			{
+				id: "pkr-missing-from-enabled-currencies",
+				userId: USER_ID,
+				title: "PKR account not in enabled currencies",
+				openingBalance: 5000,
+				currency: "PKR",
+				isArchived: false,
+				updatedAt: now,
+			},
+			{
+				id: "blank-currency-account",
+				userId: USER_ID,
+				title: "Account with blank currency",
+				openingBalance: 0,
+				currency: "",
+				isArchived: false,
+				updatedAt: now,
+			},
+			{
+				id: "lowercase-aed-account",
+				userId: USER_ID,
+				title: "Lowercase AED account",
+				openingBalance: 200,
+				currency: "aed",
+				isArchived: false,
+				updatedAt: now,
+			},
+			{
+				id: "whitespace-aed-account",
+				userId: USER_ID,
+				title: "Whitespace AED account",
+				openingBalance: 300,
+				currency: " AED ",
+				isArchived: false,
+				updatedAt: now,
+			},
+			{
+				id: "undefined-currency-account",
+				userId: USER_ID,
+				title: "Undefined currency account",
+				openingBalance: 7,
+				currency: undefined as unknown as string,
+				isArchived: false,
+				updatedAt: now,
+			},
+		];
+		const transactions: Transaction[] = [
+			{
+				id: "pkr-to-cash-heavy-transfer",
+				userId: USER_ID,
+				type: "Transfer",
+				date: now,
+				amount: 4000,
+				accountId: "pkr-missing-from-enabled-currencies",
+				toAccountId: "cash-aed",
+				updatedAt: now,
+			},
+			{
+				id: "cash-to-blank-currency-transfer",
+				userId: USER_ID,
+				type: "Transfer",
+				date: now + 1,
+				amount: 1000,
+				accountId: "cash-aed",
+				toAccountId: "blank-currency-account",
+				updatedAt: now,
+			},
+			{
+				id: "blank-currency-income",
+				userId: USER_ID,
+				type: "Income",
+				date: now + 2,
+				amount: 100,
+				accountId: "blank-currency-account",
+				updatedAt: now,
+			},
+			{
+				id: "lowercase-aed-expense",
+				userId: USER_ID,
+				type: "Expense",
+				date: now + 3,
+				amount: 50,
+				accountId: "lowercase-aed-account",
+				updatedAt: now,
+			},
+			{
+				id: "whitespace-aed-income",
+				userId: USER_ID,
+				type: "Income",
+				date: now + 4,
+				amount: 20,
+				accountId: "whitespace-aed-account",
+				updatedAt: now,
+			},
+		];
+		const regressed = aggregateWithRegressedTransferSemantics(accounts, transactions);
+
+		expect(regressed.cashBalance).toBe(0);
+
+		const analytics = aggregateAccountsAnalytics(USER_ID, accounts, transactions, {
+			currency: "AED",
+			enabledCurrencies: ["AED"],
+			asOf: new Date("2026-09-30T23:30:00.000+04:00"),
+			timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			period: {
+				interval: "monthly",
+				anchorDate: new Date("2026-09-15T12:00:00.000+04:00"),
+				timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			},
+		});
+		const balances = new Map(
+			analytics.accounts.map((account) => [account.accountId, account.balance])
+		);
+
+		expect(Object.fromEntries(balances)).toMatchObject({
+			"cash-aed": 4000,
+			"pkr-missing-from-enabled-currencies": 1000,
+			"blank-currency-account": 1100,
+			"lowercase-aed-account": 150,
+			"whitespace-aed-account": 320,
+			"undefined-currency-account": 7,
+		});
+		expect(analytics.netWorth).toBe(6577);
+		expect(analytics.accounts.map((account) => account.accountId).sort()).toEqual([
+			"blank-currency-account",
+			"cash-aed",
+			"lowercase-aed-account",
+			"pkr-missing-from-enabled-currencies",
+			"undefined-currency-account",
+			"whitespace-aed-account",
+		]);
+		expect(analytics.warnings.map((warning) => warning.code)).toEqual([
+			"cross_currency_transfer_destination_skipped",
+			"cross_currency_transfer_destination_skipped",
+			"account_currency_unscoped",
+			"account_currency_unscoped",
+			"account_currency_unscoped",
+		]);
+		assertBalanceConservation(accounts, transactions, balances);
+		assertTransferLegsVisible(
+			accounts,
+			transactions,
+			new Set(analytics.accounts.map((account) => account.accountId))
+		);
 	});
 });

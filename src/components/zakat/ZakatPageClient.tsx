@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
+import { computeAccountBalances } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import { fetchGoldPrice } from "@/lib/goldPrice";
 import { exportZakatSummary } from "@/lib/zakatExport";
@@ -37,7 +38,7 @@ export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
 	const referenceCurrency = activeCurrency !== "" ? activeCurrency : (config?.currency ?? "PKR");
-	const accounts = useAccounts(userId, { currency: activeCurrency || undefined });
+	const accounts = useAccounts(userId);
 
 	const allTransactions = useLiveQuery(
 		() =>
@@ -82,24 +83,8 @@ export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 	const accountBalances = useMemo(() => {
 		if (!accounts || !allTransactions) return new Map<string, number>();
 		const asOf = endOfDay(assessmentDate).getTime();
-		const map = new Map<string, number>();
-
-		for (const account of accounts) {
-			let balance = account.openingBalance;
-			for (const t of allTransactions) {
-				if (t.date > asOf) continue;
-				if (t.accountId === account.id) {
-					if (t.type === "Income") balance += t.amount;
-					else if (t.type === "Expense") balance -= t.amount;
-					else if (t.type === "Transfer") balance -= t.amount;
-				} else if (t.toAccountId === account.id && t.type === "Transfer") {
-					balance += t.amount;
-				}
-			}
-			map.set(account.id, balance);
-		}
-		return map;
-	}, [accounts, allTransactions, assessmentDate]);
+		return computeAccountBalances(userId, accounts, allTransactions, { asOfMs: asOf }).balances;
+	}, [accounts, allTransactions, assessmentDate, userId]);
 
 	// ── Unique non-reference currencies ────────────────────────────────────
 	const foreignCurrencies = useMemo(() => {

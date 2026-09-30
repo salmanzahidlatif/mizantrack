@@ -1,4 +1,10 @@
 import {
+	computeAccountBalances,
+	getActiveUserAccounts,
+	normalizeCurrencyCode,
+	type BalanceWarning,
+} from "@/lib/analytics/balanceMath";
+import {
 	formatMonthLabel,
 	getDateRange,
 	getMonthRange,
@@ -74,6 +80,7 @@ export interface AnalyticsMonthSummaryItem {
 
 export interface AccountsAnalyticsQuery {
 	currency: string;
+	enabledCurrencies?: string[];
 	period?: Omit<PeriodAnalyticsQuery, "currency">;
 	asOf?: Date;
 	timeZoneOffsetMinutes?: number;
@@ -100,11 +107,14 @@ export interface AccountsAnalytics {
 	outflow: number;
 	netFlow: number;
 	accounts: AccountBalanceBreakdownItem[];
-	warnings: Array<{
-		code: "cross_currency_transfer_destination_skipped" | "invalid_transfer_counterparty_skipped";
-		transactionId: string;
-		message: string;
-	}>;
+	warnings: Array<
+		| BalanceWarning
+		| {
+				code: "account_currency_unscoped";
+				accountId: string;
+				message: string;
+		  }
+	>;
 }
 
 interface AccountScope {
@@ -135,42 +145,23 @@ function resolvePeriod(
 }
 
 function getAccountScope(userId: string, accounts: Account[], currency: string): AccountScope {
-	const activeAccounts = accounts.filter(
-		(account) => account.userId === userId && !account.deletedAt
-	);
+	const activeAccounts = getActiveUserAccounts(userId, accounts);
 	const accountById = new Map(activeAccounts.map((account) => [account.id, account]));
-	const scopedAccounts = activeAccounts.filter((account) => account.currency === currency);
-	const currencyAccountIds = new Set(scopedAccounts.map((account) => account.id));
+	const normalizedCurrency = normalizeCurrencyCode(currency);
+	const scopedAccounts = activeAccounts;
+	const currencyAccountIds = new Set<string>();
+	for (const account of activeAccounts) {
+		const accountCurrency = normalizeCurrencyCode(account.currency);
+		if (accountCurrency === normalizedCurrency || !accountCurrency) {
+			currencyAccountIds.add(account.id);
+		}
+	}
 
 	return {
 		accounts: scopedAccounts,
 		accountById,
 		currencyAccountIds,
 	};
-}
-
-function isKnownCrossCurrencyTransfer(
-	transaction: Transaction,
-	accountById: Map<string, Account>
-): boolean {
-	if (transaction.type !== "Transfer" || !transaction.toAccountId) return false;
-
-	const sourceAccount = accountById.get(transaction.accountId);
-	const destinationAccount = accountById.get(transaction.toAccountId);
-
-	return Boolean(
-		sourceAccount && destinationAccount && sourceAccount.currency !== destinationAccount.currency
-	);
-}
-
-function hasInvalidTransferCounterparty(
-	transaction: Transaction,
-	accountById: Map<string, Account>
-): boolean {
-	return (
-		transaction.type === "Transfer" &&
-		(!transaction.toAccountId || !accountById.has(transaction.toAccountId))
-	);
 }
 
 function categoryMatchesBreakdown(
@@ -439,6 +430,38 @@ function getEndOfAsOfDay(asOf: Date, timeZoneOffsetMinutes?: number): Date {
 	}).to;
 }
 
+function getAccountCurrencyWarnings(
+	accounts: Account[],
+	query: AccountsAnalyticsQuery
+): AccountsAnalytics["warnings"] {
+	const enabledCurrencies = new Set((query.enabledCurrencies ?? []).map(normalizeCurrencyCode));
+	const warnings: AccountsAnalytics["warnings"] = [];
+
+	for (const account of accounts) {
+		const accountCurrency = normalizeCurrencyCode(account.currency);
+		if (!accountCurrency) {
+			warnings.push({
+				code: "account_currency_unscoped",
+				accountId: account.id,
+				message:
+					"Account has no valid currency, so it is kept visible and included in balance totals instead of being silently dropped.",
+			});
+			continue;
+		}
+
+		if (enabledCurrencies.size > 0 && !enabledCurrencies.has(accountCurrency)) {
+			warnings.push({
+				code: "account_currency_unscoped",
+				accountId: account.id,
+				message:
+					"Account currency is not enabled in preferences, so it is kept visible and included in balance totals instead of being silently dropped.",
+			});
+		}
+	}
+
+	return warnings;
+}
+
 export function aggregateAccountsAnalytics(
 	userId: string,
 	accounts: Account[],
@@ -449,9 +472,10 @@ export function aggregateAccountsAnalytics(
 	const asOf = query.asOf ?? new Date();
 	const period = resolvePeriod(query.period);
 	const scope = getAccountScope(userId, accounts, currency);
-	const balances = new Map(scope.accounts.map((account) => [account.id, account.openingBalance]));
-	const warnings: AccountsAnalytics["warnings"] = [];
 	const asOfMs = getEndOfAsOfDay(asOf, query.timeZoneOffsetMinutes).getTime();
+	const balanceComputation = computeAccountBalances(userId, accounts, transactions, { asOfMs });
+	const balances = balanceComputation.balances;
+	const accountCurrencyWarnings = getAccountCurrencyWarnings(scope.accounts, query);
 
 	let inflow = 0;
 	let outflow = 0;
@@ -467,60 +491,13 @@ export function aggregateAccountsAnalytics(
 			if (transaction.type === "Income") inflow += transaction.amount;
 			if (transaction.type === "Expense") outflow += transaction.amount;
 		}
-
-		if (transaction.date > asOfMs) continue;
-
-		if (transaction.type === "Income" && balances.has(transaction.accountId)) {
-			balances.set(
-				transaction.accountId,
-				balances.get(transaction.accountId)! + transaction.amount
-			);
-		} else if (transaction.type === "Expense" && balances.has(transaction.accountId)) {
-			balances.set(
-				transaction.accountId,
-				balances.get(transaction.accountId)! - transaction.amount
-			);
-		} else if (transaction.type === "Transfer") {
-			if (hasInvalidTransferCounterparty(transaction, scope.accountById)) {
-				warnings.push({
-					code: "invalid_transfer_counterparty_skipped",
-					transactionId: transaction.id,
-					message:
-						"Transfer balance impact was skipped because the destination account is missing or deleted.",
-				});
-				continue;
-			}
-
-			if (balances.has(transaction.accountId)) {
-				balances.set(
-					transaction.accountId,
-					balances.get(transaction.accountId)! - transaction.amount
-				);
-			}
-
-			if (transaction.toAccountId && balances.has(transaction.toAccountId)) {
-				if (isKnownCrossCurrencyTransfer(transaction, scope.accountById)) {
-					warnings.push({
-						code: "cross_currency_transfer_destination_skipped",
-						transactionId: transaction.id,
-						message:
-							"Cross-currency transfer destination balance was not adjusted because no destination amount or FX contract is stored.",
-					});
-				} else {
-					balances.set(
-						transaction.toAccountId,
-						balances.get(transaction.toAccountId)! + transaction.amount
-					);
-				}
-			}
-		}
 	}
 
 	const accountBalances = scope.accounts
 		.map((account) => ({
 			accountId: account.id,
 			title: account.title,
-			currency: account.currency,
+			currency: normalizeCurrencyCode(account.currency) || currency,
 			color: account.color,
 			icon: account.icon,
 			isArchived: account.isArchived,
@@ -540,7 +517,7 @@ export function aggregateAccountsAnalytics(
 		outflow,
 		netFlow: inflow - outflow,
 		accounts: accountBalances,
-		warnings,
+		warnings: [...balanceComputation.warnings, ...accountCurrencyWarnings],
 	};
 }
 

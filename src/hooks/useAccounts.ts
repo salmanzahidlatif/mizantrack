@@ -1,5 +1,6 @@
 import { useLiveQuery } from "dexie-react-hooks";
 
+import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 
 import type { Account } from "@/types";
@@ -12,7 +13,7 @@ export interface AccountFilters {
 }
 
 export function useAccounts(userId: string, filters?: AccountFilters): Account[] | undefined {
-	const currency = filters?.currency;
+	const currency = normalizeCurrencyCode(filters?.currency);
 	const showArchived = filters?.showArchived ?? false;
 
 	return useLiveQuery(
@@ -23,7 +24,10 @@ export function useAccounts(userId: string, filters?: AccountFilters): Account[]
 				.filter((a) => {
 					if (a.deletedAt) return false;
 					if (!showArchived && a.isArchived) return false;
-					if (currency && a.currency !== currency) return false;
+					if (currency) {
+						const accountCurrency = normalizeCurrencyCode(a.currency);
+						if (accountCurrency && accountCurrency !== currency) return false;
+					}
 					return true;
 				})
 				.toArray(),

@@ -17,6 +17,7 @@ export function useAccountsAnalytics(
 		[
 			userId,
 			query?.currency,
+			query?.enabledCurrencies?.join(","),
 			query?.asOf?.getTime(),
 			query?.timeZoneOffsetMinutes,
 			query?.period?.interval,

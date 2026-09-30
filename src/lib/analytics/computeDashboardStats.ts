@@ -1,3 +1,9 @@
+import {
+	accountBalancesToRecord,
+	computeAccountBalances,
+	getActiveUserAccounts,
+	normalizeCurrencyCode,
+} from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 
 import type { Account, DashboardStats, Transaction } from "@/types";
@@ -170,30 +176,6 @@ function sourceAccountMatchesCurrency(
 	return accountIds.has(transaction.accountId);
 }
 
-function isKnownCrossCurrencyTransfer(
-	transaction: Transaction,
-	accountById: Map<string, Account>
-): boolean {
-	if (transaction.type !== "Transfer" || !transaction.toAccountId) return false;
-
-	const sourceAccount = accountById.get(transaction.accountId);
-	const destinationAccount = accountById.get(transaction.toAccountId);
-
-	return Boolean(
-		sourceAccount && destinationAccount && sourceAccount.currency !== destinationAccount.currency
-	);
-}
-
-function hasInvalidTransferCounterparty(
-	transaction: Transaction,
-	accountById: Map<string, Account>
-): boolean {
-	return (
-		transaction.type === "Transfer" &&
-		(!transaction.toAccountId || !accountById.has(transaction.toAccountId))
-	);
-}
-
 export function getMonthlySummaryFromDashboardStats(
 	stats: DashboardStats,
 	months = DEFAULT_TREND_MONTHS,
@@ -222,66 +204,24 @@ export function aggregateDashboardStats(
 	const trendStart = getMonthStartMs(now, timeZoneOffsetMinutes, -(trendMonths - 1));
 	const trendEnd = monthEnd;
 
-	const balances: Record<string, number> = {};
-	const accountById = new Map<string, Account>();
+	const activeAccounts = getActiveUserAccounts(userId, accounts);
+	const balanceComputation = computeAccountBalances(userId, accounts, transactions);
+	const accountById = balanceComputation.accountById;
 	const currencyAccountIds = new Map<string, Set<string>>();
-	const warnings: NonNullable<DashboardStats["warnings"]> = [];
 
-	for (const account of accounts.filter((item) => !item.deletedAt)) {
-		accountById.set(account.id, account);
-		balances[account.id] = account.openingBalance;
-
-		if (!currencyAccountIds.has(account.currency)) {
-			currencyAccountIds.set(account.currency, new Set());
+	for (const account of activeAccounts) {
+		const accountCurrency = normalizeCurrencyCode(account.currency);
+		if (!accountCurrency) continue;
+		if (!currencyAccountIds.has(accountCurrency)) {
+			currencyAccountIds.set(accountCurrency, new Set());
 		}
-		currencyAccountIds.get(account.currency)!.add(account.id);
+		currencyAccountIds.get(accountCurrency)!.add(account.id);
 	}
 
 	const activeTransactions = transactions.filter((transaction) => {
 		if (transaction.deletedAt) return false;
 		return accountById.has(transaction.accountId);
 	});
-
-	for (const transaction of activeTransactions) {
-		const sourceBalance = balances[transaction.accountId];
-
-		if (transaction.type === "Income" && sourceBalance !== undefined) {
-			balances[transaction.accountId] = sourceBalance + transaction.amount;
-		} else if (transaction.type === "Expense" && sourceBalance !== undefined) {
-			balances[transaction.accountId] = sourceBalance - transaction.amount;
-		} else if (transaction.type === "Transfer") {
-			if (hasInvalidTransferCounterparty(transaction, accountById)) {
-				warnings.push({
-					code: "invalid_transfer_counterparty_skipped",
-					transactionId: transaction.id,
-					message:
-						"Transfer balance impact was skipped because the destination account is missing or deleted.",
-				});
-				continue;
-			}
-
-			const isCrossCurrency = isKnownCrossCurrencyTransfer(transaction, accountById);
-			if (sourceBalance !== undefined) {
-				balances[transaction.accountId] = sourceBalance - transaction.amount;
-			}
-
-			if (transaction.toAccountId) {
-				const destinationBalance = balances[transaction.toAccountId];
-				if (destinationBalance !== undefined) {
-					if (isCrossCurrency) {
-						warnings.push({
-							code: "cross_currency_transfer_destination_skipped",
-							transactionId: transaction.id,
-							message:
-								"Cross-currency transfer destination balance was not adjusted because no destination amount or FX contract is stored.",
-						});
-						continue;
-					}
-					balances[transaction.toAccountId] = destinationBalance + transaction.amount;
-				}
-			}
-		}
-	}
 
 	const aggregates = new Map<string, AggregateState>();
 	aggregates.set(
@@ -352,10 +292,10 @@ export function aggregateDashboardStats(
 	return {
 		id: userId,
 		updatedAt: Date.now(),
-		balances,
+		balances: accountBalancesToRecord(balanceComputation.balances),
 		perCurrency,
 		recent,
-		...(warnings.length > 0 && { warnings }),
+		...(balanceComputation.warnings.length > 0 && { warnings: balanceComputation.warnings }),
 	};
 }
 
