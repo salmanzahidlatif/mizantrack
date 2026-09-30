@@ -4,7 +4,11 @@ import {
 	getActiveUserAccounts,
 	normalizeCurrencyCode,
 } from "@/lib/analytics/balanceMath";
-import { db } from "@/lib/db/local";
+import {
+	buildAnalyticsDataVersion,
+	getAnalyticsSourceData,
+	markDashboardStatsCacheValid,
+} from "@/lib/analytics/cacheMetadata";
 
 import type { Account, DashboardStats, Transaction } from "@/types";
 
@@ -76,7 +80,8 @@ function stripUndefinedDeep<T>(value: T): T {
  * records (Firestore rejects those too, with "Unsupported field value").
  */
 export function sanitizeDashboardStats(stats: DashboardStats): DashboardStats {
-	let result = stats;
+	const { analyticsCache: _analyticsCache, ...statsForRemote } = stats;
+	let result = statsForRemote;
 
 	if (Object.prototype.hasOwnProperty.call(stats.perCurrency, "")) {
 		const { "": allCurrencies, ...rest } = stats.perCurrency;
@@ -176,6 +181,37 @@ function sourceAccountMatchesCurrency(
 	return accountIds.has(transaction.accountId);
 }
 
+function applyTransactionToAggregate(
+	state: AggregateState,
+	transaction: Transaction,
+	monthStart: number,
+	monthEnd: number,
+	trendStart: number,
+	trendEnd: number,
+	timeZoneOffsetMinutes: number
+) {
+	if (transaction.date >= monthStart && transaction.date <= monthEnd) {
+		if (transaction.type === "Income") {
+			state.summary.monthIncome += transaction.amount;
+		} else if (transaction.type === "Expense") {
+			state.summary.monthExpense += transaction.amount;
+		}
+	}
+
+	if (transaction.date < trendStart || transaction.date > trendEnd) return;
+
+	const bucket = state.trendMap.get(
+		formatDashboardMonthLabel(transaction.date, timeZoneOffsetMinutes)
+	);
+	if (!bucket) return;
+
+	if (transaction.type === "Income") {
+		bucket.income += transaction.amount;
+	} else if (transaction.type === "Expense") {
+		bucket.expense += transaction.amount;
+	}
+}
+
 export function getMonthlySummaryFromDashboardStats(
 	stats: DashboardStats,
 	months = DEFAULT_TREND_MONTHS,
@@ -208,10 +244,12 @@ export function aggregateDashboardStats(
 	const balanceComputation = computeAccountBalances(userId, accounts, transactions);
 	const accountById = balanceComputation.accountById;
 	const currencyAccountIds = new Map<string, Set<string>>();
+	const accountCurrencyById = new Map<string, string>();
 
 	for (const account of activeAccounts) {
 		const accountCurrency = normalizeCurrencyCode(account.currency);
 		if (!accountCurrency) continue;
+		accountCurrencyById.set(account.id, accountCurrency);
 		if (!currencyAccountIds.has(accountCurrency)) {
 			currencyAccountIds.set(accountCurrency, new Set());
 		}
@@ -236,29 +274,31 @@ export function aggregateDashboardStats(
 	}
 
 	for (const transaction of activeTransactions) {
-		for (const state of aggregates.values()) {
-			if (!sourceAccountMatchesCurrency(transaction, state.accountIds)) continue;
-
-			if (transaction.date >= monthStart && transaction.date <= monthEnd) {
-				if (transaction.type === "Income") {
-					state.summary.monthIncome += transaction.amount;
-				} else if (transaction.type === "Expense") {
-					state.summary.monthExpense += transaction.amount;
-				}
-			}
-
-			if (transaction.date < trendStart || transaction.date > trendEnd) continue;
-
-			const bucket = state.trendMap.get(
-				formatDashboardMonthLabel(transaction.date, timeZoneOffsetMinutes)
+		const allCurrencies = aggregates.get(ALL_CURRENCIES_KEY);
+		if (allCurrencies) {
+			applyTransactionToAggregate(
+				allCurrencies,
+				transaction,
+				monthStart,
+				monthEnd,
+				trendStart,
+				trendEnd,
+				timeZoneOffsetMinutes
 			);
-			if (!bucket) continue;
+		}
 
-			if (transaction.type === "Income") {
-				bucket.income += transaction.amount;
-			} else if (transaction.type === "Expense") {
-				bucket.expense += transaction.amount;
-			}
+		const currency = accountCurrencyById.get(transaction.accountId);
+		const currencyState = currency ? aggregates.get(currency) : undefined;
+		if (currencyState && sourceAccountMatchesCurrency(transaction, currencyState.accountIds)) {
+			applyTransactionToAggregate(
+				currencyState,
+				transaction,
+				monthStart,
+				monthEnd,
+				trendStart,
+				trendEnd,
+				timeZoneOffsetMinutes
+			);
 		}
 	}
 
@@ -303,10 +343,11 @@ export async function computeDashboardStats(
 	userId: string,
 	options: DashboardStatsAggregationOptions = {}
 ): Promise<DashboardStats> {
-	const [accounts, transactions] = await Promise.all([
-		db.accounts.where("userId").equals(userId).toArray(),
-		db.transactions.where("userId").equals(userId).toArray(),
-	]);
+	const source = await getAnalyticsSourceData(userId);
+	const dataVersion = buildAnalyticsDataVersion(source);
 
-	return aggregateDashboardStats(userId, accounts, transactions, options);
+	return markDashboardStatsCacheValid(
+		aggregateDashboardStats(userId, source.accounts, source.transactions, options),
+		dataVersion
+	);
 }

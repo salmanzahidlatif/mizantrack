@@ -99,6 +99,42 @@ export interface CategoryCurrencyBackfillDecision {
 export interface DashboardStats {
 	id: string; // userId
 	updatedAt: number; // Unix ms
+	logicVersion?: number;
+	dataVersion?: string;
+	cacheStatus?: "valid" | "recomputing";
+	cacheUpdatedAt?: number;
+	analyticsCache?: {
+		accounts?: Record<
+			string,
+			{
+				logicVersion: number;
+				dataVersion: string;
+				key: string;
+				updatedAt: number;
+				value: unknown;
+			}
+		>;
+		periods?: Record<
+			string,
+			{
+				logicVersion: number;
+				dataVersion: string;
+				key: string;
+				updatedAt: number;
+				value: unknown;
+			}
+		>;
+		monthlySummaries?: Record<
+			string,
+			{
+				logicVersion: number;
+				dataVersion: string;
+				key: string;
+				updatedAt: number;
+				value: unknown;
+			}
+		>;
+	};
 	balances: Record<string, number>;
 	perCurrency: Record<
 		string,

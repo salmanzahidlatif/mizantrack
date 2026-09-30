@@ -1,8 +1,8 @@
 import { useLiveQuery } from "dexie-react-hooks";
 
+import { getOrComputeDashboardStats } from "@/lib/analytics/cache";
 import { DEFAULT_TREND_MONTHS } from "@/lib/analytics/computeDashboardStats";
 import { getMonthlySummaries, getPeriodAnalytics } from "@/lib/analytics/periodAnalytics";
-import { db } from "@/lib/db/local";
 
 import type { DashboardStats } from "@/types";
 
@@ -44,7 +44,7 @@ export function useDashboardStats(
 	query?: DashboardStatsQuery
 ): DashboardStats | undefined {
 	return useLiveQuery(async () => {
-		const stats = await db.dashboardStats.get(userId);
+		const stats = await getOrComputeDashboardStats(userId);
 		if (!stats || !query?.currency) return stats;
 
 		try {

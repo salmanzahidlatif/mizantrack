@@ -26,7 +26,7 @@ export function useAccounts(userId: string, filters?: AccountFilters): Account[]
 					if (!showArchived && a.isArchived) return false;
 					if (currency) {
 						const accountCurrency = normalizeCurrencyCode(a.currency);
-						if (accountCurrency && accountCurrency !== currency) return false;
+						if (accountCurrency !== currency) return false;
 					}
 					return true;
 				})

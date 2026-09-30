@@ -741,7 +741,6 @@ describe("historical analytics queries", () => {
 			"aed-active",
 			"aed-archived",
 			"aed-liability",
-			"usd-active",
 		]);
 		expect(
 			Object.fromEntries(analytics.accounts.map((account) => [account.accountId, account.balance]))
@@ -749,9 +748,14 @@ describe("historical analytics queries", () => {
 			"aed-active": 1489,
 			"aed-archived": 330,
 			"aed-liability": -500,
-			"usd-active": -250,
 		});
-		expect(analytics.netWorth).toBe(1069);
+		expect(
+			analytics.allAccounts.find((account) => account.accountId === "usd-active")
+		).toMatchObject({
+			balance: -250,
+			currency: "USD",
+		});
+		expect(analytics.netWorth).toBe(1319);
 	});
 
 	it("warns while preserving legacy invalid-transfer source debits", async () => {
@@ -958,7 +962,7 @@ describe("historical analytics queries", () => {
 			},
 		});
 		const balances = new Map(
-			analytics.accounts.map((account) => [account.accountId, account.balance])
+			analytics.allAccounts.map((account) => [account.accountId, account.balance])
 		);
 
 		expect(Object.fromEntries(balances)).toMatchObject({
@@ -969,14 +973,16 @@ describe("historical analytics queries", () => {
 			"whitespace-aed-account": 320,
 			"undefined-currency-account": 7,
 		});
-		expect(analytics.netWorth).toBe(6577);
+		expect(analytics.netWorth).toBe(4470);
 		expect(analytics.accounts.map((account) => account.accountId).sort()).toEqual([
-			"blank-currency-account",
 			"cash-aed",
 			"lowercase-aed-account",
+			"whitespace-aed-account",
+		]);
+		expect(analytics.unscopedAccounts.map((account) => account.accountId).sort()).toEqual([
+			"blank-currency-account",
 			"pkr-missing-from-enabled-currencies",
 			"undefined-currency-account",
-			"whitespace-aed-account",
 		]);
 		expect(analytics.warnings.map((warning) => warning.code)).toEqual([
 			"cross_currency_transfer_destination_skipped",
@@ -989,7 +995,7 @@ describe("historical analytics queries", () => {
 		assertTransferLegsVisible(
 			accounts,
 			transactions,
-			new Set(analytics.accounts.map((account) => account.accountId))
+			new Set(analytics.allAccounts.map((account) => account.accountId))
 		);
 	});
 });

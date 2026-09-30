@@ -1,8 +1,8 @@
 import { useLiveQuery } from "dexie-react-hooks";
 
+import { getOrComputeDashboardStats } from "@/lib/analytics/cache";
 import { getMonthlySummaryFromDashboardStats } from "@/lib/analytics/computeDashboardStats";
 import { getMonthlySummaries } from "@/lib/analytics/periodAnalytics";
-import { db } from "@/lib/db/local";
 
 export interface MonthlySummaryItem {
 	month: string; // "Jan 26"
@@ -38,8 +38,7 @@ export function useMonthlySummary(
 			}));
 		}
 
-		const stats = await db.dashboardStats.get(userId);
-		if (!stats) return undefined;
+		const stats = await getOrComputeDashboardStats(userId);
 		return getMonthlySummaryFromDashboardStats(stats, months, currency);
 	}, [userId, months, currency, query?.from]);
 }

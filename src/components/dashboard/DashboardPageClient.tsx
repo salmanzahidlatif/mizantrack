@@ -81,7 +81,6 @@ interface SummarySplitCardProps {
 
 interface WhatYouHaveCardProps {
 	analytics?: AccountsAnalytics;
-	currency: string;
 	onAddAccount: () => void;
 }
 
@@ -319,7 +318,7 @@ function WhatYouHaveSkeleton() {
 	);
 }
 
-function WhatYouHaveCard({ analytics, currency, onAddAccount }: WhatYouHaveCardProps) {
+function WhatYouHaveCard({ analytics, onAddAccount }: WhatYouHaveCardProps) {
 	if (!analytics) {
 		return <WhatYouHaveSkeleton />;
 	}
@@ -335,7 +334,7 @@ function WhatYouHaveCard({ analytics, currency, onAddAccount }: WhatYouHaveCardP
 					</p>
 					<CurrencyAmount
 						amount={analytics.netWorth}
-						currency={currency}
+						currency={analytics.currency}
 						colorized
 						showNegativeSign
 						className="mt-2 block text-3xl leading-9"
@@ -360,7 +359,7 @@ function WhatYouHaveCard({ analytics, currency, onAddAccount }: WhatYouHaveCardP
 						<p className="truncate text-xs font-medium text-muted-foreground">{account.title}</p>
 						<CurrencyAmount
 							amount={account.balance}
-							currency={account.currency || currency}
+							currency={account.currency}
 							colorized
 							showNegativeSign
 							className="mt-1 block truncate text-sm leading-5"
@@ -553,11 +552,7 @@ export function DashboardPageClient({ userId }: DashboardPageClientProps) {
 				aria-label="Swipe dashboard month summary"
 				className="touch-pan-y space-y-5"
 				style={{ touchAction: "pan-y" }}>
-				<WhatYouHaveCard
-					analytics={accountAnalytics}
-					currency={currency}
-					onAddAccount={handleAddAccount}
-				/>
+				<WhatYouHaveCard analytics={accountAnalytics} onAddAccount={handleAddAccount} />
 
 				<SummarySplitCard
 					analytics={periodAnalytics}

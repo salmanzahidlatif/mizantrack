@@ -26,6 +26,7 @@ import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
 import type { AccountsAnalytics } from "@/lib/analytics/periodAnalytics";
+import type { Account } from "@/types";
 
 interface AccountsPageClientProps {
 	userId: string;
@@ -113,6 +114,18 @@ function AccountsSummaryCard({
 	);
 }
 
+function getAccountsByAnalyticsIds(
+	allAccounts: Account[] | undefined,
+	analyticsAccounts: AccountsAnalytics["accounts"] | undefined
+) {
+	if (!allAccounts || !analyticsAccounts) return undefined;
+
+	const accountById = new Map(allAccounts.map((account) => [account.id, account]));
+	return analyticsAccounts
+		.map((account) => accountById.get(account.accountId))
+		.filter((account): account is Account => account !== undefined);
+}
+
 export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 	const router = useRouter();
 	const { activeCurrency, showArchivedAccounts, setShowArchivedAccounts, setAccountId } =
@@ -146,15 +159,12 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 		router.push("/transactions");
 	}
 
-	// Keep every account reachable; income/expense analytics remain scoped by currency.
-	const accounts = useAccounts(userId, {
-		showArchived: showArchivedAccounts,
-	});
-
-	// Also fetch archived count to show/hide toggle
+	// Fetch every account for actions/reachability; analytics decides selected-currency display scope.
 	const allAccounts = useAccounts(userId, {
 		showArchived: true,
 	});
+	const accounts = getAccountsByAnalyticsIds(allAccounts, analytics?.accounts);
+	const unscopedAccounts = getAccountsByAnalyticsIds(allAccounts, analytics?.unscopedAccounts);
 	const hasArchived = allAccounts?.some((a) => a.isArchived) ?? false;
 
 	return (
@@ -201,10 +211,12 @@ export function AccountsPageClient({ userId }: AccountsPageClientProps) {
 
 			<AccountList
 				accounts={accounts}
+				unscopedAccounts={unscopedAccounts}
 				analytics={analytics}
 				showArchived={showArchivedAccounts}
 				sortBy={sortBy}
 				userId={userId}
+				activeCurrency={analytics?.currency ?? resolvedCurrency}
 				onSelectAccount={handleSelectAccount}
 			/>
 			<AccountDrawer userId={userId} />

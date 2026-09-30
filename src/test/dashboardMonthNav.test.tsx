@@ -166,6 +166,25 @@ function buildAccountsAnalytics(netWorth = 97218.91): AccountsAnalytics {
 				accountType: "asset",
 			},
 		],
+		allAccounts: [
+			{
+				accountId: "fab",
+				title: "FAB - Savings",
+				currency: "AED",
+				balance: 142594.69,
+				isArchived: false,
+				accountType: "asset",
+			},
+			{
+				accountId: "cash",
+				title: "Cash",
+				currency: "AED",
+				balance: 378.09,
+				isArchived: false,
+				accountType: "asset",
+			},
+		],
+		unscopedAccounts: [],
 		warnings: [],
 	};
 }

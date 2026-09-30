@@ -5,6 +5,12 @@ import {
 	type BalanceWarning,
 } from "@/lib/analytics/balanceMath";
 import {
+	getAccountsAnalyticsCacheKey,
+	getMonthlySummariesCacheKey,
+	getOrComputeCachedAnalyticsValue,
+	getPeriodAnalyticsCacheKey,
+} from "@/lib/analytics/cache";
+import {
 	formatMonthLabel,
 	getDateRange,
 	getMonthRange,
@@ -14,7 +20,6 @@ import {
 	type AnalyticsInterval,
 	type ResolvedAnalyticsPeriod,
 } from "@/lib/dateRange";
-import { db } from "@/lib/db/local";
 
 import type { Account, Category, DateRange, Transaction } from "@/types";
 
@@ -106,7 +111,15 @@ export interface AccountsAnalytics {
 	inflow: number;
 	outflow: number;
 	netFlow: number;
+	/** Account balances whose normalized currency exactly matches `currency`. Safe to total. */
 	accounts: AccountBalanceBreakdownItem[];
+	/** Computed balances for every active account. For diagnostics only; never sum for display. */
+	allAccounts: AccountBalanceBreakdownItem[];
+	/**
+	 * Active accounts with blank, unknown, or disabled currency codes that cannot be safely
+	 * included in a selected-currency total. Show separately so they remain reachable.
+	 */
+	unscopedAccounts: AccountBalanceBreakdownItem[];
 	warnings: Array<
 		| BalanceWarning
 		| {
@@ -119,12 +132,12 @@ export interface AccountsAnalytics {
 
 interface AccountScope {
 	accounts: Account[];
-	accountById: Map<string, Account>;
 	currencyAccountIds: Set<string>;
+	unscopedAccountIds: Set<string>;
 }
 
 function assertCurrency(currency: string): string {
-	const normalized = currency.trim();
+	const normalized = normalizeCurrencyCode(currency);
 	if (!normalized) {
 		throw new Error("Analytics queries require an explicit currency. Refusing to mix currencies.");
 	}
@@ -144,23 +157,37 @@ function resolvePeriod(
 	});
 }
 
-function getAccountScope(userId: string, accounts: Account[], currency: string): AccountScope {
+function getAccountScope(
+	userId: string,
+	accounts: Account[],
+	currency: string,
+	enabledCurrencies: string[] = []
+): AccountScope {
 	const activeAccounts = getActiveUserAccounts(userId, accounts);
-	const accountById = new Map(activeAccounts.map((account) => [account.id, account]));
 	const normalizedCurrency = normalizeCurrencyCode(currency);
-	const scopedAccounts = activeAccounts;
+	const enabledCurrencySet = new Set(enabledCurrencies.map(normalizeCurrencyCode).filter(Boolean));
 	const currencyAccountIds = new Set<string>();
+	const unscopedAccountIds = new Set<string>();
+
 	for (const account of activeAccounts) {
 		const accountCurrency = normalizeCurrencyCode(account.currency);
-		if (accountCurrency === normalizedCurrency || !accountCurrency) {
+		const isCurrencyMatch = accountCurrency === normalizedCurrency;
+		if (isCurrencyMatch) {
 			currencyAccountIds.add(account.id);
+		}
+		if (
+			!isCurrencyMatch &&
+			(!accountCurrency ||
+				(enabledCurrencySet.size > 0 && !enabledCurrencySet.has(accountCurrency)))
+		) {
+			unscopedAccountIds.add(account.id);
 		}
 	}
 
 	return {
-		accounts: scopedAccounts,
-		accountById,
+		accounts: activeAccounts,
 		currencyAccountIds,
+		unscopedAccountIds,
 	};
 }
 
@@ -170,7 +197,7 @@ function categoryMatchesBreakdown(
 	currency: string
 ): category is Category {
 	if (!category || category.deletedAt || category.type !== type) return false;
-	return !category.currency || category.currency === currency;
+	return !category.currency || normalizeCurrencyCode(category.currency) === currency;
 }
 
 function buildBreakdown(
@@ -247,26 +274,6 @@ function filterPeriodTransactions(
 	);
 }
 
-async function getTransactionsInRange(
-	userId: string,
-	fromMs: number,
-	toMs: number
-): Promise<Transaction[]> {
-	if (fromMs <= 0 && toMs >= 8640000000000000) {
-		return db.transactions
-			.where("userId")
-			.equals(userId)
-			.filter((transaction) => !transaction.deletedAt)
-			.toArray();
-	}
-
-	return db.transactions
-		.where("date")
-		.between(fromMs, toMs, true, true)
-		.filter((transaction) => transaction.userId === userId && !transaction.deletedAt)
-		.toArray();
-}
-
 export function aggregatePeriodAnalytics(
 	userId: string,
 	accounts: Account[],
@@ -315,17 +322,16 @@ export async function getPeriodAnalytics(
 	query: PeriodAnalyticsQuery
 ): Promise<PeriodAnalytics> {
 	const currency = assertCurrency(query.currency);
-	const period = resolvePeriod(query);
-	const [accounts, categories, transactions] = await Promise.all([
-		db.accounts.where("userId").equals(userId).toArray(),
-		db.categories.where("userId").equals(userId).toArray(),
-		getTransactionsInRange(userId, period.fromMs, period.toMs),
-	]);
-
-	return aggregatePeriodAnalytics(userId, accounts, categories, transactions, {
-		...query,
-		currency,
-	});
+	const normalizedQuery = { ...query, currency };
+	return getOrComputeCachedAnalyticsValue(
+		userId,
+		"periods",
+		getPeriodAnalyticsCacheKey(normalizedQuery),
+		(source) =>
+			aggregatePeriodAnalytics(userId, source.accounts, source.categories, source.transactions, {
+				...normalizedQuery,
+			})
+	);
 }
 
 function getMonthlyRanges(query: MonthlySummariesQuery) {
@@ -409,18 +415,16 @@ export async function getMonthlySummaries(
 	query: MonthlySummariesQuery
 ): Promise<AnalyticsMonthSummaryItem[]> {
 	const currency = assertCurrency(query.currency);
-	const ranges = getMonthlyRanges(query);
-	const fromMs = Math.min(...ranges.map((range) => range.fromMs));
-	const toMs = Math.max(...ranges.map((range) => range.toMs));
-	const [accounts, transactions] = await Promise.all([
-		db.accounts.where("userId").equals(userId).toArray(),
-		getTransactionsInRange(userId, fromMs, toMs),
-	]);
-
-	return aggregateMonthlySummaries(userId, accounts, transactions, {
-		...query,
-		currency,
-	});
+	const normalizedQuery = { ...query, currency };
+	return getOrComputeCachedAnalyticsValue(
+		userId,
+		"monthlySummaries",
+		getMonthlySummariesCacheKey(normalizedQuery),
+		(source) =>
+			aggregateMonthlySummaries(userId, source.accounts, source.transactions, {
+				...normalizedQuery,
+			})
+	);
 }
 
 function getEndOfAsOfDay(asOf: Date, timeZoneOffsetMinutes?: number): Date {
@@ -444,7 +448,7 @@ function getAccountCurrencyWarnings(
 				code: "account_currency_unscoped",
 				accountId: account.id,
 				message:
-					"Account has no valid currency, so it is kept visible and included in balance totals instead of being silently dropped.",
+					"Account has no valid currency, so it is shown separately under Other / Unknown currency and excluded from single-currency totals.",
 			});
 			continue;
 		}
@@ -454,7 +458,7 @@ function getAccountCurrencyWarnings(
 				code: "account_currency_unscoped",
 				accountId: account.id,
 				message:
-					"Account currency is not enabled in preferences, so it is kept visible and included in balance totals instead of being silently dropped.",
+					"Account currency is not enabled in preferences, so it is shown separately under Other / Unknown currency unless that currency is selected directly.",
 			});
 		}
 	}
@@ -471,7 +475,7 @@ export function aggregateAccountsAnalytics(
 	const currency = assertCurrency(query.currency);
 	const asOf = query.asOf ?? new Date();
 	const period = resolvePeriod(query.period);
-	const scope = getAccountScope(userId, accounts, currency);
+	const scope = getAccountScope(userId, accounts, currency, query.enabledCurrencies);
 	const asOfMs = getEndOfAsOfDay(asOf, query.timeZoneOffsetMinutes).getTime();
 	const balanceComputation = computeAccountBalances(userId, accounts, transactions, { asOfMs });
 	const balances = balanceComputation.balances;
@@ -493,7 +497,7 @@ export function aggregateAccountsAnalytics(
 		}
 	}
 
-	const accountBalances = scope.accounts
+	const allAccountBalances = scope.accounts
 		.map((account) => ({
 			accountId: account.id,
 			title: account.title,
@@ -505,6 +509,12 @@ export function aggregateAccountsAnalytics(
 			balance: balances.get(account.id) ?? account.openingBalance,
 		}))
 		.sort((a, b) => b.balance - a.balance || a.title.localeCompare(b.title));
+	const accountBalances = allAccountBalances.filter((account) =>
+		scope.currencyAccountIds.has(account.accountId)
+	);
+	const unscopedAccountBalances = allAccountBalances.filter((account) =>
+		scope.unscopedAccountIds.has(account.accountId)
+	);
 	const netWorth = accountBalances.reduce((sum, account) => sum + account.balance, 0);
 
 	return {
@@ -517,6 +527,8 @@ export function aggregateAccountsAnalytics(
 		outflow,
 		netFlow: inflow - outflow,
 		accounts: accountBalances,
+		allAccounts: allAccountBalances,
+		unscopedAccounts: unscopedAccountBalances,
 		warnings: [...balanceComputation.warnings, ...accountCurrencyWarnings],
 	};
 }
@@ -527,23 +539,16 @@ export async function getAccountsAnalytics(
 ): Promise<AccountsAnalytics> {
 	const currency = assertCurrency(query.currency);
 	const asOf = query.asOf ?? new Date();
-	const asOfRange = resolveAnalyticsPeriod({
-		interval: "custom",
-		customRange: { from: new Date(0), to: getEndOfAsOfDay(asOf, query.timeZoneOffsetMinutes) },
-	});
-	const period = resolvePeriod(query.period);
-	const fromMs = Math.min(asOfRange.fromMs, period.fromMs);
-	const toMs = Math.max(asOfRange.toMs, period.toMs);
-	const [accounts, transactions] = await Promise.all([
-		db.accounts.where("userId").equals(userId).toArray(),
-		getTransactionsInRange(userId, fromMs, toMs),
-	]);
-
-	return aggregateAccountsAnalytics(userId, accounts, transactions, {
-		...query,
-		currency,
-		asOf,
-	});
+	const normalizedQuery = { ...query, currency, asOf };
+	return getOrComputeCachedAnalyticsValue(
+		userId,
+		"accounts",
+		getAccountsAnalyticsCacheKey(normalizedQuery),
+		(source) =>
+			aggregateAccountsAnalytics(userId, source.accounts, source.transactions, {
+				...normalizedQuery,
+			})
+	);
 }
 
 export function getMonthLabelForDate(date: Date, timeZoneOffsetMinutes?: number): string {

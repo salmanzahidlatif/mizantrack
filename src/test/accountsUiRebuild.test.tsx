@@ -122,6 +122,33 @@ const analytics: AccountsAnalytics = {
 			balance: 0,
 		},
 	],
+	allAccounts: [
+		{
+			accountId: activeAccount.id,
+			title: activeAccount.title,
+			currency: activeAccount.currency,
+			isArchived: activeAccount.isArchived,
+			accountType: activeAccount.accountType,
+			balance: 98768.22,
+		},
+		{
+			accountId: negativeAccount.id,
+			title: negativeAccount.title,
+			currency: negativeAccount.currency,
+			isArchived: negativeAccount.isArchived,
+			accountType: negativeAccount.accountType,
+			balance: -1497.1,
+		},
+		{
+			accountId: archivedAccount.id,
+			title: archivedAccount.title,
+			currency: archivedAccount.currency,
+			isArchived: archivedAccount.isArchived,
+			accountType: archivedAccount.accountType,
+			balance: 0,
+		},
+	],
+	unscopedAccounts: [],
 	warnings: [],
 };
 

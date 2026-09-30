@@ -8,6 +8,7 @@ import { useUIStore } from "@/store/ui-store";
 import type { Account } from "@/types";
 
 vi.mock("@/lib/analytics/scheduleRecompute", () => ({
+	recomputeAnalyticsNow: vi.fn(),
 	scheduleAnalyticsRecompute: vi.fn(),
 }));
 

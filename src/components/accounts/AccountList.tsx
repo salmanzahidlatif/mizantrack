@@ -15,8 +15,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useHaptics } from "@/hooks/useHaptics";
-import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
-import { db } from "@/lib/db/local";
+import { deleteAccount, setAccountArchived } from "@/lib/actions/accounts";
 import { CARD_SURFACE, LIST_ROW, PRESS_SCALE, TAPPABLE, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui-store";
@@ -65,11 +64,7 @@ function AccountRow({ account, balance, onEdit, onSelect, className, style }: Ac
 	}
 
 	async function handleArchiveToggle() {
-		await db.accounts.update(account.id, {
-			isArchived: !account.isArchived,
-			updatedAt: Date.now(),
-		});
-		scheduleAnalyticsRecompute(account.userId);
+		await setAccountArchived(account, !account.isArchived);
 		toast.success(account.isArchived ? "Account restored" : "Account archived");
 	}
 
@@ -78,11 +73,7 @@ function AccountRow({ account, balance, onEdit, onSelect, className, style }: Ac
 			setConfirming(true);
 			return;
 		}
-		await db.accounts.update(account.id, {
-			deletedAt: Date.now(),
-			updatedAt: Date.now(),
-		});
-		scheduleAnalyticsRecompute(account.userId);
+		await deleteAccount(account);
 		toast.success("Account deleted");
 		setConfirming(false);
 	}
@@ -207,10 +198,12 @@ function AccountRow({ account, balance, onEdit, onSelect, className, style }: Ac
 
 interface AccountListProps {
 	accounts: Account[] | undefined;
+	unscopedAccounts?: Account[] | undefined;
 	analytics?: AccountsAnalytics | undefined;
 	showArchived: boolean;
 	sortBy: AccountSort;
 	userId: string;
+	activeCurrency?: string;
 	onSelectAccount: (id: string) => void;
 }
 
@@ -235,10 +228,12 @@ function compareBalancePriority(
 
 export function AccountList({
 	accounts,
+	unscopedAccounts = [],
 	analytics,
 	showArchived,
 	sortBy,
 	userId: _userId,
+	activeCurrency,
 	onSelectAccount,
 }: AccountListProps) {
 	const openEditAccount = useUIStore((s) => s.openEditAccount);
@@ -246,7 +241,13 @@ export function AccountList({
 	const haptics = useHaptics();
 
 	const balanceByAccountId = useMemo(() => {
-		return new Map(analytics?.accounts.map((account) => [account.accountId, account.balance]));
+		return new Map(
+			[
+				...(analytics?.accounts ?? []),
+				...(analytics?.unscopedAccounts ?? []),
+				...(analytics?.allAccounts ?? []),
+			].map((account) => [account.accountId, account.balance])
+		);
 	}, [analytics]);
 	const hasCurrentBalances = analytics !== undefined;
 
@@ -270,31 +271,39 @@ export function AccountList({
 		);
 	}
 
+	function sortAccounts(items: Account[]) {
+		return [...items].sort((a, b) => {
+			const balanceA = getBalance(a, balanceByAccountId);
+			const balanceB = getBalance(b, balanceByAccountId);
+
+			switch (sortBy) {
+				case "balance-asc": {
+					const priority = compareBalancePriority(a, b, balanceA, balanceB);
+					if (priority !== 0) return priority;
+					return balanceA - balanceB || a.title.localeCompare(b.title);
+				}
+				case "title-asc":
+					return a.title.localeCompare(b.title);
+				case "updated-desc":
+					return b.updatedAt - a.updatedAt || a.title.localeCompare(b.title);
+				case "balance-desc":
+				default: {
+					const priority = compareBalancePriority(a, b, balanceA, balanceB);
+					if (priority !== 0) return priority;
+					return balanceB - balanceA || a.title.localeCompare(b.title);
+				}
+			}
+		});
+	}
+
 	const visible = showArchived ? accounts : accounts.filter((a) => !a.isArchived);
-	const sortedAccounts = [...visible].sort((a, b) => {
-		const balanceA = getBalance(a, balanceByAccountId);
-		const balanceB = getBalance(b, balanceByAccountId);
+	const visibleUnscoped = showArchived
+		? unscopedAccounts
+		: unscopedAccounts.filter((a) => !a.isArchived);
+	const sortedAccounts = sortAccounts(visible);
+	const sortedUnscopedAccounts = sortAccounts(visibleUnscoped);
 
-		switch (sortBy) {
-			case "balance-asc": {
-				const priority = compareBalancePriority(a, b, balanceA, balanceB);
-				if (priority !== 0) return priority;
-				return balanceA - balanceB || a.title.localeCompare(b.title);
-			}
-			case "title-asc":
-				return a.title.localeCompare(b.title);
-			case "updated-desc":
-				return b.updatedAt - a.updatedAt || a.title.localeCompare(b.title);
-			case "balance-desc":
-			default: {
-				const priority = compareBalancePriority(a, b, balanceA, balanceB);
-				if (priority !== 0) return priority;
-				return balanceB - balanceA || a.title.localeCompare(b.title);
-			}
-		}
-	});
-
-	if (sortedAccounts.length === 0) {
+	if (sortedAccounts.length === 0 && sortedUnscopedAccounts.length === 0) {
 		return (
 			<EmptyState
 				title="No accounts yet"
@@ -304,18 +313,53 @@ export function AccountList({
 		);
 	}
 
+	const sections = [
+		{
+			key: "selected",
+			label: activeCurrency ? `${activeCurrency} Accounts` : undefined,
+			accounts: sortedAccounts,
+		},
+		{
+			key: "unscoped",
+			label: "Other / Unknown currency",
+			accounts: sortedUnscopedAccounts,
+		},
+	].filter((section) => section.accounts.length > 0);
+
+	let rowIndex = 0;
+
 	return (
-		<div className="space-y-2">
-			{sortedAccounts.map((account, index) => (
-				<AccountRow
-					key={account.id}
-					account={account}
-					balance={hasCurrentBalances ? balanceByAccountId.get(account.id) : undefined}
-					onEdit={handleEditAccount}
-					onSelect={onSelectAccount}
-					className={LIST_ROW}
-					style={staggerDelay(index, 35)}
-				/>
+		<div className="space-y-4">
+			{sections.map((section) => (
+				<section key={section.key} className="space-y-2" aria-label={section.label}>
+					{section.label && (sections.length > 1 || section.key === "unscoped") && (
+						<div className="flex items-center justify-between px-1">
+							<h2 className="text-xs font-bold tracking-[0.16em] text-muted-foreground uppercase">
+								{section.label}
+							</h2>
+							{section.key === "unscoped" && (
+								<span className="text-[11px] text-muted-foreground">
+									not included in {activeCurrency ?? "selected-currency"} totals
+								</span>
+							)}
+						</div>
+					)}
+					{section.accounts.map((account) => {
+						const index = rowIndex++;
+
+						return (
+							<AccountRow
+								key={account.id}
+								account={account}
+								balance={hasCurrentBalances ? balanceByAccountId.get(account.id) : undefined}
+								onEdit={handleEditAccount}
+								onSelect={onSelectAccount}
+								className={LIST_ROW}
+								style={staggerDelay(index, 35)}
+							/>
+						);
+					})}
+				</section>
 			))}
 			<button
 				type="button"
@@ -327,7 +371,7 @@ export function AccountList({
 					TAPPABLE,
 					LIST_ROW
 				)}
-				style={staggerDelay(sortedAccounts.length, 35)}>
+				style={staggerDelay(rowIndex, 35)}>
 				<Plus className="h-4 w-4" />
 				Add Account
 			</button>
