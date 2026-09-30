@@ -1,6 +1,7 @@
-import { useDeferredLiveQuery } from "@/hooks/useDeferredLiveQuery";
+import { useCachedAnalyticsValue } from "@/hooks/useCachedAnalyticsValue";
+import { getPeriodAnalyticsCacheKey } from "@/lib/analytics/cache";
 import {
-	getPeriodAnalytics,
+	aggregatePeriodAnalyticsChunked,
 	type PeriodAnalytics,
 	type PeriodAnalyticsQuery,
 } from "@/lib/analytics/periodAnalytics";
@@ -9,13 +10,23 @@ export function usePeriodAnalytics(
 	userId: string,
 	query: PeriodAnalyticsQuery | undefined
 ): PeriodAnalytics | undefined {
-	return useDeferredLiveQuery(
-		async () => {
-			if (!userId || !query?.currency) return undefined;
-			return getPeriodAnalytics(userId, query);
+	const cacheKey = query?.currency ? getPeriodAnalyticsCacheKey(query) : undefined;
+	return useCachedAnalyticsValue({
+		userId,
+		namespace: "periods",
+		cacheKey,
+		label: "period analytics",
+		compute: (source) => {
+			if (!query?.currency) throw new Error("Period analytics query is missing a currency.");
+			return aggregatePeriodAnalyticsChunked(
+				userId,
+				source.accounts,
+				source.categories,
+				source.transactions,
+				query
+			);
 		},
-		[
-			userId,
+		dependencies: [
 			query?.currency,
 			query?.interval,
 			query?.anchorDate?.getTime(),
@@ -25,6 +36,5 @@ export function usePeriodAnalytics(
 			query?.now?.getTime(),
 			query?.timeZoneOffsetMinutes,
 		],
-		{ label: "period analytics" }
-	);
+	});
 }

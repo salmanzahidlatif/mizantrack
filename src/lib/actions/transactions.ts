@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 
+import { invalidateAnalyticsCache } from "@/lib/analytics/cache";
 import { recomputeAnalyticsNow } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
 import { transactionSchema, type TransactionFormValues } from "@/lib/validations/transaction";
@@ -56,6 +57,7 @@ export async function createTransaction(
 ): Promise<string> {
 	const parsed = validationErrorMessage(values);
 	const id = options?.id ?? uuidv4();
+	await invalidateAnalyticsCache(userId);
 	await withTimeout(
 		db.transactions.put({ id, ...toTransactionPayload(userId, parsed) }),
 		LOCAL_TRANSACTION_WRITE_TIMEOUT_MS,
@@ -71,6 +73,7 @@ export async function updateTransaction(
 	values: TransactionFormValues
 ): Promise<void> {
 	const parsed = validationErrorMessage(values);
+	await invalidateAnalyticsCache(userId);
 	const updated = await withTimeout(
 		db.transactions.update(transactionId, toTransactionPayload(userId, parsed)),
 		LOCAL_TRANSACTION_WRITE_TIMEOUT_MS,
@@ -86,6 +89,7 @@ export async function updateTransaction(
 
 export async function deleteTransaction(userId: string, transactionId: string): Promise<void> {
 	const now = Date.now();
+	await invalidateAnalyticsCache(userId);
 	const updated = await withTimeout(
 		db.transactions.update(transactionId, {
 			deletedAt: now,

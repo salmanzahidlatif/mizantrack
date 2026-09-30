@@ -10,6 +10,12 @@ interface DeferredLiveQueryOptions {
 	label?: string;
 }
 
+export interface DeferredLiveQueryState<T> {
+	value: T | undefined;
+	error: unknown;
+	isLoading: boolean;
+}
+
 function serializeDependency(value: unknown): string {
 	if (value instanceof Date) return `date:${value.getTime()}`;
 	if (value === undefined) return "undefined";
@@ -33,19 +39,26 @@ function scheduleAfterFirstPaint(callback: () => void, timeoutMs: number): Defer
 	return () => window.clearTimeout(timer);
 }
 
-export function useDeferredLiveQuery<T>(
+export function useDeferredLiveQueryState<T>(
 	querier: () => T | Promise<T>,
 	dependencies: DependencyList,
 	options: DeferredLiveQueryOptions = {}
-): T | undefined {
+): DeferredLiveQueryState<T> {
 	const { label = "deferred live query", timeoutMs = 500 } = options;
 	const queryKey = useMemo(
 		() => dependencies.map(serializeDependency).join("\u001f"),
 		dependencies
 	);
-	const [state, setState] = useState<{ queryKey: string; value: T | undefined }>(() => ({
+	const [state, setState] = useState<{
+		queryKey: string;
+		value: T | undefined;
+		error: unknown;
+		isLoading: boolean;
+	}>(() => ({
 		queryKey,
 		value: undefined,
+		error: undefined,
+		isLoading: true,
 	}));
 
 	useEffect(() => {
@@ -54,9 +67,12 @@ export function useDeferredLiveQuery<T>(
 
 		startTransition(() => {
 			setState((current) =>
-				current.queryKey === queryKey && current.value === undefined
+				current.queryKey === queryKey &&
+				current.value === undefined &&
+				current.error === undefined &&
+				current.isLoading
 					? current
-					: { queryKey, value: undefined }
+					: { queryKey, value: undefined, error: undefined, isLoading: true }
 			);
 		});
 
@@ -67,12 +83,15 @@ export function useDeferredLiveQuery<T>(
 				next(value) {
 					if (cancelled) return;
 					startTransition(() => {
-						setState({ queryKey, value });
+						setState({ queryKey, value, error: undefined, isLoading: false });
 					});
 				},
 				error(error) {
 					if (!cancelled) {
 						console.error(`Failed to resolve ${label}.`, error);
+						startTransition(() => {
+							setState({ queryKey, value: undefined, error, isLoading: false });
+						});
 					}
 				},
 			});
@@ -86,5 +105,25 @@ export function useDeferredLiveQuery<T>(
 		};
 	}, [queryKey]);
 
-	return state.queryKey === queryKey ? state.value : undefined;
+	return state.queryKey === queryKey
+		? {
+				value: state.value,
+				error: state.error,
+				isLoading: state.isLoading,
+			}
+		: {
+				value: undefined,
+				error: undefined,
+				isLoading: true,
+			};
+}
+
+export function useDeferredLiveQuery<T>(
+	querier: () => T | Promise<T>,
+	dependencies: DependencyList,
+	options: DeferredLiveQueryOptions = {}
+): T | undefined {
+	const state = useDeferredLiveQueryState(querier, dependencies, options);
+	if (state.error) throw state.error;
+	return state.value;
 }

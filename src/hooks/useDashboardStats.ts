@@ -1,9 +1,13 @@
 import { useLiveQuery } from "dexie-react-hooks";
+import { useEffect, useState } from "react";
 
-import { getOrComputeDashboardStats } from "@/lib/analytics/cache";
+import { useAnalyticsMonthSummaries } from "@/hooks/useAnalyticsMonthSummaries";
+import { usePeriodAnalytics } from "@/hooks/usePeriodAnalytics";
+import { getValidDashboardStats } from "@/lib/analytics/cache";
 import { DEFAULT_TREND_MONTHS } from "@/lib/analytics/computeDashboardStats";
-import { getMonthlySummaries, getPeriodAnalytics } from "@/lib/analytics/periodAnalytics";
+import { recomputeAnalyticsNow } from "@/lib/analytics/scheduleRecompute";
 
+import type { PeriodAnalytics } from "@/lib/analytics/periodAnalytics";
 import type { DashboardStats } from "@/types";
 
 export interface DashboardStatsQuery {
@@ -28,7 +32,7 @@ type DashboardBucketWithBreakdown = DashboardStats["perCurrency"][string] & {
 
 function toDashboardCategoryBreakdown(
 	query: DashboardStatsQuery,
-	analytics: Awaited<ReturnType<typeof getPeriodAnalytics>>
+	analytics: PeriodAnalytics
 ): DashboardCategoryBreakdownItem[] {
 	return analytics.expenseBreakdown.map((item) => ({
 		...(item.categoryId && { id: item.categoryId }),
@@ -43,57 +47,82 @@ export function useDashboardStats(
 	userId: string,
 	query?: DashboardStatsQuery
 ): DashboardStats | undefined {
-	return useLiveQuery(async () => {
-		const stats = await getOrComputeDashboardStats(userId);
-		if (!stats || !query?.currency) return stats;
-
-		try {
-			const [analytics, trend] = await Promise.all([
-				getPeriodAnalytics(userId, {
+	const [writeError, setWriteError] = useState<unknown>();
+	const stats = useLiveQuery(async () => {
+		if (!userId) return undefined;
+		return getValidDashboardStats(userId);
+	}, [userId]);
+	const analytics = usePeriodAnalytics(
+		userId,
+		query?.currency
+			? {
 					currency: query.currency,
 					interval: "custom",
 					customRange: { from: new Date(query.from), to: new Date(query.to) },
-				}),
-				getMonthlySummaries(userId, {
+				}
+			: undefined
+	);
+	const trend = useAnalyticsMonthSummaries(
+		userId,
+		query?.currency
+			? {
 					currency: query.currency,
 					months: DEFAULT_TREND_MONTHS,
 					anchorDate: new Date(query.from),
 					mode: "ending",
-				}),
-			]);
-			const existingBucket = stats.perCurrency[query.currency];
-			const categoryBreakdown = toDashboardCategoryBreakdown(query, analytics);
-			const patchedBucket: DashboardBucketWithBreakdown = {
-				...existingBucket,
-				monthIncome: analytics.income,
-				monthExpense: analytics.expense,
-				trend: trend.map((item) => ({
-					month: item.month,
-					income: item.income,
-					expense: item.expense,
-				})),
-				categoryBreakdownByMonth: {
-					...((existingBucket as DashboardBucketWithBreakdown | undefined)
-						?.categoryBreakdownByMonth ?? {}),
-					[query.month]: categoryBreakdown,
-				},
-				expenseCategoriesByMonth: {
-					...((existingBucket as DashboardBucketWithBreakdown | undefined)
-						?.expenseCategoriesByMonth ?? {}),
-					[query.month]: categoryBreakdown,
-				},
-			};
+				}
+			: undefined
+	);
 
-			return {
-				...stats,
-				perCurrency: {
-					...stats.perCurrency,
-					[query.currency]: patchedBucket,
-				},
-			};
-		} catch (error) {
-			console.warn("Historical dashboard analytics query failed:", error);
-			return stats;
-		}
-	}, [userId, query?.currency, query?.from, query?.to, query?.month]);
+	useEffect(() => {
+		if (!userId || stats !== undefined) return;
+
+		let cancelled = false;
+		void recomputeAnalyticsNow(userId)
+			.then(() => {
+				if (!cancelled) setWriteError(undefined);
+			})
+			.catch((error) => {
+				console.error("Dashboard analytics recompute failed:", error);
+				if (!cancelled) setWriteError(error);
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [userId, stats]);
+
+	if (writeError) throw writeError;
+	if (!stats || !query?.currency || !analytics || !trend) return stats;
+
+	const existingBucket = stats.perCurrency[query.currency];
+	const categoryBreakdown = toDashboardCategoryBreakdown(query, analytics);
+	const patchedBucket: DashboardBucketWithBreakdown = {
+		...existingBucket,
+		monthIncome: analytics.income,
+		monthExpense: analytics.expense,
+		trend: trend.map((item) => ({
+			month: item.month,
+			income: item.income,
+			expense: item.expense,
+		})),
+		categoryBreakdownByMonth: {
+			...((existingBucket as DashboardBucketWithBreakdown | undefined)?.categoryBreakdownByMonth ??
+				{}),
+			[query.month]: categoryBreakdown,
+		},
+		expenseCategoriesByMonth: {
+			...((existingBucket as DashboardBucketWithBreakdown | undefined)?.expenseCategoriesByMonth ??
+				{}),
+			[query.month]: categoryBreakdown,
+		},
+	};
+
+	return {
+		...stats,
+		perCurrency: {
+			...stats.perCurrency,
+			[query.currency]: patchedBucket,
+		},
+	};
 }

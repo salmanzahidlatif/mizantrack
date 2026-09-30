@@ -6,7 +6,7 @@ import {
 	markDashboardStatsCacheValid,
 	type AnalyticsSourceData,
 } from "@/lib/analytics/cacheMetadata";
-import { aggregateDashboardStats } from "@/lib/analytics/computeDashboardStats";
+import { aggregateDashboardStatsChunked } from "@/lib/analytics/computeDashboardStats";
 import { getDateRange, resolveAnalyticsPeriod, type AnalyticsInterval } from "@/lib/dateRange";
 import { db } from "@/lib/db/local";
 
@@ -28,7 +28,16 @@ type CachedAnalyticsValueByNamespace = {
 	monthlySummaries: AnalyticsMonthSummaryItem[];
 };
 
+export type CachedAnalyticsReadState<TNamespace extends AnalyticsCacheNamespace> = {
+	value: CachedAnalyticsValueByNamespace[TNamespace] | undefined;
+	cacheStatus: DashboardStats["cacheStatus"] | "missing" | "invalid";
+	cacheUpdatedAt?: number;
+	dataVersion?: string;
+	token: string;
+};
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const activeAnalyticsComputations = new Map<string, Promise<unknown>>();
 
 function normalizeCacheCurrency(currency: string): string {
 	return currency.trim().toUpperCase();
@@ -120,12 +129,12 @@ export function getAccountsAnalyticsCacheKey(query: AccountsAnalyticsQuery): str
 	});
 }
 
-function buildValidDashboardStats(
+async function buildValidDashboardStats(
 	userId: string,
 	source: AnalyticsSourceData,
 	dataVersion: string
-): DashboardStats {
-	const stats = aggregateDashboardStats(userId, source.accounts, source.transactions);
+): Promise<DashboardStats> {
+	const stats = await aggregateDashboardStatsChunked(userId, source.accounts, source.transactions);
 	return markDashboardStatsCacheValid(
 		{
 			...stats,
@@ -141,20 +150,94 @@ export async function getOrComputeDashboardStats(userId: string): Promise<Dashbo
 	const existing = await db.dashboardStats.get(userId);
 	if (isDashboardStatsCacheValid(existing, dataVersion)) return existing;
 
-	const stats = buildValidDashboardStats(userId, source, dataVersion);
+	const stats = await buildValidDashboardStats(userId, source, dataVersion);
 	await db.dashboardStats.put(stats);
 	return stats;
 }
 
+function isStoredDashboardStatsCacheValid(stats: DashboardStats | undefined): boolean {
+	return (
+		stats?.logicVersion === ANALYTICS_CACHE_LOGIC_VERSION &&
+		typeof stats.dataVersion === "string" &&
+		stats.cacheStatus === "valid"
+	);
+}
+
 export async function getValidDashboardStats(userId: string): Promise<DashboardStats | undefined> {
-	const source = await getAnalyticsSourceData(userId);
-	const dataVersion = buildAnalyticsDataVersion(source);
 	const existing = await db.dashboardStats.get(userId);
-	if (isDashboardStatsCacheValid(existing, dataVersion)) return existing;
+	if (isStoredDashboardStatsCacheValid(existing)) return existing;
 	return undefined;
 }
 
-export async function getOrComputeCachedAnalyticsValue<TNamespace extends AnalyticsCacheNamespace>(
+function getActiveComputationKey(
+	userId: string,
+	namespace: AnalyticsCacheNamespace,
+	key: string
+): string {
+	return `${userId}\u001f${namespace}\u001f${key}`;
+}
+
+function readCachedEntry<TNamespace extends AnalyticsCacheNamespace>(
+	stats: DashboardStats | undefined,
+	namespace: TNamespace,
+	key: string
+): CachedAnalyticsValueByNamespace[TNamespace] | undefined {
+	if (!stats || !isStoredDashboardStatsCacheValid(stats)) return undefined;
+	const cachedEntry = stats.analyticsCache?.[namespace]?.[key];
+
+	if (
+		cachedEntry?.logicVersion === ANALYTICS_CACHE_LOGIC_VERSION &&
+		cachedEntry.dataVersion === stats.dataVersion
+	) {
+		return cachedEntry.value as CachedAnalyticsValueByNamespace[TNamespace];
+	}
+
+	return undefined;
+}
+
+export async function getCachedAnalyticsValue<TNamespace extends AnalyticsCacheNamespace>(
+	userId: string,
+	namespace: TNamespace,
+	key: string
+): Promise<CachedAnalyticsValueByNamespace[TNamespace] | undefined> {
+	return readCachedEntry(await db.dashboardStats.get(userId), namespace, key);
+}
+
+export async function getCachedAnalyticsReadState<TNamespace extends AnalyticsCacheNamespace>(
+	userId: string,
+	namespace: TNamespace,
+	key: string
+): Promise<CachedAnalyticsReadState<TNamespace>> {
+	const stats = await db.dashboardStats.get(userId);
+	const value = readCachedEntry(stats, namespace, key);
+	let status: CachedAnalyticsReadState<TNamespace>["cacheStatus"];
+	if (!stats) {
+		status = "missing";
+	} else if (isStoredDashboardStatsCacheValid(stats)) {
+		status = "valid";
+	} else {
+		status = stats.cacheStatus ?? "invalid";
+	}
+	const entry = stats?.analyticsCache?.[namespace]?.[key];
+
+	return {
+		value,
+		cacheStatus: status,
+		cacheUpdatedAt: stats?.cacheUpdatedAt,
+		dataVersion: stats?.dataVersion,
+		token: stableStringify({
+			status,
+			statsLogicVersion: stats?.logicVersion,
+			dataVersion: stats?.dataVersion,
+			cacheUpdatedAt: stats?.cacheUpdatedAt,
+			entryLogicVersion: entry?.logicVersion,
+			entryDataVersion: entry?.dataVersion,
+			entryUpdatedAt: entry?.updatedAt,
+		}),
+	};
+}
+
+async function computeCachedAnalyticsValue<TNamespace extends AnalyticsCacheNamespace>(
 	userId: string,
 	namespace: TNamespace,
 	key: string,
@@ -167,20 +250,20 @@ export async function getOrComputeCachedAnalyticsValue<TNamespace extends Analyt
 	const source = await getAnalyticsSourceData(userId);
 	const dataVersion = buildAnalyticsDataVersion(source);
 	const existing = await db.dashboardStats.get(userId);
-	const cachedEntry = existing?.analyticsCache?.[namespace]?.[key];
-
-	if (
-		isDashboardStatsCacheValid(existing, dataVersion) &&
-		cachedEntry?.logicVersion === ANALYTICS_CACHE_LOGIC_VERSION &&
-		cachedEntry.dataVersion === dataVersion
-	) {
-		return cachedEntry.value as CachedAnalyticsValueByNamespace[TNamespace];
-	}
+	const existingCached = readCachedEntry(existing, namespace, key);
+	if (isDashboardStatsCacheValid(existing, dataVersion) && existingCached) return existingCached;
 
 	const value = await compute(source);
-	const baseStats = isDashboardStatsCacheValid(existing, dataVersion)
-		? existing
-		: buildValidDashboardStats(userId, source, dataVersion);
+	const verifiedSource = await getAnalyticsSourceData(userId);
+	const verifiedDataVersion = buildAnalyticsDataVersion(verifiedSource);
+	if (verifiedDataVersion !== dataVersion) {
+		return computeCachedAnalyticsValue(userId, namespace, key, compute);
+	}
+
+	const latest = await db.dashboardStats.get(userId);
+	const baseStats = isDashboardStatsCacheValid(latest, dataVersion)
+		? latest
+		: await buildValidDashboardStats(userId, verifiedSource, dataVersion);
 	const analyticsCache = {
 		...baseStats.analyticsCache,
 		[namespace]: {
@@ -201,6 +284,29 @@ export async function getOrComputeCachedAnalyticsValue<TNamespace extends Analyt
 	});
 
 	return value;
+}
+
+export async function getOrComputeCachedAnalyticsValue<TNamespace extends AnalyticsCacheNamespace>(
+	userId: string,
+	namespace: TNamespace,
+	key: string,
+	compute: (
+		source: AnalyticsSourceData
+	) =>
+		| CachedAnalyticsValueByNamespace[TNamespace]
+		| Promise<CachedAnalyticsValueByNamespace[TNamespace]>
+): Promise<CachedAnalyticsValueByNamespace[TNamespace]> {
+	const activeKey = getActiveComputationKey(userId, namespace, key);
+	const active = activeAnalyticsComputations.get(activeKey) as
+		| Promise<CachedAnalyticsValueByNamespace[TNamespace]>
+		| undefined;
+	if (active) return active;
+
+	const run = computeCachedAnalyticsValue(userId, namespace, key, compute).finally(() => {
+		activeAnalyticsComputations.delete(activeKey);
+	});
+	activeAnalyticsComputations.set(activeKey, run);
+	return run;
 }
 
 export async function invalidateAnalyticsCache(userId: string): Promise<void> {

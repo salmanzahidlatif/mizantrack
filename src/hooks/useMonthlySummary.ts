@@ -1,8 +1,10 @@
 import { useLiveQuery } from "dexie-react-hooks";
+import { useEffect, useState } from "react";
 
-import { getOrComputeDashboardStats } from "@/lib/analytics/cache";
+import { useAnalyticsMonthSummaries } from "@/hooks/useAnalyticsMonthSummaries";
+import { getValidDashboardStats } from "@/lib/analytics/cache";
 import { getMonthlySummaryFromDashboardStats } from "@/lib/analytics/computeDashboardStats";
-import { getMonthlySummaries } from "@/lib/analytics/periodAnalytics";
+import { recomputeAnalyticsNow } from "@/lib/analytics/scheduleRecompute";
 
 export interface MonthlySummaryItem {
 	month: string; // "Jan 26"
@@ -23,22 +25,50 @@ export function useMonthlySummary(
 	currency?: string,
 	query?: MonthlySummaryQuery
 ): MonthlySummaryItem[] | undefined {
-	return useLiveQuery(async () => {
-		if (currency) {
-			const summaries = await getMonthlySummaries(userId, {
-				currency,
-				months,
-				anchorDate: query ? new Date(query.from) : new Date(),
-				mode: "ending",
-			});
-			return summaries.map((item) => ({
-				month: item.month,
-				income: item.income,
-				expense: item.expense,
-			}));
-		}
+	const [writeError, setWriteError] = useState<unknown>();
+	const summaries = useAnalyticsMonthSummaries(
+		userId,
+		currency
+			? {
+					currency,
+					months,
+					anchorDate: query ? new Date(query.from) : new Date(),
+					mode: "ending",
+				}
+			: undefined
+	);
+	const stats = useLiveQuery(async () => {
+		if (!userId || currency) return undefined;
+		return getValidDashboardStats(userId);
+	}, [userId, currency]);
 
-		const stats = await getOrComputeDashboardStats(userId);
-		return getMonthlySummaryFromDashboardStats(stats, months, currency);
-	}, [userId, months, currency, query?.from]);
+	useEffect(() => {
+		if (!userId || currency || stats !== undefined) return;
+
+		let cancelled = false;
+		void recomputeAnalyticsNow(userId)
+			.then(() => {
+				if (!cancelled) setWriteError(undefined);
+			})
+			.catch((error) => {
+				console.error("Monthly summary dashboard recompute failed:", error);
+				if (!cancelled) setWriteError(error);
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [userId, currency, stats]);
+
+	if (writeError) throw writeError;
+	if (currency) {
+		return summaries?.map((item) => ({
+			month: item.month,
+			income: item.income,
+			expense: item.expense,
+		}));
+	}
+
+	if (!stats) return undefined;
+	return getMonthlySummaryFromDashboardStats(stats, months, currency);
 }

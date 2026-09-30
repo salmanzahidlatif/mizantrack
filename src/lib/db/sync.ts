@@ -13,6 +13,7 @@ import {
 	where,
 } from "firebase/firestore";
 
+import { invalidateAnalyticsCache } from "@/lib/analytics/cache";
 import { sanitizeDashboardStats } from "@/lib/analytics/computeDashboardStats";
 import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 
@@ -507,6 +508,7 @@ async function pullRemoteRecords(
 
 	let pulled = 0;
 	let maxSyncedAt = cursor;
+	let invalidatedAnalytics = false;
 	for (const docSnap of remoteSnap.docs) {
 		const rawRemote = docSnap.data() as SyncableRecord & { syncedAt?: unknown };
 		const remoteSyncedAt = getSyncedAtMillis(rawRemote.syncedAt);
@@ -516,6 +518,10 @@ async function pullRemoteRecords(
 		const remote = fromFirestoreSyncRecord(tableName, rawRemote, docSnap.id);
 		const local = (await table.get(remote.id)) as SyncableRecord | undefined;
 		if (!local || remote.updatedAt > local.updatedAt) {
+			if (!invalidatedAnalytics) {
+				await invalidateAnalyticsCache(userId);
+				invalidatedAnalytics = true;
+			}
 			await putLocalRecord(tableName, remote);
 			pulled++;
 		} else if (local.updatedAt > remote.updatedAt && local.pendingSync !== true) {

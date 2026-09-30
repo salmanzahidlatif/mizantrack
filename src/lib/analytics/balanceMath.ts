@@ -1,3 +1,5 @@
+import { yieldAfterChunk, type AnalyticsChunkOptions } from "@/lib/analytics/chunking";
+
 import type { Account, Transaction } from "@/types";
 
 export type BalanceWarningCode =
@@ -59,6 +61,73 @@ export function computeAccountBalances(
 	const warnings: BalanceWarning[] = [];
 
 	for (const transaction of transactions) {
+		if (transaction.userId !== userId || transaction.deletedAt) continue;
+		if (options.asOfMs !== undefined && transaction.date > options.asOfMs) continue;
+
+		if (transaction.type === "Income") {
+			const balance = balances.get(transaction.accountId);
+			if (balance !== undefined) balances.set(transaction.accountId, balance + transaction.amount);
+			continue;
+		}
+
+		if (transaction.type === "Expense") {
+			const balance = balances.get(transaction.accountId);
+			if (balance !== undefined) balances.set(transaction.accountId, balance - transaction.amount);
+			continue;
+		}
+
+		const sourceAccount = accountById.get(transaction.accountId);
+		const destinationAccount = transaction.toAccountId
+			? accountById.get(transaction.toAccountId)
+			: undefined;
+
+		if (!destinationAccount) {
+			warnings.push(getInvalidTransferCounterpartyWarning(transaction));
+		} else if (
+			sourceAccount &&
+			normalizeCurrencyCode(sourceAccount.currency) !==
+				normalizeCurrencyCode(destinationAccount.currency)
+		) {
+			warnings.push(getCrossCurrencyTransferWarning(transaction));
+		}
+
+		const sourceBalance = balances.get(transaction.accountId);
+		if (sourceBalance !== undefined) {
+			balances.set(transaction.accountId, sourceBalance - transaction.amount);
+		}
+
+		if (transaction.toAccountId) {
+			const destinationBalance = balances.get(transaction.toAccountId);
+			if (destinationBalance !== undefined) {
+				balances.set(transaction.toAccountId, destinationBalance + transaction.amount);
+			}
+		}
+	}
+
+	return {
+		accounts: activeAccounts,
+		accountById,
+		balances,
+		warnings,
+	};
+}
+
+export async function computeAccountBalancesChunked(
+	userId: string,
+	accounts: Account[],
+	transactions: Transaction[],
+	options: AccountBalanceOptions & AnalyticsChunkOptions = {}
+): Promise<AccountBalanceComputation> {
+	const activeAccounts = getActiveUserAccounts(userId, accounts);
+	const accountById = new Map(activeAccounts.map((account) => [account.id, account]));
+	const balances = new Map(activeAccounts.map((account) => [account.id, account.openingBalance]));
+	const warnings: BalanceWarning[] = [];
+	let processed = 0;
+
+	for (const transaction of transactions) {
+		processed++;
+		await yieldAfterChunk(processed, options);
+
 		if (transaction.userId !== userId || transaction.deletedAt) continue;
 		if (options.asOfMs !== undefined && transaction.date > options.asOfMs) continue;
 

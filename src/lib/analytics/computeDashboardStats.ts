@@ -1,5 +1,6 @@
 import {
 	accountBalancesToRecord,
+	computeAccountBalancesChunked,
 	computeAccountBalances,
 	getActiveUserAccounts,
 	normalizeCurrencyCode,
@@ -9,6 +10,7 @@ import {
 	getAnalyticsSourceData,
 	markDashboardStatsCacheValid,
 } from "@/lib/analytics/cacheMetadata";
+import { yieldAfterChunk, type AnalyticsChunkOptions } from "@/lib/analytics/chunking";
 
 import type { Account, DashboardStats, Transaction } from "@/types";
 
@@ -339,15 +341,132 @@ export function aggregateDashboardStats(
 	};
 }
 
+export async function aggregateDashboardStatsChunked(
+	userId: string,
+	accounts: Account[],
+	transactions: Transaction[],
+	options: DashboardStatsAggregationOptions & AnalyticsChunkOptions = {}
+): Promise<DashboardStats> {
+	const now = options.now ?? new Date();
+	const trendMonths = Math.max(1, Math.floor(options.trendMonths ?? DEFAULT_TREND_MONTHS));
+	const timeZoneOffsetMinutes = options.timeZoneOffsetMinutes ?? getLocalTimeZoneOffsetMinutes(now);
+	const { startMs: monthStart, endMs: monthEnd } = getDashboardMonthRange(
+		now,
+		timeZoneOffsetMinutes
+	);
+	const trendStart = getMonthStartMs(now, timeZoneOffsetMinutes, -(trendMonths - 1));
+	const trendEnd = monthEnd;
+
+	const activeAccounts = getActiveUserAccounts(userId, accounts);
+	const balanceComputation = await computeAccountBalancesChunked(userId, accounts, transactions, {
+		...options,
+	});
+	const accountById = balanceComputation.accountById;
+	const currencyAccountIds = new Map<string, Set<string>>();
+	const accountCurrencyById = new Map<string, string>();
+
+	for (const account of activeAccounts) {
+		const accountCurrency = normalizeCurrencyCode(account.currency);
+		if (!accountCurrency) continue;
+		accountCurrencyById.set(account.id, accountCurrency);
+		if (!currencyAccountIds.has(accountCurrency)) {
+			currencyAccountIds.set(accountCurrency, new Set());
+		}
+		currencyAccountIds.get(accountCurrency)!.add(account.id);
+	}
+
+	const activeTransactions: Transaction[] = [];
+	const aggregates = new Map<string, AggregateState>();
+	aggregates.set(
+		ALL_CURRENCIES_KEY,
+		createAggregateState(now, null, trendMonths, timeZoneOffsetMinutes)
+	);
+	for (const [currency, accountIds] of currencyAccountIds.entries()) {
+		aggregates.set(
+			currency,
+			createAggregateState(now, accountIds, trendMonths, timeZoneOffsetMinutes)
+		);
+	}
+
+	let processed = 0;
+	for (const transaction of transactions) {
+		processed++;
+		await yieldAfterChunk(processed, options);
+
+		if (transaction.deletedAt || !accountById.has(transaction.accountId)) continue;
+		activeTransactions.push(transaction);
+
+		const allCurrencies = aggregates.get(ALL_CURRENCIES_KEY);
+		if (allCurrencies) {
+			applyTransactionToAggregate(
+				allCurrencies,
+				transaction,
+				monthStart,
+				monthEnd,
+				trendStart,
+				trendEnd,
+				timeZoneOffsetMinutes
+			);
+		}
+
+		const currency = accountCurrencyById.get(transaction.accountId);
+		const currencyState = currency ? aggregates.get(currency) : undefined;
+		if (currencyState && sourceAccountMatchesCurrency(transaction, currencyState.accountIds)) {
+			applyTransactionToAggregate(
+				currencyState,
+				transaction,
+				monthStart,
+				monthEnd,
+				trendStart,
+				trendEnd,
+				timeZoneOffsetMinutes
+			);
+		}
+	}
+
+	const recent = [...activeTransactions]
+		.sort((a, b) => b.date - a.date)
+		.slice(0, 20)
+		.map((transaction) => {
+			const account = accountById.get(transaction.accountId);
+
+			return {
+				id: transaction.id,
+				type: transaction.type,
+				date: transaction.date,
+				amount: transaction.amount,
+				...(transaction.description !== undefined && { description: transaction.description }),
+				...(transaction.place !== undefined && { place: transaction.place }),
+				accountId: transaction.accountId,
+				accountTitle: account?.title ?? "—",
+				accountCurrency: account?.currency ?? "",
+				...(transaction.toAccountId !== undefined && { toAccountId: transaction.toAccountId }),
+			};
+		});
+
+	const perCurrency = Object.fromEntries(
+		[...aggregates.entries()].map(([currency, state]) => [currency, state.summary])
+	) as DashboardStats["perCurrency"];
+
+	return {
+		id: userId,
+		updatedAt: Date.now(),
+		balances: accountBalancesToRecord(balanceComputation.balances),
+		perCurrency,
+		recent,
+		...(balanceComputation.warnings.length > 0 && { warnings: balanceComputation.warnings }),
+	};
+}
+
 export async function computeDashboardStats(
 	userId: string,
-	options: DashboardStatsAggregationOptions = {}
+	options: DashboardStatsAggregationOptions & AnalyticsChunkOptions = {}
 ): Promise<DashboardStats> {
 	const source = await getAnalyticsSourceData(userId);
 	const dataVersion = buildAnalyticsDataVersion(source);
 
 	return markDashboardStatsCacheValid(
-		aggregateDashboardStats(userId, source.accounts, source.transactions, options),
+		await aggregateDashboardStatsChunked(userId, source.accounts, source.transactions, options),
 		dataVersion
 	);
 }

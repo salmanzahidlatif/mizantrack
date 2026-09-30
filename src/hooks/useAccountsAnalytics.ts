@@ -1,6 +1,7 @@
-import { useDeferredLiveQuery } from "@/hooks/useDeferredLiveQuery";
+import { useCachedAnalyticsValue } from "@/hooks/useCachedAnalyticsValue";
+import { getAccountsAnalyticsCacheKey } from "@/lib/analytics/cache";
 import {
-	getAccountsAnalytics,
+	aggregateAccountsAnalyticsChunked,
 	type AccountsAnalytics,
 	type AccountsAnalyticsQuery,
 } from "@/lib/analytics/periodAnalytics";
@@ -9,13 +10,17 @@ export function useAccountsAnalytics(
 	userId: string,
 	query: AccountsAnalyticsQuery | undefined
 ): AccountsAnalytics | undefined {
-	return useDeferredLiveQuery(
-		async () => {
-			if (!userId || !query?.currency) return undefined;
-			return getAccountsAnalytics(userId, query);
+	const cacheKey = query?.currency ? getAccountsAnalyticsCacheKey(query) : undefined;
+	return useCachedAnalyticsValue({
+		userId,
+		namespace: "accounts",
+		cacheKey,
+		label: "accounts analytics",
+		compute: (source) => {
+			if (!query?.currency) throw new Error("Accounts analytics query is missing a currency.");
+			return aggregateAccountsAnalyticsChunked(userId, source.accounts, source.transactions, query);
 		},
-		[
-			userId,
+		dependencies: [
 			query?.currency,
 			query?.enabledCurrencies?.join(","),
 			query?.asOf?.getTime(),
@@ -28,6 +33,5 @@ export function useAccountsAnalytics(
 			query?.period?.now?.getTime(),
 			query?.period?.timeZoneOffsetMinutes,
 		],
-		{ label: "accounts analytics" }
-	);
+	});
 }
