@@ -4,7 +4,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { v4 as uuidv4 } from "uuid";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { useCategories } from "@/hooks/useCategories";
 import { useDbConfig } from "@/hooks/useDbConfig";
+import { createCategory, updateCategory } from "@/lib/actions/categories";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
@@ -194,7 +194,6 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 	}, [isCategoryDrawerOpen, editCategoryId, defaultType, defaultCurrency, reset]);
 
 	async function onSubmit(values: CategoryFormValues) {
-		const now = Date.now();
 		const currency = normalizeCurrency(values.currency);
 		const submittedParent = values.parentId
 			? allCategories?.find((c) => c.id === values.parentId)
@@ -219,42 +218,18 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 			return;
 		}
 		const parentId = submittedParent?.id;
+		const nextValues = { ...values, parentId, currency };
 
 		if (editCategoryId) {
-			const existing = await db.categories.get(editCategoryId);
-			if (!existing) {
+			try {
+				await updateCategory(userId, editCategoryId, nextValues);
+			} catch {
 				toast.error("Category not found");
 				return;
 			}
-			const nextCategory: Category = {
-				...existing,
-				title: values.title,
-				type: values.type,
-				parentId,
-				color: values.color,
-				icon: values.icon,
-				updatedAt: now,
-			};
-			if (currency) {
-				nextCategory.currency = currency;
-			} else {
-				delete nextCategory.currency;
-			}
-			await db.categories.put(nextCategory);
 			toast.success("Category updated");
 		} else {
-			const nextCategory: Category = {
-				id: uuidv4(),
-				userId,
-				updatedAt: now,
-				title: values.title,
-				type: values.type,
-				parentId,
-				color: values.color,
-				icon: values.icon,
-			};
-			if (currency) nextCategory.currency = currency;
-			await db.categories.put(nextCategory);
+			await createCategory(userId, nextValues);
 			toast.success("Category created");
 		}
 		closeCategoryDrawer();

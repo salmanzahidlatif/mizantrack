@@ -4,7 +4,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
-import { v4 as uuidv4 } from "uuid";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDbConfig } from "@/hooks/useDbConfig";
-import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
+import { createAccount, updateAccount } from "@/lib/actions/accounts";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
 import { accountSchema, type AccountFormValues } from "@/lib/validations/account";
@@ -113,20 +112,11 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 	}, [isAccountDrawerOpen, editAccountId, reset, defaultCurrency, setValue]);
 
 	async function onSubmit(values: AccountFormValues) {
-		const now = Date.now();
 		if (editAccountId) {
-			await db.accounts.update(editAccountId, { ...values, updatedAt: now });
-			scheduleAnalyticsRecompute(userId);
+			await updateAccount(userId, editAccountId, values);
 			toast.success("Account updated");
 		} else {
-			await db.accounts.put({
-				id: uuidv4(),
-				userId,
-				isArchived: false,
-				updatedAt: now,
-				...values,
-			});
-			scheduleAnalyticsRecompute(userId);
+			await createAccount(userId, values);
 			toast.success("Account created");
 		}
 		closeAccountDrawer();

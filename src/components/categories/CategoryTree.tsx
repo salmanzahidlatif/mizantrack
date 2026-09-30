@@ -14,9 +14,9 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useHaptics } from "@/hooks/useHaptics";
+import { deleteCategory } from "@/lib/actions/categories";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyByCode } from "@/lib/currencies";
-import { db } from "@/lib/db/local";
 import { useUIStore } from "@/store/ui-store";
 
 import type { Category, CategoryType } from "@/types";
@@ -35,10 +35,7 @@ function CategoryRow({ category, isChild = false }: CategoryRowProps) {
 	const icon = getCategoryIcon(category);
 
 	async function handleDelete() {
-		await db.categories.update(category.id, {
-			deletedAt: Date.now(),
-			updatedAt: Date.now(),
-		});
+		await deleteCategory(category);
 		toast.success("Category deleted");
 	}
 
