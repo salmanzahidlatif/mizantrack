@@ -1,5 +1,6 @@
 import { doc, setDoc } from "firebase/firestore";
 
+import { invalidateAnalyticsCache } from "@/lib/analytics/cache";
 import {
 	computeDashboardStats,
 	sanitizeDashboardStats,
@@ -12,6 +13,20 @@ const RECOMPUTE_DELAY_MS = 0;
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const activeRuns = new Map<string, Promise<void>>();
 const rerunAfterActive = new Set<string>();
+
+function hasAnalyticsCacheTable(): boolean {
+	const localDb = db as typeof db & {
+		dashboardStats?: {
+			get?: unknown;
+			put?: unknown;
+		};
+	};
+
+	return (
+		typeof localDb.dashboardStats?.get === "function" &&
+		typeof localDb.dashboardStats.put === "function"
+	);
+}
 
 function clearPendingTimer(userId: string) {
 	const timer = timers.get(userId);
@@ -59,7 +74,11 @@ async function runRecompute(userId: string): Promise<void> {
 
 export function scheduleAnalyticsRecompute(userId: string): void {
 	if (!userId) return;
+	if (!hasAnalyticsCacheTable()) return;
 
+	void invalidateAnalyticsCache(userId).catch((error) => {
+		console.error("Dashboard analytics invalidation failed:", error);
+	});
 	clearPendingTimer(userId);
 	timers.set(
 		userId,
@@ -74,8 +93,10 @@ export function scheduleAnalyticsRecompute(userId: string): void {
 
 export async function recomputeAnalyticsNow(userId: string): Promise<void> {
 	if (!userId) return;
+	if (!hasAnalyticsCacheTable()) return;
 
 	clearPendingTimer(userId);
+	await invalidateAnalyticsCache(userId);
 	await runRecompute(userId);
 }
 

@@ -37,8 +37,13 @@ import {
 import { useAutoSync } from "@/hooks/useAutoSync";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { signOutAction } from "@/lib/actions/auth";
+import {
+	recomputeAnalyticsNow,
+	scheduleAnalyticsRecompute,
+} from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
 import { seedDefaultCategories } from "@/lib/db/seed";
 import { FAB, FROSTED_HEADER } from "@/lib/motion";
@@ -89,6 +94,14 @@ export function AppShell({ user, children }: AppShellProps) {
 	const triggerSync = useSyncStore((s) => s.triggerSync);
 	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 	const haptics = useHaptics();
+	const pullToRefresh = usePullToRefresh({
+		containerRef: mainRef,
+		enabled: Boolean(user?.id),
+		onRefresh: async () => {
+			if (!user?.id) return;
+			await recomputeAnalyticsNow(user.id);
+		},
+	});
 
 	/**
 	 * Handle currency switch from the header selector.
@@ -207,6 +220,7 @@ export function AppShell({ user, children }: AppShellProps) {
 	useEffect(() => {
 		if (user?.id) {
 			void seedDefaultCategories(user.id);
+			scheduleAnalyticsRecompute(user.id);
 		}
 	}, [user?.id]);
 
@@ -359,6 +373,7 @@ export function AppShell({ user, children }: AppShellProps) {
 
 					{/* Main content */}
 					<main ref={mainRef} className="pb-safe-nav flex-1 overflow-auto md:pb-0">
+						{pullToRefresh.indicator}
 						<div className="mx-auto max-w-4xl p-4" style={swipeNavigation.style}>
 							<div key={pathname} className="page-enter">
 								<div className="mb-3 md:hidden">
