@@ -1,6 +1,7 @@
 import {
 	ANALYTICS_CACHE_LOGIC_VERSION,
 	buildAnalyticsDataVersion,
+	getAnalyticsDataVersion,
 	getAnalyticsSourceData,
 	isDashboardStatsCacheValid,
 	markDashboardStatsCacheValid,
@@ -155,7 +156,9 @@ export async function getOrComputeDashboardStats(userId: string): Promise<Dashbo
 	return stats;
 }
 
-function isStoredDashboardStatsCacheValid(stats: DashboardStats | undefined): boolean {
+function isStoredDashboardStatsCacheValid(
+	stats: DashboardStats | undefined
+): stats is DashboardStats & { dataVersion: string } {
 	return (
 		stats?.logicVersion === ANALYTICS_CACHE_LOGIC_VERSION &&
 		typeof stats.dataVersion === "string" &&
@@ -164,8 +167,13 @@ function isStoredDashboardStatsCacheValid(stats: DashboardStats | undefined): bo
 }
 
 export async function getValidDashboardStats(userId: string): Promise<DashboardStats | undefined> {
-	const existing = await db.dashboardStats.get(userId);
-	if (isStoredDashboardStatsCacheValid(existing)) return existing;
+	const [existing, dataVersion] = await Promise.all([
+		db.dashboardStats.get(userId),
+		getAnalyticsDataVersion(userId),
+	]);
+	if (isStoredDashboardStatsCacheValid(existing) && existing.dataVersion === dataVersion) {
+		return existing;
+	}
 	return undefined;
 }
 
@@ -180,9 +188,11 @@ function getActiveComputationKey(
 function readCachedEntry<TNamespace extends AnalyticsCacheNamespace>(
 	stats: DashboardStats | undefined,
 	namespace: TNamespace,
-	key: string
+	key: string,
+	dataVersion?: string
 ): CachedAnalyticsValueByNamespace[TNamespace] | undefined {
 	if (!stats || !isStoredDashboardStatsCacheValid(stats)) return undefined;
+	if (dataVersion !== undefined && stats.dataVersion !== dataVersion) return undefined;
 	const cachedEntry = stats.analyticsCache?.[namespace]?.[key];
 
 	if (
@@ -200,7 +210,11 @@ export async function getCachedAnalyticsValue<TNamespace extends AnalyticsCacheN
 	namespace: TNamespace,
 	key: string
 ): Promise<CachedAnalyticsValueByNamespace[TNamespace] | undefined> {
-	return readCachedEntry(await db.dashboardStats.get(userId), namespace, key);
+	const [stats, dataVersion] = await Promise.all([
+		db.dashboardStats.get(userId),
+		getAnalyticsDataVersion(userId),
+	]);
+	return readCachedEntry(stats, namespace, key, dataVersion);
 }
 
 export async function getCachedAnalyticsReadState<TNamespace extends AnalyticsCacheNamespace>(
@@ -208,13 +222,16 @@ export async function getCachedAnalyticsReadState<TNamespace extends AnalyticsCa
 	namespace: TNamespace,
 	key: string
 ): Promise<CachedAnalyticsReadState<TNamespace>> {
-	const stats = await db.dashboardStats.get(userId);
-	const value = readCachedEntry(stats, namespace, key);
+	const [stats, dataVersion] = await Promise.all([
+		db.dashboardStats.get(userId),
+		getAnalyticsDataVersion(userId),
+	]);
+	const value = readCachedEntry(stats, namespace, key, dataVersion);
 	let status: CachedAnalyticsReadState<TNamespace>["cacheStatus"];
 	if (!stats) {
 		status = "missing";
 	} else if (isStoredDashboardStatsCacheValid(stats)) {
-		status = "valid";
+		status = stats.dataVersion === dataVersion ? "valid" : "invalid";
 	} else {
 		status = stats.cacheStatus ?? "invalid";
 	}
@@ -229,6 +246,7 @@ export async function getCachedAnalyticsReadState<TNamespace extends AnalyticsCa
 			status,
 			statsLogicVersion: stats?.logicVersion,
 			dataVersion: stats?.dataVersion,
+			currentDataVersion: dataVersion,
 			cacheUpdatedAt: stats?.cacheUpdatedAt,
 			entryLogicVersion: entry?.logicVersion,
 			entryDataVersion: entry?.dataVersion,
@@ -254,8 +272,7 @@ async function computeCachedAnalyticsValue<TNamespace extends AnalyticsCacheName
 	if (isDashboardStatsCacheValid(existing, dataVersion) && existingCached) return existingCached;
 
 	const value = await compute(source);
-	const verifiedSource = await getAnalyticsSourceData(userId);
-	const verifiedDataVersion = buildAnalyticsDataVersion(verifiedSource);
+	const verifiedDataVersion = await getAnalyticsDataVersion(userId);
 	if (verifiedDataVersion !== dataVersion) {
 		return computeCachedAnalyticsValue(userId, namespace, key, compute);
 	}
@@ -263,7 +280,7 @@ async function computeCachedAnalyticsValue<TNamespace extends AnalyticsCacheName
 	const latest = await db.dashboardStats.get(userId);
 	const baseStats = isDashboardStatsCacheValid(latest, dataVersion)
 		? latest
-		: await buildValidDashboardStats(userId, verifiedSource, dataVersion);
+		: await buildValidDashboardStats(userId, source, dataVersion);
 	const analyticsCache = {
 		...baseStats.analyticsCache,
 		[namespace]: {

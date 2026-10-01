@@ -1,8 +1,10 @@
+import { type Table } from "dexie";
+
 import { db } from "@/lib/db/local";
 
 import type { Account, Category, DashboardStats, Transaction } from "@/types";
 
-export const ANALYTICS_CACHE_LOGIC_VERSION = 3;
+export const ANALYTICS_CACHE_LOGIC_VERSION = 4;
 
 export interface AnalyticsSourceData {
 	accounts: Account[];
@@ -10,42 +12,43 @@ export interface AnalyticsSourceData {
 	transactions: Transaction[];
 }
 
-const HASH_OFFSET = 0x811c9dc5;
-const HASH_PRIME = 0x01000193;
-
-function updateHash(hash: number, value: string): number {
-	let nextHash = hash;
-	for (let index = 0; index < value.length; index++) {
-		nextHash ^= value.charCodeAt(index);
-		nextHash = Math.imul(nextHash, HASH_PRIME);
-	}
-	return nextHash >>> 0;
+interface VersionedRecord {
+	userId: string;
+	updatedAt: number;
+	deletedAt?: number;
 }
 
-function hashParts(parts: Array<string | number | boolean | undefined>): string {
-	let hash = HASH_OFFSET;
-	for (const part of parts) {
-		hash = updateHash(hash, `${part ?? ""}\u001f`);
-	}
-	return hash.toString(16).padStart(8, "0");
-}
-
-function hashRecords<T extends { id: string; updatedAt: number; deletedAt?: number }>(
-	records: T[],
-	toParts: (record: T) => Array<string | number | boolean | undefined>
-) {
-	const sorted = [...records].sort((a, b) => a.id.localeCompare(b.id));
-	let hash = HASH_OFFSET;
+function versionRecords(records: VersionedRecord[]): string {
 	let maxUpdatedAt = 0;
 	let maxDeletedAt = 0;
 
-	for (const record of sorted) {
+	for (const record of records) {
 		maxUpdatedAt = Math.max(maxUpdatedAt, record.updatedAt ?? 0);
 		maxDeletedAt = Math.max(maxDeletedAt, record.deletedAt ?? 0);
-		hash = updateHash(hash, `${hashParts(toParts(record))}\u001e`);
 	}
 
-	return `${records.length}:${maxUpdatedAt}:${maxDeletedAt}:${hash.toString(16).padStart(8, "0")}`;
+	return `${records.length}:${maxUpdatedAt}:${maxDeletedAt}`;
+}
+
+async function getTableDataVersion<T extends VersionedRecord>(
+	table: Table<T>,
+	userId: string
+): Promise<string> {
+	const [count, latestUpdated, latestDeleted] = await Promise.all([
+		table.where("userId").equals(userId).count(),
+		table
+			.orderBy("updatedAt")
+			.reverse()
+			.filter((record) => record.userId === userId)
+			.first(),
+		table
+			.orderBy("deletedAt")
+			.reverse()
+			.filter((record) => record.userId === userId && typeof record.deletedAt === "number")
+			.first(),
+	]);
+
+	return `${count}:${latestUpdated?.updatedAt ?? 0}:${latestDeleted?.deletedAt ?? 0}`;
 }
 
 export async function getAnalyticsSourceData(userId: string): Promise<AnalyticsSourceData> {
@@ -59,48 +62,18 @@ export async function getAnalyticsSourceData(userId: string): Promise<AnalyticsS
 }
 
 export function buildAnalyticsDataVersion(source: AnalyticsSourceData): string {
-	const accounts = hashRecords(source.accounts, (account) => [
-		account.id,
-		account.userId,
-		account.title,
-		account.openingBalance,
-		account.currency,
-		account.color,
-		account.icon,
-		account.isArchived,
-		account.accountType,
-		account.updatedAt,
-		account.deletedAt,
-	]);
-	const categories = hashRecords(source.categories, (category) => [
-		category.id,
-		category.userId,
-		category.title,
-		category.type,
-		category.currency,
-		category.icon,
-		category.color,
-		category.parentId,
-		category.updatedAt,
-		category.deletedAt,
-	]);
-	const transactions = hashRecords(source.transactions, (transaction) => [
-		transaction.id,
-		transaction.userId,
-		transaction.type,
-		transaction.date,
-		transaction.amount,
-		transaction.description,
-		transaction.place,
-		transaction.accountId,
-		transaction.categoryId,
-		transaction.toAccountId,
-		transaction.travelCurrency?.symbol,
-		transaction.travelCurrency?.rate,
-		transaction.travelCurrency?.amount,
-		transaction.travelCurrency?.location,
-		transaction.updatedAt,
-		transaction.deletedAt,
+	const accounts = versionRecords(source.accounts);
+	const categories = versionRecords(source.categories);
+	const transactions = versionRecords(source.transactions);
+
+	return `v${ANALYTICS_CACHE_LOGIC_VERSION}|a:${accounts}|c:${categories}|t:${transactions}`;
+}
+
+export async function getAnalyticsDataVersion(userId: string): Promise<string> {
+	const [accounts, categories, transactions] = await Promise.all([
+		getTableDataVersion(db.accounts, userId),
+		getTableDataVersion(db.categories, userId),
+		getTableDataVersion(db.transactions, userId),
 	]);
 
 	return `v${ANALYTICS_CACHE_LOGIC_VERSION}|a:${accounts}|c:${categories}|t:${transactions}`;

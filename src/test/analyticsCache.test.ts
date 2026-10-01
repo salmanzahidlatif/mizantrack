@@ -7,12 +7,14 @@ import { createCategory, updateCategory } from "@/lib/actions/categories";
 import { createTransaction, updateTransaction } from "@/lib/actions/transactions";
 import {
 	getAccountsAnalyticsCacheKey,
+	getCachedAnalyticsReadState,
 	getCachedAnalyticsValue,
 	getOrComputeCachedAnalyticsValue,
 } from "@/lib/analytics/cache";
 import {
 	ANALYTICS_CACHE_LOGIC_VERSION,
 	buildAnalyticsDataVersion,
+	getAnalyticsDataVersion,
 	getAnalyticsSourceData,
 } from "@/lib/analytics/cacheMetadata";
 import {
@@ -203,6 +205,37 @@ describe("analytics cache", () => {
 		expect(computeCount).toBe(0);
 	});
 
+	it("builds deterministic data versions for unchanged records regardless of order", async () => {
+		const accountB = account({ id: "account-b", updatedAt: 20 });
+		const accountA = account({ id: "account-a", updatedAt: 10 });
+		const categoryB = category({ id: "category-b", updatedAt: 20 });
+		const categoryA = category({ id: "category-a", updatedAt: 10 });
+		const transactionB = transaction({ id: "transaction-b", updatedAt: 20 });
+		const transactionA = transaction({ id: "transaction-a", updatedAt: 10 });
+
+		await db.accounts.bulkPut([accountB, accountA]);
+		await db.categories.bulkPut([categoryB, categoryA]);
+		await db.transactions.bulkPut([transactionB, transactionA]);
+
+		const first = await getAnalyticsDataVersion(USER_ID);
+		const second = await getAnalyticsDataVersion(USER_ID);
+
+		expect(second).toBe(first);
+		expect(
+			buildAnalyticsDataVersion({
+				accounts: [accountA, accountB],
+				categories: [categoryA, categoryB],
+				transactions: [transactionA, transactionB],
+			})
+		).toBe(
+			buildAnalyticsDataVersion({
+				accounts: [accountB, accountA],
+				categories: [categoryB, categoryA],
+				transactions: [transactionB, transactionA],
+			})
+		);
+	});
+
 	it("does not serve cached analytics when logic or data versions mismatch", async () => {
 		await seedBasicData();
 		const source = await getAnalyticsSourceData(USER_ID);
@@ -252,6 +285,91 @@ describe("analytics cache", () => {
 		expect(computeCount).toBe(1);
 	});
 
+	it("does not serve cached analytics when the entry logic version mismatches", async () => {
+		await seedBasicData();
+		const source = await getAnalyticsSourceData(USER_ID);
+		const dataVersion = buildAnalyticsDataVersion(source);
+		const cacheKey = getAccountsAnalyticsCacheKey(accountsQuery());
+		const staleValue = {
+			userId: USER_ID,
+			currency: "AED",
+			asOf: NOW,
+			period: { label: "old" },
+			netWorth: 6517,
+			inflow: 0,
+			outflow: 0,
+			netFlow: 0,
+			accounts: [],
+			warnings: [],
+		};
+		await db.dashboardStats.put({
+			id: USER_ID,
+			updatedAt: 1,
+			logicVersion: ANALYTICS_CACHE_LOGIC_VERSION,
+			dataVersion,
+			cacheStatus: "valid",
+			cacheUpdatedAt: 1,
+			balances: { [ACCOUNT_ID]: -100 },
+			perCurrency: {},
+			recent: [],
+			analyticsCache: {
+				accounts: {
+					[cacheKey]: {
+						logicVersion: ANALYTICS_CACHE_LOGIC_VERSION - 1,
+						dataVersion,
+						key: cacheKey,
+						updatedAt: 1,
+						value: staleValue,
+					},
+				},
+			},
+		});
+
+		const fresh = await getOrComputeCachedAnalyticsValue(
+			USER_ID,
+			"accounts",
+			cacheKey,
+			(sourceData) =>
+				aggregateAccountsAnalytics(
+					USER_ID,
+					sourceData.accounts,
+					sourceData.transactions,
+					accountsQuery()
+				)
+		);
+
+		expect(fresh.netWorth).toBe(-100);
+		expect(fresh).not.toEqual(staleValue);
+	});
+
+	it("does not serve cached analytics after a source write even without explicit invalidation", async () => {
+		await seedBasicData();
+		const cacheKey = getAccountsAnalyticsCacheKey(accountsQuery());
+
+		const cached = await getOrComputeCachedAnalyticsValue(
+			USER_ID,
+			"accounts",
+			cacheKey,
+			(sourceData) =>
+				aggregateAccountsAnalytics(
+					USER_ID,
+					sourceData.accounts,
+					sourceData.transactions,
+					accountsQuery()
+				)
+		);
+		expect(cached.netWorth).toBe(-100);
+		expect(await getCachedAnalyticsValue(USER_ID, "accounts", cacheKey)).toEqual(cached);
+
+		await db.transactions.update(TXN_ID, { amount: 250, updatedAt: 2 });
+
+		expect(await getCachedAnalyticsValue(USER_ID, "accounts", cacheKey)).toBeUndefined();
+		expect(await getCachedAnalyticsReadState(USER_ID, "accounts", cacheKey)).toMatchObject({
+			value: undefined,
+			cacheStatus: "invalid",
+		});
+	});
+
 	it("keeps analytics recomputation outside the observed cache liveQuery", async () => {
 		await seedBasicData();
 		const cacheKey = getAccountsAnalyticsCacheKey(accountsQuery());
@@ -276,6 +394,40 @@ describe("analytics cache", () => {
 						accountsQuery()
 					);
 				});
+			},
+		});
+
+		await waitFor(() => {
+			expect(latestValue).toEqual(expect.objectContaining({ netWorth: -100 }));
+		});
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		subscription.unsubscribe();
+
+		expect(computeCount).toBe(1);
+		expect(emissionCount).toBeLessThanOrEqual(3);
+	});
+
+	it("does not loop when a liveQuery querier writes the analytics cache table it reads", async () => {
+		await seedBasicData();
+		const cacheKey = getAccountsAnalyticsCacheKey(accountsQuery());
+		let computeCount = 0;
+		let emissionCount = 0;
+		let latestValue: unknown;
+
+		const subscription = liveQuery(() =>
+			getOrComputeCachedAnalyticsValue(USER_ID, "accounts", cacheKey, (sourceData) => {
+				computeCount++;
+				return aggregateAccountsAnalytics(
+					USER_ID,
+					sourceData.accounts,
+					sourceData.transactions,
+					accountsQuery()
+				);
+			})
+		).subscribe({
+			next(value) {
+				emissionCount++;
+				latestValue = value;
 			},
 		});
 
