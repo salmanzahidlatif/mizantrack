@@ -13,18 +13,23 @@ interface AccountLike {
  */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export function isValidSessionUserId(value: unknown): value is string {
+	if (typeof value !== "string") return false;
+
+	const trimmed = value.trim();
+	if (!trimmed) return false;
+	if (UUID_REGEX.test(trimmed)) return false;
+
+	return true;
+}
+
 export function resolveSessionUserId(token: TokenLike): string | null {
-	if (typeof token.sub !== "string") return null;
-
-	const trimmed = token.sub.trim();
-	if (!trimmed) return null;
-
 	// UUID-format IDs are stale sessions from before the providerAccountId fix was deployed.
-	// Returning null forces `session.user.id = ""` → layout redirects to /login for a fresh
-	// sign-in, which will correctly pin token.sub = account.providerAccountId (Google numeric ID).
-	if (UUID_REGEX.test(trimmed)) return null;
+	// Returning null forces a fresh sign-in, which will correctly pin token.sub to the
+	// Google providerAccountId.
+	if (!isValidSessionUserId(token.sub)) return null;
 
-	return trimmed;
+	return token.sub.trim();
 }
 
 /**

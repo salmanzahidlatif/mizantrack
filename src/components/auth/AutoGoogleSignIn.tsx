@@ -2,16 +2,26 @@
 
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { useOfflineAuth } from "@/components/auth/OfflineAuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function AutoGoogleSignIn() {
+	const router = useRouter();
+	const { user, isOffline, status } = useOfflineAuth();
 	const [isRedirecting, setIsRedirecting] = useState(false);
 
+	useEffect(() => {
+		if (user) router.replace("/dashboard");
+	}, [router, user]);
+
 	const handleManualSignIn = () => {
+		if (isOffline) return;
+
 		setIsRedirecting(true);
 		signIn("google", { redirectTo: "/dashboard" }).catch(() => {
 			setIsRedirecting(false);
@@ -32,10 +42,19 @@ export function AutoGoogleSignIn() {
 				<Card>
 					<CardHeader className="text-center">
 						<CardTitle className="text-lg">Welcome back</CardTitle>
-						<CardDescription>Sign in with your Google account to continue</CardDescription>
+						<CardDescription>
+							{isOffline
+								? "Connect to the internet to sign in on this device"
+								: "Sign in with your Google account to continue"}
+						</CardDescription>
 					</CardHeader>
 					<CardContent>
-						<Button type="button" className="w-full gap-2" size="lg" onClick={handleManualSignIn}>
+						<Button
+							type="button"
+							className="w-full gap-2"
+							size="lg"
+							onClick={handleManualSignIn}
+							disabled={isOffline || status === "loading"}>
 							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-4 w-4">
 								<path
 									d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -65,6 +84,8 @@ export function AutoGoogleSignIn() {
 									<Loader2 className="h-3.5 w-3.5 animate-spin" />
 									Redirecting to Google…
 								</span>
+							) : isOffline ? (
+								<span>Your offline data remains available after an online sign-in.</span>
 							) : null}
 						</div>
 					</CardContent>

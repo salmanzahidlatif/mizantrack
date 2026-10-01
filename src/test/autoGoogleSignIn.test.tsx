@@ -11,6 +11,12 @@ vi.mock("next-auth/react", () => ({
 	signIn: mocks.signIn,
 }));
 
+vi.mock("next/navigation", () => ({
+	useRouter: () => ({
+		replace: vi.fn(),
+	}),
+}));
+
 describe("AutoGoogleSignIn", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
