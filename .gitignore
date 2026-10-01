@@ -48,3 +48,5 @@ next-env.d.ts
 *.csv
 *.xlsx
 *.xls
+public/fallback-*.js
+public/fallback-*.js.map
