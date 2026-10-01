@@ -7,6 +7,7 @@ export default function RegisterSW() {
 	useEffect(() => {
 		if (!("serviceWorker" in navigator)) return;
 
+		let hadController = Boolean(navigator.serviceWorker.controller);
 		let notified = false;
 		let reloading = false;
 
@@ -21,6 +22,10 @@ export default function RegisterSW() {
 		// have already taken control. Reacting directly to controllerchange (rather than
 		// gating the reload behind a toast timer) guarantees we never miss the swap.
 		const handleControllerChange = () => {
+			if (!hadController) {
+				hadController = true;
+				return;
+			}
 			if (!notified) {
 				// Controller changed before we had a chance to show the toast (fast swap) —
 				// just reload immediately, there's nothing to wait for.
@@ -42,7 +47,7 @@ export default function RegisterSW() {
 		};
 
 		const register = async () => {
-			const reg = await navigator.serviceWorker.register("/sw.js");
+			const reg = await navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
 
 			// A new SW found while app is running (user hasn't refreshed)
 			reg.addEventListener("updatefound", () => {
@@ -89,9 +94,13 @@ export default function RegisterSW() {
 		};
 
 		let cleanupRegister: (() => void) | undefined;
-		void register().then((cleanup) => {
-			cleanupRegister = cleanup;
-		});
+		void register()
+			.then((cleanup) => {
+				cleanupRegister = cleanup;
+			})
+			.catch((error) => {
+				console.warn("MizanTrack service worker registration failed.", error);
+			});
 
 		return () => {
 			navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);

@@ -1,6 +1,39 @@
 // @ts-check
 const withPWA = require("@ducanh2912/next-pwa").default;
 
+const appShellRoutes = [
+	"/",
+	"/dashboard",
+	"/accounts",
+	"/transactions",
+	"/categories",
+	"/reports",
+	"/settings",
+	"/zakat",
+	"/login",
+	"/offline",
+];
+
+const appShellRevision =
+	process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? "local-app-shell-v1";
+
+const networkOnlyOrigins = [
+	/^https:\/\/accounts\.google\.com\/.*/i,
+	/^https:\/\/oauth2\.googleapis\.com\/.*/i,
+	/^https:\/\/www\.googleapis\.com\/.*/i,
+	/^https:\/\/identitytoolkit\.googleapis\.com\/.*/i,
+	/^https:\/\/securetoken\.googleapis\.com\/.*/i,
+	/^https:\/\/firestore\.googleapis\.com\/.*/i,
+	/^https:\/\/.*\.firebaseio\.com\/.*/i,
+	/^https:\/\/.*\.firebaseapp\.com\/.*/i,
+];
+
+const networkOnlyPlugins = [
+	{
+		handlerDidError: async () => Response.error(),
+	},
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	reactStrictMode: true,
@@ -11,18 +44,69 @@ const nextConfig = {
 
 module.exports = withPWA({
 	dest: "public",
-	register: true,
+	register: false,
 	skipWaiting: true,
-	fallbackRoutes: { document: "/offline" },
-	runtimeCaching: [
-		{
-			urlPattern: /^https?.*/,
-			handler: "NetworkFirst",
-			options: {
-				cacheName: "mizantrack-cache",
-				networkTimeoutSeconds: 10,
-				expiration: { maxEntries: 200, maxAgeSeconds: 86400 },
+	clientsClaim: true,
+	reloadOnOnline: false,
+	cacheStartUrl: true,
+	dynamicStartUrl: false,
+	fallbacks: { document: "/dashboard" },
+	workboxOptions: {
+		additionalManifestEntries: appShellRoutes.map((url) => ({
+			url,
+			revision: appShellRevision,
+		})),
+		cleanupOutdatedCaches: true,
+		navigateFallback: "/dashboard",
+		navigateFallbackDenylist: [/^\/api\//],
+		runtimeCaching: [
+			{
+				urlPattern: ({ sameOrigin, url }) => sameOrigin && url.pathname.startsWith("/api/"),
+				handler: "NetworkOnly",
+				options: { cacheName: "mizantrack-network-only-api", plugins: networkOnlyPlugins },
 			},
-		},
-	],
+			...networkOnlyOrigins.map((urlPattern) => ({
+				urlPattern,
+				handler: "NetworkOnly",
+				options: {
+					cacheName: "mizantrack-network-only-third-party",
+					plugins: networkOnlyPlugins,
+				},
+			})),
+			{
+				urlPattern: ({ request, sameOrigin }) => sameOrigin && request.mode === "navigate",
+				handler: "NetworkFirst",
+				options: {
+					cacheName: "mizantrack-static-shell",
+					networkTimeoutSeconds: 3,
+					expiration: { maxEntries: 32, maxAgeSeconds: 7 * 24 * 60 * 60 },
+				},
+			},
+			{
+				urlPattern: ({ sameOrigin, url }) =>
+					sameOrigin && url.pathname.startsWith("/_next/static/"),
+				handler: "CacheFirst",
+				options: {
+					cacheName: "mizantrack-next-static",
+					expiration: { maxEntries: 160, maxAgeSeconds: 30 * 24 * 60 * 60 },
+				},
+			},
+			{
+				urlPattern: /\.(?:png|jpg|jpeg|svg|webp|ico)$/i,
+				handler: "StaleWhileRevalidate",
+				options: {
+					cacheName: "mizantrack-images",
+					expiration: { maxEntries: 64, maxAgeSeconds: 30 * 24 * 60 * 60 },
+				},
+			},
+			{
+				urlPattern: /\.(?:woff|woff2)$/i,
+				handler: "CacheFirst",
+				options: {
+					cacheName: "mizantrack-fonts",
+					expiration: { maxEntries: 32, maxAgeSeconds: 365 * 24 * 60 * 60 },
+				},
+			},
+		],
+	},
 })(nextConfig);
