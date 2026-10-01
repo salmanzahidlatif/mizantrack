@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCategories } from "@/hooks/useCategories";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useRequiredUserId } from "@/hooks/useRequiredUserId";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
@@ -16,12 +17,13 @@ import { useUIStore } from "@/store/ui-store";
 import type { CategoryType } from "@/types";
 
 interface CategoriesPageClientProps {
-	userId: string;
+	userId?: string;
 }
 
 type CurrencyScope = "currency" | "all";
 
-export function CategoriesPageClient({ userId }: CategoriesPageClientProps) {
+export function CategoriesPageClient({ userId: providedUserId }: CategoriesPageClientProps = {}) {
+	const userId = useRequiredUserId(providedUserId);
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
 	const haptics = useHaptics();

@@ -20,6 +20,7 @@ import { useAccounts } from "@/hooks/useAccounts";
 import { useAccountsAnalytics } from "@/hooks/useAccountsAnalytics";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useRequiredUserId } from "@/hooks/useRequiredUserId";
 import { CARD_SURFACE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
@@ -29,7 +30,7 @@ import type { AccountsAnalytics } from "@/lib/analytics/periodAnalytics";
 import type { Account } from "@/types";
 
 interface AccountsPageClientProps {
-	userId: string;
+	userId?: string;
 }
 
 function SummaryAmountSkeleton({ className }: { className?: string }) {
@@ -126,7 +127,8 @@ function getAccountsByAnalyticsIds(
 		.filter((account): account is Account => account !== undefined);
 }
 
-export function AccountsPageClient({ userId }: AccountsPageClientProps) {
+export function AccountsPageClient({ userId: providedUserId }: AccountsPageClientProps = {}) {
+	const userId = useRequiredUserId(providedUserId);
 	const router = useRouter();
 	const { activeCurrency, showArchivedAccounts, setShowArchivedAccounts, setAccountId } =
 		useFilterStore();

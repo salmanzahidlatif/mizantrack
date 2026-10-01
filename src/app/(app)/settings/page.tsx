@@ -1,16 +1,7 @@
-import { redirect } from "next/navigation";
-
 import { SettingsPageClient } from "@/components/settings/SettingsPageClient";
-import { auth } from "@/lib/auth";
 
-export default async function SettingsPage() {
-	const session = await auth();
-	if (!session?.user?.id) redirect("/login");
+export const dynamic = "error";
 
-	return (
-		<SettingsPageClient
-			userId={session.user.id}
-			userDisplay={session.user.email ?? session.user.name ?? undefined}
-		/>
-	);
+export default function SettingsPage() {
+	return <SettingsPageClient />;
 }

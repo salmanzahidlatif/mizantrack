@@ -26,6 +26,7 @@ import { ZakatMonthlyBalances } from "@/components/zakat/ZakatMonthlyBalances";
 import { ZakatPayments } from "@/components/zakat/ZakatPayments";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
+import { useRequiredUserId } from "@/hooks/useRequiredUserId";
 import { computeAccountBalances } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import { fetchGoldPrice } from "@/lib/goldPrice";
@@ -45,10 +46,11 @@ const PURITY_TO_PURE_GOLD: Record<GoldPurity, number> = {
 };
 
 interface ZakatPageClientProps {
-	userId: string;
+	userId?: string;
 }
 
-export function ZakatPageClientEnhanced({ userId }: ZakatPageClientProps) {
+export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageClientProps = {}) {
+	const userId = useRequiredUserId(providedUserId);
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
 	const referenceCurrency = activeCurrency !== "" ? activeCurrency : (config?.currency ?? "PKR");

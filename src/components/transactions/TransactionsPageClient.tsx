@@ -7,15 +7,19 @@ import { TransactionList } from "@/components/transactions/TransactionList";
 import { TransactionMonthStrip } from "@/components/transactions/TransactionMonthStrip";
 import { useActiveAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
+import { useRequiredUserId } from "@/hooks/useRequiredUserId";
 import { useTransactions } from "@/hooks/useTransactions";
 import { getDateRange, getLocalTimeZoneOffsetMinutes, getMonthRange } from "@/lib/dateRange";
 import { useFilterStore } from "@/store/filter-store";
 
 interface TransactionsPageClientProps {
-	userId: string;
+	userId?: string;
 }
 
-export function TransactionsPageClient({ userId }: TransactionsPageClientProps) {
+export function TransactionsPageClient({
+	userId: providedUserId,
+}: TransactionsPageClientProps = {}) {
+	const userId = useRequiredUserId(providedUserId);
 	const accounts = useActiveAccounts(userId);
 
 	const {

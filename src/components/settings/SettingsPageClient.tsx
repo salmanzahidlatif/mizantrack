@@ -1,5 +1,6 @@
 "use client";
 
+import { useCurrentUser } from "@/components/auth/OfflineAuthProvider";
 import { AppLockSettings } from "@/components/settings/AppLockSettings";
 import { CategoryCurrencyBackfillPanel } from "@/components/settings/CategoryCurrencyBackfillPanel";
 import { ExportPanel } from "@/components/settings/ExportPanel";
@@ -8,13 +9,21 @@ import { ImportPanel } from "@/components/settings/ImportPanel";
 import { PreferencesForm } from "@/components/settings/PreferencesForm";
 import { ResetLocalDataPanel } from "@/components/settings/ResetLocalDataPanel";
 import { TransferIntegrityPanel } from "@/components/settings/TransferIntegrityPanel";
+import { useRequiredUserId } from "@/hooks/useRequiredUserId";
 
 interface SettingsPageClientProps {
-	userId: string;
+	userId?: string;
 	userDisplay?: string | null;
 }
 
-export function SettingsPageClient({ userId, userDisplay }: SettingsPageClientProps) {
+export function SettingsPageClient({
+	userId: providedUserId,
+	userDisplay,
+}: SettingsPageClientProps = {}) {
+	const currentUser = useCurrentUser();
+	const userId = useRequiredUserId(providedUserId);
+	const displayName = userDisplay ?? currentUser?.email ?? currentUser?.name ?? undefined;
+
 	return (
 		<div className="space-y-5">
 			<div>
@@ -24,7 +33,7 @@ export function SettingsPageClient({ userId, userDisplay }: SettingsPageClientPr
 
 			<PreferencesForm userId={userId} />
 
-			<AppLockSettings userId={userId} userDisplay={userDisplay} />
+			<AppLockSettings userId={userId} userDisplay={displayName} />
 
 			<div className="grid gap-4 sm:grid-cols-2">
 				<ImportPanel userId={userId} />

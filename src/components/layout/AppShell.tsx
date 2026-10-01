@@ -18,6 +18,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { useOfflineAuth } from "@/components/auth/OfflineAuthProvider";
 import { AppLockGuard } from "@/components/layout/AppLockGuard";
 import { BottomNav, BOTTOM_NAV_ROUTES } from "@/components/layout/BottomNav";
 import { CurrencySelector } from "@/components/layout/CurrencySelector";
@@ -39,7 +40,6 @@ import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
-import { signOutAction } from "@/lib/actions/auth";
 import {
 	recomputeAnalyticsNow,
 	scheduleAnalyticsRecompute,
@@ -94,6 +94,7 @@ export function AppShell({ user, children }: AppShellProps) {
 	const triggerSync = useSyncStore((s) => s.triggerSync);
 	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 	const haptics = useHaptics();
+	const { isOffline, signOut } = useOfflineAuth();
 	const pullToRefresh = usePullToRefresh({
 		containerRef: mainRef,
 		enabled: Boolean(user?.id),
@@ -166,6 +167,9 @@ export function AppShell({ user, children }: AppShellProps) {
 	const handleAddTransaction = () => {
 		haptics.medium();
 		openAddTransaction();
+	};
+	const handleSignOut = () => {
+		void signOut();
 	};
 
 	useEffect(() => {
@@ -301,13 +305,12 @@ export function AppShell({ user, children }: AppShellProps) {
 										</DropdownMenuItem>
 									)}
 									<DropdownMenuSeparator />
-									<DropdownMenuItem asChild variant="destructive">
-										<form action={signOutAction}>
-											<button type="submit" className="flex w-full items-center gap-2">
-												<LogOut className="h-4 w-4" />
-												Sign out
-											</button>
-										</form>
+									<DropdownMenuItem
+										variant="destructive"
+										onSelect={handleSignOut}
+										className="gap-2">
+										<LogOut className="h-4 w-4" />
+										Sign out
 									</DropdownMenuItem>
 								</DropdownMenuContent>
 							</DropdownMenu>
@@ -358,13 +361,12 @@ export function AppShell({ user, children }: AppShellProps) {
 										</DropdownMenuItem>
 									)}
 									<DropdownMenuSeparator />
-									<DropdownMenuItem asChild variant="destructive">
-										<form action={signOutAction}>
-											<button type="submit" className="flex w-full items-center gap-2">
-												<LogOut className="h-4 w-4" />
-												Sign out
-											</button>
-										</form>
+									<DropdownMenuItem
+										variant="destructive"
+										onSelect={handleSignOut}
+										className="gap-2">
+										<LogOut className="h-4 w-4" />
+										Sign out
 									</DropdownMenuItem>
 								</DropdownMenuContent>
 							</DropdownMenu>
@@ -375,6 +377,12 @@ export function AppShell({ user, children }: AppShellProps) {
 					<main ref={mainRef} className="pb-safe-nav flex-1 overflow-auto md:pb-0">
 						{pullToRefresh.indicator}
 						<div className="mx-auto max-w-4xl p-4" style={swipeNavigation.style}>
+							{isOffline && (
+								<div className="mb-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+									You&apos;re offline. Local changes are saved on this device and will sync when
+									you&apos;re back online.
+								</div>
+							)}
 							<div key={pathname} className="page-enter">
 								<div className="mb-3 md:hidden">
 									<h1

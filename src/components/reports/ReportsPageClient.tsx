@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePeriodAnalytics } from "@/hooks/usePeriodAnalytics";
+import { useRequiredUserId } from "@/hooks/useRequiredUserId";
 import {
 	getLocalTimeZoneOffsetMinutes,
 	resolveAnalyticsPeriod,
@@ -46,7 +47,7 @@ import type {
 } from "@/lib/analytics/periodAnalytics";
 
 interface ReportsPageClientProps {
-	userId: string;
+	userId?: string;
 }
 
 interface IncomeExpenseCardProps {
@@ -247,7 +248,8 @@ function BreakdownSummaryCard({
 	);
 }
 
-export function ReportsPageClient({ userId }: ReportsPageClientProps) {
+export function ReportsPageClient({ userId: providedUserId }: ReportsPageClientProps = {}) {
+	const userId = useRequiredUserId(providedUserId);
 	const config = useDbConfig(userId);
 	const haptics = useHaptics();
 	const { activeCurrency } = useFilterStore();

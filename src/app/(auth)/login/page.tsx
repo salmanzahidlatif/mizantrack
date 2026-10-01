@@ -1,11 +1,12 @@
-import { redirect } from "next/navigation";
-
 import { AutoGoogleSignIn } from "@/components/auth/AutoGoogleSignIn";
-import { auth } from "@/lib/auth";
+import { OfflineAuthProvider } from "@/components/auth/OfflineAuthProvider";
 
-export default async function LoginPage() {
-	const session = await auth();
-	if (session?.user?.id) redirect("/dashboard");
+export const dynamic = "error";
 
-	return <AutoGoogleSignIn />;
+export default function LoginPage() {
+	return (
+		<OfflineAuthProvider>
+			<AutoGoogleSignIn />
+		</OfflineAuthProvider>
+	);
 }

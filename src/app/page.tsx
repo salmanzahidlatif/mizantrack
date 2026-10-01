@@ -1,12 +1,14 @@
-import { redirect } from "next/navigation";
+"use client";
 
-import { auth } from "@/lib/auth";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-export default async function RootPage() {
-	const session = await auth();
-	if (session?.user?.id) {
-		redirect("/dashboard");
-	} else {
-		redirect("/login");
-	}
+export default function RootPage() {
+	const router = useRouter();
+
+	useEffect(() => {
+		router.replace("/dashboard");
+	}, [router]);
+
+	return null;
 }

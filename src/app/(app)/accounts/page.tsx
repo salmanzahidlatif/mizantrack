@@ -1,11 +1,7 @@
-import { redirect } from "next/navigation";
-
 import { AccountsPageClient } from "@/components/accounts/AccountsPageClient";
-import { auth } from "@/lib/auth";
 
-export default async function AccountsPage() {
-	const session = await auth();
-	if (!session?.user?.id) redirect("/login");
+export const dynamic = "error";
 
-	return <AccountsPageClient userId={session.user.id} />;
+export default function AccountsPage() {
+	return <AccountsPageClient />;
 }

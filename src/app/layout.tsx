@@ -21,7 +21,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
 	title: "MizanTrack",
 	description: "Personal Finance Tracker + Budgeting App + Zakat Calculator",
-	manifest: "/manifest.webmanifest",
+	manifest: "/manifest.json",
 	appleWebApp: {
 		capable: true,
 		statusBarStyle: "black-translucent",

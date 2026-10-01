@@ -31,6 +31,7 @@ import { useAnalyticsMonthSummaries } from "@/hooks/useAnalyticsMonthSummaries";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePeriodAnalytics } from "@/hooks/usePeriodAnalytics";
+import { useRequiredUserId } from "@/hooks/useRequiredUserId";
 import {
 	getLocalTimeZoneOffsetMinutes,
 	getMonthKey,
@@ -59,7 +60,7 @@ const CategoryBreakdownChart = dynamic(
 );
 
 interface DashboardPageClientProps {
-	userId: string;
+	userId?: string;
 }
 
 interface MonthStripProps {
@@ -439,7 +440,8 @@ function SummarySplitCard({ analytics, currency, periodLabel }: SummarySplitCard
 	);
 }
 
-export function DashboardPageClient({ userId }: DashboardPageClientProps) {
+export function DashboardPageClient({ userId: providedUserId }: DashboardPageClientProps = {}) {
+	const userId = useRequiredUserId(providedUserId);
 	const config = useDbConfig(userId);
 	const haptics = useHaptics();
 	const { activeCurrency } = useFilterStore();

@@ -1,12 +1,9 @@
-import { redirect } from "next/navigation";
 import React from "react";
 
-import { AppShell } from "@/components/layout/AppShell";
-import { auth } from "@/lib/auth";
+import { AuthenticatedAppShell } from "@/components/auth/AuthenticatedAppShell";
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-	const session = await auth();
-	if (!session?.user?.id) redirect("/login");
+export const dynamic = "error";
 
-	return <AppShell user={session.user}>{children}</AppShell>;
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+	return <AuthenticatedAppShell>{children}</AuthenticatedAppShell>;
 }
