@@ -110,6 +110,9 @@ describe("transactions indexed filters", () => {
 		expect(result.transactions.every((item) => item.categoryId === CATEGORY_ID)).toBe(true);
 	});
 
+	// Seeds 10k+ rows into fake-indexeddb, which can exceed the default 5s timeout
+	// when the full suite runs concurrently. The assertions below are count-based,
+	// not timing-based, so a generous timeout keeps this deterministic.
 	it("uses the user/date index so monthly queries do not scan a 10,000 row table", async () => {
 		const september = getMonthRange(new Date("2026-09-15T12:00:00.000Z"), {
 			timeZoneOffsetMinutes: TIME_ZONE_OFFSET_MINUTES,
@@ -155,5 +158,5 @@ describe("transactions indexed filters", () => {
 			legacyUserIdScan: 10064,
 			indexedCandidates: 64,
 		});
-	});
+	}, 30_000);
 });
