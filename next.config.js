@@ -1,8 +1,12 @@
 // @ts-check
 const withPWA = require("@ducanh2912/next-pwa").default;
 
+// next-pwa already precaches "/" (via cacheStartUrl and its own build manifest).
+// Re-adding it here with a different revision makes Workbox throw
+// add-to-cache-list-conflicting-entries inside precacheAndRoute. That throw is
+// swallowed by the generated AMD wrapper, so the service worker still activates
+// but silently registers no precache and no runtime routes at all.
 const appShellRoutes = [
-	"/",
 	"/dashboard",
 	"/accounts",
 	"/transactions",
