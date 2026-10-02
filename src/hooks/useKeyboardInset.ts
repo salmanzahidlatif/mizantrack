@@ -10,6 +10,11 @@ export type KeyboardInsetState = Readonly<{
 const KEYBOARD_OPEN_THRESHOLD = 24;
 const KEYBOARD_INSET_PROPERTY = "--keyboard-inset";
 const STATE_SETTLE_DELAY = 80;
+const KEYBOARD_SCROLL_CONTAINER_SELECTOR = "[data-keyboard-scroll-container='true']";
+const FOCUSABLE_FIELD_SELECTOR =
+	"input, textarea, select, button, [role='combobox'], [contenteditable='true']";
+const FOCUS_SCROLL_DELAYS = [0, 120, 280, 420];
+const FOCUS_SCROLL_MARGIN = 12;
 
 function getKeyboardInset() {
 	if (typeof window === "undefined" || !window.visualViewport) {
@@ -28,6 +33,77 @@ function setKeyboardInsetProperty(inset: number) {
 	}
 
 	document.documentElement.style.setProperty(KEYBOARD_INSET_PROPERTY, `${inset}px`);
+}
+
+function getKeyboardInsetProperty() {
+	if (typeof document === "undefined") {
+		return 0;
+	}
+
+	const rawInset = window
+		.getComputedStyle(document.documentElement)
+		.getPropertyValue(KEYBOARD_INSET_PROPERTY);
+	const inset = Number.parseFloat(rawInset);
+
+	return Number.isFinite(inset) ? Math.max(0, inset) : 0;
+}
+
+function scrollByDelta(scrollContainer: HTMLElement, delta: number) {
+	if (Math.abs(delta) < 1) {
+		return;
+	}
+
+	scrollContainer.scrollTop += delta;
+}
+
+function scrollFieldIntoKeyboardViewport(field: HTMLElement) {
+	const scrollContainer = field.closest(KEYBOARD_SCROLL_CONTAINER_SELECTOR);
+	if (!(scrollContainer instanceof HTMLElement)) {
+		if (typeof field.scrollIntoView === "function") {
+			field.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+		}
+		return;
+	}
+
+	const containerRect = scrollContainer.getBoundingClientRect();
+	const fieldRect = field.getBoundingClientRect();
+	const footer = scrollContainer.parentElement?.querySelector("[data-slot='drawer-footer']");
+	const footerTop =
+		footer instanceof HTMLElement ? footer.getBoundingClientRect().top : Number.POSITIVE_INFINITY;
+	const visualViewport = window.visualViewport;
+	const viewportTop = visualViewport?.offsetTop ?? 0;
+	const viewportBottom = viewportTop + (visualViewport?.height ?? window.innerHeight);
+	const keyboardInset = getKeyboardInsetProperty();
+	const keyboardTop =
+		keyboardInset > 0 ? window.innerHeight - keyboardInset : Number.POSITIVE_INFINITY;
+	const visibleTop = Math.max(containerRect.top, viewportTop) + FOCUS_SCROLL_MARGIN;
+	const visibleBottom =
+		Math.min(containerRect.bottom, viewportBottom, keyboardTop, footerTop) - FOCUS_SCROLL_MARGIN;
+
+	if (fieldRect.bottom > visibleBottom) {
+		scrollByDelta(scrollContainer, fieldRect.bottom - visibleBottom);
+		return;
+	}
+
+	if (fieldRect.top < visibleTop) {
+		scrollByDelta(scrollContainer, fieldRect.top - visibleTop);
+	}
+}
+
+export function scrollFocusedFieldIntoView(target: EventTarget | null) {
+	if (!(target instanceof HTMLElement)) return;
+
+	const field = target.closest(FOCUSABLE_FIELD_SELECTOR);
+	if (!(field instanceof HTMLElement)) return;
+
+	for (const delay of FOCUS_SCROLL_DELAYS) {
+		if (delay === 0) {
+			window.requestAnimationFrame(() => scrollFieldIntoKeyboardViewport(field));
+			continue;
+		}
+
+		window.setTimeout(() => scrollFieldIntoKeyboardViewport(field), delay);
+	}
 }
 
 export function useKeyboardInset(): KeyboardInsetState {

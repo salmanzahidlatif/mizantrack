@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDbConfig } from "@/hooks/useDbConfig";
+import { scrollFocusedFieldIntoView } from "@/hooks/useKeyboardInset";
 import { createAccount, updateAccount } from "@/lib/actions/accounts";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
@@ -41,23 +42,6 @@ const ACCOUNT_FORM_ID = "account-drawer-form";
 const FORM_DRAWER_CONTENT_CLASS =
 	"overflow-hidden pb-0 data-[vaul-drawer-direction=bottom]:h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_1rem)] data-[vaul-drawer-direction=bottom]:max-h-[95dvh] data-[vaul-drawer-direction=bottom]:pb-0";
 const FORM_DRAWER_CLOSE_THRESHOLD = 0.55;
-const FOCUSABLE_FIELD_SELECTOR =
-	"input, textarea, select, button, [role='combobox'], [contenteditable='true']";
-const FOCUS_SCROLL_DELAY = 280;
-
-function scrollFocusedFieldIntoView(target: EventTarget | null) {
-	if (!(target instanceof HTMLElement)) return;
-
-	const field = target.closest(FOCUSABLE_FIELD_SELECTOR);
-	if (!(field instanceof HTMLElement)) return;
-
-	const scroll = () => {
-		field.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
-	};
-
-	window.requestAnimationFrame(scroll);
-	window.setTimeout(scroll, FOCUS_SCROLL_DELAY);
-}
 
 interface AccountDrawerProps {
 	userId: string;
@@ -166,6 +150,7 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 					}}
 					className="flex min-h-0 flex-1 flex-col">
 					<div
+						data-keyboard-scroll-container="true"
 						className="min-h-0 flex-1 scroll-pb-[calc(8rem_+_var(--keyboard-inset,0px))] space-y-4 overflow-y-auto overscroll-contain px-4 py-4"
 						onFocusCapture={(event) => scrollFocusedFieldIntoView(event.target)}>
 						{/* Title */}

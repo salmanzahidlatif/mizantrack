@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
 import { useLiveQuery } from "dexie-react-hooks";
 import { CalendarIcon, ChevronDown } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useForm, type FieldErrors, type Resolver, type SubmitErrorHandler } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { useActiveAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
+import { scrollFocusedFieldIntoView } from "@/hooks/useKeyboardInset";
 import {
 	createTransaction,
 	deleteTransaction,
@@ -64,9 +65,12 @@ const TRANSACTION_FORM_ID = "transaction-drawer-form";
 const FORM_DRAWER_CONTENT_CLASS =
 	"overflow-hidden pb-0 data-[vaul-drawer-direction=bottom]:h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_1rem)] data-[vaul-drawer-direction=bottom]:max-h-[95dvh] data-[vaul-drawer-direction=bottom]:pb-0";
 const FORM_DRAWER_CLOSE_THRESHOLD = 0.55;
-const FOCUSABLE_FIELD_SELECTOR =
-	"input, textarea, select, button, [role='combobox'], [contenteditable='true']";
-const FOCUS_SCROLL_DELAY = 280;
+type NewTransactionDefaults = Partial<TransactionFormValues> & {
+	amount: TransactionFormValues["amount"];
+	date: Date;
+	description: string;
+	type: "Expense";
+};
 
 function getCurrencyLabel(currency?: string): ReactNode {
 	if (!currency) return null;
@@ -178,18 +182,21 @@ function errorMessage(error: unknown): string {
 	return "Something went wrong. Please try again.";
 }
 
-function scrollFocusedFieldIntoView(target: EventTarget | null) {
-	if (!(target instanceof HTMLElement)) return;
-
-	const field = target.closest(FOCUSABLE_FIELD_SELECTOR);
-	if (!(field instanceof HTMLElement)) return;
-
-	const scroll = () => {
-		field.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+function getNewTransactionDefaults(
+	previous?: Partial<TransactionFormValues>
+): NewTransactionDefaults {
+	return {
+		accountId: previous?.accountId,
+		amount: "" as unknown as TransactionFormValues["amount"],
+		categoryId: undefined,
+		date: previous?.date instanceof Date ? previous.date : new Date(),
+		description: "",
+		place: undefined,
+		tags: undefined,
+		toAccountId: undefined,
+		travelCurrency: undefined,
+		type: "Expense",
 	};
-
-	window.requestAnimationFrame(scroll);
-	window.setTimeout(scroll, FOCUS_SCROLL_DELAY);
 }
 
 function getFirstErrorMessage(fieldErrors: FieldErrors<TransactionFormValues>): string | null {
@@ -230,6 +237,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 	const [confirming, setConfirming] = useState(false);
 	const [datePickerOpen, setDatePickerOpen] = useState(false);
 	const [saving, setSaving] = useState(false);
+	const newTransactionDefaultsRef = useRef<NewTransactionDefaults | undefined>(undefined);
 
 	const {
 		register,
@@ -244,7 +252,8 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 		defaultValues: {
 			type: "Expense",
 			date: new Date(),
-			amount: undefined,
+			amount: "" as unknown as TransactionFormValues["amount"],
+			description: "",
 		},
 	});
 
@@ -334,7 +343,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 		let cancelled = false;
 
 		if (!isTransactionDrawerOpen) {
-			reset({ type: "Expense", date: new Date(), amount: undefined });
+			reset(getNewTransactionDefaults(newTransactionDefaultsRef.current));
 			setEditAccounts([]);
 			setEditCategory(null);
 			setShowTravel(false);
@@ -343,8 +352,12 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 			return;
 		}
 		if (!editTransactionId) {
+			reset(getNewTransactionDefaults(newTransactionDefaultsRef.current));
 			setEditAccounts([]);
 			setEditCategory(null);
+			setShowTravel(false);
+			setConfirming(false);
+			setSaving(false);
 			return;
 		}
 
@@ -416,6 +429,14 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 				toast.success("Transaction updated");
 			} else {
 				await createTransaction(userId, values);
+				newTransactionDefaultsRef.current = getNewTransactionDefaults({
+					accountId: values.accountId,
+					date: values.date,
+				});
+				reset(newTransactionDefaultsRef.current);
+				setEditAccounts([]);
+				setEditCategory(null);
+				setShowTravel(false);
 				toast.success("Transaction recorded");
 			}
 			closeTransactionDrawer();
@@ -494,6 +515,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 					}}
 					className="flex min-h-0 flex-1 flex-col">
 					<div
+						data-keyboard-scroll-container="true"
 						className="min-h-0 flex-1 scroll-pb-[calc(8rem_+_var(--keyboard-inset,0px))] space-y-4 overflow-y-auto overscroll-contain px-4 py-4"
 						onFocusCapture={(event) => scrollFocusedFieldIntoView(event.target)}>
 						{/* Type tabs */}
