@@ -72,6 +72,7 @@ function ResetPreviewSummary({
 				<CountRow label="Accounts removed" value={preview.accountsDeleted} />
 				<CountRow label="Transactions removed" value={preview.transactionsDeleted} />
 				<CountRow label="Categories removed" value={preview.categoriesDeleted} />
+				<CountRow label="Budgets removed" value={preview.budgetsDeleted} />
 				<CountRow label="Dashboard cache cleared" value={preview.dashboardStatsCleared} />
 				{preview.categoriesReseeded > 0 ? (
 					<CountRow label="Default categories restored" value={preview.categoriesReseeded} />
@@ -86,6 +87,14 @@ function ResetPreviewSummary({
 						currencies, all Zakat records, app settings, and accounts whose currency is blank,
 						unknown, or not enabled.
 					</p>
+					{preview.budgetsDeleted > 0 ? (
+						<p>
+							Budgets removed: {formatCount(preview.budgetsDeletedByExplicitCurrency)} with explicit{" "}
+							{preview.currency} currency and{" "}
+							{formatCount(preview.budgetsDeletedByCategoryCurrency)} derived from{" "}
+							{preview.currency}-tagged categories.
+						</p>
+					) : null}
 					{preview.transactionsDeletedCrossCurrencyTransfers > 0 ? (
 						<p className="text-amber-700 dark:text-amber-300">
 							{formatCount(preview.transactionsDeletedCrossCurrencyTransfers)} cross-currency
@@ -176,7 +185,9 @@ export function ResetLocalDataPanel({ userId }: ResetLocalDataPanelProps) {
 			toast.success(
 				`Reset complete — removed ${formatCount(result.accountsDeleted)} accounts, ${formatCount(
 					result.categoriesDeleted
-				)} categories, and ${formatCount(result.transactionsDeleted)} transactions.`
+				)} categories, ${formatCount(result.budgetsDeleted)} budgets, and ${formatCount(
+					result.transactionsDeleted
+				)} transactions.`
 			);
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Failed to reset local data.");
@@ -227,7 +238,7 @@ export function ResetLocalDataPanel({ userId }: ResetLocalDataPanelProps) {
 						<DialogDescription>
 							{mode === "currency"
 								? "This is a scoped local reset. It does not preselect a currency and will not run until you choose one and type the exact confirmation phrase."
-								: "This permanently removes all local accounts, categories, and transactions from this device, then restores the default category list."}
+								: "This permanently removes all local accounts, categories, budgets, and transactions from this device, then restores the default category list."}
 						</DialogDescription>
 					</DialogHeader>
 

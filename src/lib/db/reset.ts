@@ -5,7 +5,7 @@ import { CORE_SYNC_TABLES, type SyncableTable } from "@/lib/db/sync";
 
 import { db } from "./local";
 
-import type { Account, Transaction } from "@/types";
+import type { Account, Budget, Category, Transaction } from "@/types";
 
 type ResetLocalDataScope =
 	| { type: "all" }
@@ -16,6 +16,9 @@ export interface ResetLocalDataPreview {
 	currency?: string;
 	accountsDeleted: number;
 	categoriesDeleted: number;
+	budgetsDeleted: number;
+	budgetsDeletedByExplicitCurrency: number;
+	budgetsDeletedByCategoryCurrency: number;
 	transactionsDeleted: number;
 	dashboardStatsCleared: number;
 	categoriesReseeded: number;
@@ -36,6 +39,7 @@ export interface ResetLocalDataResult extends ResetLocalDataPreview {}
 interface ResetLocalDataPlan extends ResetLocalDataPreview {
 	accountIdsToDelete: string[];
 	categoryIdsToDelete: string[];
+	budgetIdsToDelete: string[];
 	transactionIdsToDelete: string[];
 }
 
@@ -127,6 +131,18 @@ function transactionTouchesAccountIds(transaction: Transaction, accountIds: Set<
 	);
 }
 
+function budgetBelongsToCurrency(
+	budget: Budget,
+	targetCurrency: string,
+	categoriesById: Map<string, Category>
+): "explicit" | "category" | false {
+	const explicitCurrency = normalizeCurrency(budget.currency);
+	if (explicitCurrency) return explicitCurrency === targetCurrency ? "explicit" : false;
+
+	const categoryCurrency = normalizeCurrency(categoriesById.get(budget.categoryId)?.currency);
+	return categoryCurrency === targetCurrency ? "category" : false;
+}
+
 function isCrossCurrencyTransferDeleted(
 	transaction: Transaction,
 	accountIdsToDelete: Set<string>,
@@ -152,6 +168,7 @@ async function buildAllResetPlan(userId: string): Promise<ResetLocalDataPlan> {
 	const [
 		accounts,
 		categories,
+		budgets,
 		transactions,
 		dashboardStats,
 		goldItemsKept,
@@ -160,6 +177,7 @@ async function buildAllResetPlan(userId: string): Promise<ResetLocalDataPlan> {
 	] = await Promise.all([
 		db.accounts.where("userId").equals(userId).toArray(),
 		db.categories.where("userId").equals(userId).toArray(),
+		db.budgets.where("userId").equals(userId).toArray(),
 		db.transactions.where("userId").equals(userId).toArray(),
 		db.dashboardStats.get(userId),
 		db.goldItems.where("userId").equals(userId).count(),
@@ -171,6 +189,9 @@ async function buildAllResetPlan(userId: string): Promise<ResetLocalDataPlan> {
 		scope: "all",
 		accountsDeleted: accounts.length,
 		categoriesDeleted: categories.length,
+		budgetsDeleted: budgets.length,
+		budgetsDeletedByExplicitCurrency: 0,
+		budgetsDeletedByCategoryCurrency: 0,
 		transactionsDeleted: transactions.length,
 		dashboardStatsCleared: dashboardStats ? 1 : 0,
 		categoriesReseeded: 0,
@@ -186,6 +207,7 @@ async function buildAllResetPlan(userId: string): Promise<ResetLocalDataPlan> {
 		syncTablesReset: [...CORE_SYNC_TABLES],
 		accountIdsToDelete: accounts.map((account) => account.id),
 		categoryIdsToDelete: categories.map((category) => category.id),
+		budgetIdsToDelete: budgets.map((budget) => budget.id),
 		transactionIdsToDelete: transactions.map((transaction) => transaction.id),
 	};
 }
@@ -213,6 +235,7 @@ async function buildCurrencyResetPlan(
 	const [
 		accounts,
 		categories,
+		budgets,
 		transactions,
 		dashboardStats,
 		goldItemsKept,
@@ -221,6 +244,7 @@ async function buildCurrencyResetPlan(
 	] = await Promise.all([
 		db.accounts.where("userId").equals(userId).toArray(),
 		db.categories.where("userId").equals(userId).toArray(),
+		db.budgets.where("userId").equals(userId).toArray(),
 		db.transactions.where("userId").equals(userId).toArray(),
 		db.dashboardStats.get(userId),
 		db.goldItems.where("userId").equals(userId).count(),
@@ -229,6 +253,7 @@ async function buildCurrencyResetPlan(
 	]);
 
 	const accountsById = new Map(accounts.map((account) => [account.id, account]));
+	const categoriesById = new Map(categories.map((category) => [category.id, category]));
 	const accountIdsToDelete = accounts
 		.filter((account) => isTargetAccount(account, targetCurrency, enabledCurrencies))
 		.map((account) => account.id);
@@ -236,6 +261,13 @@ async function buildCurrencyResetPlan(
 	const categoryIdsToDelete = categories
 		.filter((category) => normalizeCurrency(category.currency) === targetCurrency)
 		.map((category) => category.id);
+	const budgetDeleteReasons = budgets.map((budget) => ({
+		budget,
+		reason: budgetBelongsToCurrency(budget, targetCurrency, categoriesById),
+	}));
+	const budgetIdsToDelete = budgetDeleteReasons
+		.filter((entry) => entry.reason !== false)
+		.map((entry) => entry.budget.id);
 	const transactionIdsToDelete = transactions
 		.filter((transaction) => transactionTouchesAccountIds(transaction, accountIdDeleteSet))
 		.map((transaction) => transaction.id);
@@ -251,6 +283,13 @@ async function buildCurrencyResetPlan(
 		currency: targetCurrency,
 		accountsDeleted: accountIdsToDelete.length,
 		categoriesDeleted: categoryIdsToDelete.length,
+		budgetsDeleted: budgetIdsToDelete.length,
+		budgetsDeletedByExplicitCurrency: budgetDeleteReasons.filter(
+			(entry) => entry.reason === "explicit"
+		).length,
+		budgetsDeletedByCategoryCurrency: budgetDeleteReasons.filter(
+			(entry) => entry.reason === "category"
+		).length,
 		transactionsDeleted: transactionIdsToDelete.length,
 		dashboardStatsCleared: dashboardStats ? 1 : 0,
 		categoriesReseeded: 0,
@@ -279,6 +318,7 @@ async function buildCurrencyResetPlan(
 		syncTablesReset: [...CORE_SYNC_TABLES],
 		accountIdsToDelete,
 		categoryIdsToDelete,
+		budgetIdsToDelete,
 		transactionIdsToDelete,
 	};
 }
@@ -295,6 +335,7 @@ function toResult(plan: ResetLocalDataPlan): ResetLocalDataResult {
 	const {
 		accountIdsToDelete: _accountIdsToDelete,
 		categoryIdsToDelete: _categoryIdsToDelete,
+		budgetIdsToDelete: _budgetIdsToDelete,
 		transactionIdsToDelete: _transactionIdsToDelete,
 		...result
 	} = plan;
@@ -317,6 +358,7 @@ async function executeResetLocalFinancialData(
 		[
 			db.accounts,
 			db.categories,
+			db.budgets,
 			db.transactions,
 			db.dashboardStats,
 			db.syncMeta,
@@ -334,6 +376,9 @@ async function executeResetLocalFinancialData(
 					: Promise.resolve(),
 				resetPlan.categoryIdsToDelete.length > 0
 					? db.categories.bulkDelete(resetPlan.categoryIdsToDelete)
+					: Promise.resolve(),
+				resetPlan.budgetIdsToDelete.length > 0
+					? db.budgets.bulkDelete(resetPlan.budgetIdsToDelete)
 					: Promise.resolve(),
 				resetPlan.transactionIdsToDelete.length > 0
 					? db.transactions.bulkDelete(resetPlan.transactionIdsToDelete)
@@ -378,7 +423,9 @@ export async function resetLocalFinancialData(userId: string): Promise<ResetLoca
  * - accounts whose normalized currency exactly matches the target;
  * - transactions touching those accounts, including cross-currency transfers,
  *   so no transaction can point at a missing account;
- * - categories explicitly tagged with the target currency.
+ * - categories explicitly tagged with the target currency;
+ * - budgets whose explicit currency matches the target, or whose category is
+ *   tagged with the target when the budget has no explicit currency.
  *
  * Blank, unknown, and non-enabled account currencies are kept deliberately.
  * This performs local hard deletes, not `deletedAt` tombstones, so sync has no

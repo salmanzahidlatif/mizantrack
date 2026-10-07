@@ -9,7 +9,7 @@ import {
 } from "@/lib/db/reset";
 import { CORE_SYNC_TABLES } from "@/lib/db/sync";
 
-import type { Account, Category, DashboardStats, Transaction } from "@/types";
+import type { Account, Budget, Category, DashboardStats, Transaction } from "@/types";
 
 vi.mock("@/lib/analytics/scheduleRecompute", () => ({
 	flushAnalyticsRecompute: vi.fn(),
@@ -41,6 +41,19 @@ function category(id: string, currency?: string): Category {
 		type: "Expense",
 		updatedAt: 1_000,
 		...(currency !== undefined ? { currency } : {}),
+	};
+}
+
+function budget(id: string, categoryId: string, patch: Partial<Budget> = {}): Budget {
+	return {
+		id,
+		userId: USER_ID,
+		categoryId,
+		period: "2026-10",
+		amount: 100,
+		active: true,
+		updatedAt: 1_000,
+		...patch,
 	};
 }
 
@@ -94,6 +107,7 @@ function coreSyncMetaKeys() {
 async function clearUserData() {
 	await db.accounts.where("userId").equals(USER_ID).delete();
 	await db.categories.where("userId").equals(USER_ID).delete();
+	await db.budgets.where("userId").equals(USER_ID).delete();
 	await db.transactions.where("userId").equals(USER_ID).delete();
 	await db.goldItems.where("userId").equals(USER_ID).delete();
 	await db.zakatCalculations.where("userId").equals(USER_ID).delete();
@@ -140,6 +154,14 @@ async function seedResetFixture() {
 			category("cat-shared"),
 			category("cat-aed", "AED"),
 			category("cat-pkr", "PKR"),
+		]);
+		await db.budgets.bulkPut([
+			budget("budget-aed-explicit", "cat-shared", { currency: "AED" }),
+			budget("budget-aed-derived", "cat-aed"),
+			budget("budget-aed-explicit-on-pkr-category", "cat-pkr", { currency: "AED" }),
+			budget("budget-pkr-explicit", "cat-shared", { currency: "PKR" }),
+			budget("budget-pkr-derived", "cat-pkr"),
+			budget("budget-shared", "cat-shared"),
 		]);
 		await db.transactions.bulkPut([
 			transaction("txn-aed", aedAccount.id, { categoryId: "cat-aed" }),
@@ -242,6 +264,9 @@ describe("resetLocalFinancialDataForCurrency", () => {
 		expect(preview).toMatchObject({
 			accountsDeleted: 2,
 			categoriesDeleted: 1,
+			budgetsDeleted: 3,
+			budgetsDeletedByExplicitCurrency: 2,
+			budgetsDeletedByCategoryCurrency: 1,
 			transactionsDeleted: 3,
 			transactionsDeletedCrossCurrencyTransfers: 2,
 			sharedCategoriesKept: 1,
@@ -258,10 +283,14 @@ describe("resetLocalFinancialDataForCurrency", () => {
 
 		expect(result.accountsDeleted).toBe(2);
 		expect(result.categoriesDeleted).toBe(1);
+		expect(result.budgetsDeleted).toBe(3);
 		expect(result.transactionsDeleted).toBe(3);
 		expect(await db.accounts.get("acc-aed")).toBeUndefined();
 		expect(await db.accounts.get("acc-aed-2")).toBeUndefined();
 		expect(await db.categories.get("cat-aed")).toBeUndefined();
+		expect(await db.budgets.get("budget-aed-explicit")).toBeUndefined();
+		expect(await db.budgets.get("budget-aed-derived")).toBeUndefined();
+		expect(await db.budgets.get("budget-aed-explicit-on-pkr-category")).toBeUndefined();
 		expect(await db.transactions.get("txn-aed")).toBeUndefined();
 		expect(await db.transactions.get("txn-cross-out")).toBeUndefined();
 		expect(await db.transactions.get("txn-cross-in")).toBeUndefined();
@@ -272,6 +301,18 @@ describe("resetLocalFinancialDataForCurrency", () => {
 		expect(await db.accounts.get("acc-unknown")).toEqual(kept.unknownCurrencyAccount);
 		expect(await db.categories.get("cat-shared")).toMatchObject({ id: "cat-shared" });
 		expect(await db.categories.get("cat-pkr")).toMatchObject({ id: "cat-pkr", currency: "PKR" });
+		expect(await db.budgets.get("budget-pkr-explicit")).toMatchObject({
+			id: "budget-pkr-explicit",
+			currency: "PKR",
+		});
+		expect(await db.budgets.get("budget-pkr-derived")).toMatchObject({
+			id: "budget-pkr-derived",
+			categoryId: "cat-pkr",
+		});
+		expect(await db.budgets.get("budget-shared")).toMatchObject({
+			id: "budget-shared",
+			categoryId: "cat-shared",
+		});
 		expect(await db.transactions.get("txn-pkr")).toEqual(kept.pkrTransaction);
 		expect(await db.transactions.get("txn-blank")).toEqual(kept.blankCurrencyTransaction);
 		expect(await db.transactions.get("txn-usd")).toEqual(kept.nonEnabledTransaction);
@@ -314,6 +355,7 @@ describe("resetLocalFinancialDataForCurrency", () => {
 		const remainingRecords = [
 			...(await db.accounts.where("userId").equals(USER_ID).toArray()),
 			...(await db.categories.where("userId").equals(USER_ID).toArray()),
+			...(await db.budgets.where("userId").equals(USER_ID).toArray()),
 			...(await db.transactions.where("userId").equals(USER_ID).toArray()),
 		];
 
