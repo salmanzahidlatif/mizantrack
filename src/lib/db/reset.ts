@@ -1,7 +1,6 @@
 import { invalidateAnalyticsCache } from "@/lib/analytics/cache";
 import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 import { getCurrencyByCode } from "@/lib/currencies";
-import { seedDefaultCategories } from "@/lib/db/seed";
 import { CORE_SYNC_TABLES, type SyncableTable } from "@/lib/db/sync";
 
 import { db } from "./local";
@@ -348,13 +347,7 @@ async function executeResetLocalFinancialData(
 		}
 	);
 
-	let categoriesReseeded = 0;
-	if (scope.type === "all") {
-		await seedDefaultCategories(userId);
-		categoriesReseeded = await db.categories.where("userId").equals(userId).count();
-	}
-
-	const result = { ...toResult(plan), categoriesReseeded };
+	const result = { ...toResult(plan), categoriesReseeded: 0 };
 	await invalidateAnalyticsCache(userId);
 	scheduleAnalyticsRecompute(userId);
 
@@ -363,10 +356,9 @@ async function executeResetLocalFinancialData(
 
 /**
  * Wipes this user's accounts, categories, and transactions from the local
- * IndexedDB cache and reseeds the default category list — equivalent to what
- * a browser user gets from manually clearing site data, but reachable from
- * inside the app (needed on PWA/mobile installs where there's no easy way to
- * clear IndexedDB manually).
+ * IndexedDB cache — equivalent to what a browser user gets from manually
+ * clearing site data, but reachable from inside the app (needed on PWA/mobile
+ * installs where there's no easy way to clear IndexedDB manually).
  *
  * Does NOT touch Firebase. Sync cursors and one-time syncedAt migration
  * markers are reset so the next sync re-pulls remote records instead of
