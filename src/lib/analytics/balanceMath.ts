@@ -27,6 +27,25 @@ export function normalizeCurrencyCode(currency: string | undefined): string {
 	return (currency ?? "").trim().toUpperCase();
 }
 
+export function resolveCurrencyCode(
+	activeCurrency: string | undefined,
+	defaultCurrency: string | undefined,
+	fallbackCurrency = "PKR"
+): string {
+	return (
+		normalizeCurrencyCode(activeCurrency) ||
+		normalizeCurrencyCode(defaultCurrency) ||
+		normalizeCurrencyCode(fallbackCurrency)
+	);
+}
+
+export function currencyCodesMatch(
+	firstCurrency: string | undefined,
+	secondCurrency: string | undefined
+): boolean {
+	return normalizeCurrencyCode(firstCurrency) === normalizeCurrencyCode(secondCurrency);
+}
+
 export function getActiveUserAccounts(userId: string, accounts: Account[]): Account[] {
 	return accounts.filter((account) => account.userId === userId && !account.deletedAt);
 }

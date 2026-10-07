@@ -34,6 +34,20 @@ interface FirebaseSyncPanelProps {
 	userId: string;
 }
 
+const backupTableLabels: Record<string, string> = {
+	accounts: "Accounts",
+	categories: "Categories",
+	transactions: "Transactions",
+	budgets: "Budgets",
+	goldItems: "Gold items",
+	zakatCalculations: "Zakat calculations",
+	zakatPayments: "Zakat payments",
+};
+
+function getBackupTableLabel(table: string): string {
+	return backupTableLabels[table] ?? table;
+}
+
 export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 	const config = useDbConfig(userId);
 	const { syncing, lastSync, error, triggerSync } = useSyncStore();
@@ -250,21 +264,91 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 
 				{/* Per-table backup counts */}
 				{backupCounts && (
-					<div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/30 p-2.5">
-						<p className="text-xs font-medium text-muted-foreground">Backed up to Firebase</p>
-						{backupCounts.tables.map((t) => (
-							<div key={t.table} className="flex items-center justify-between text-xs">
-								<span className="text-muted-foreground capitalize">{t.table}</span>
-								<span>
-									{t.remote} / {t.local} backed up
-									{t.pending > 0 && (
-										<span className="ml-1 text-amber-600 dark:text-amber-500">
-											({t.pending} left)
-										</span>
-									)}
+					<div className="space-y-3 rounded-lg border border-border/60 bg-muted/30 p-2.5">
+						<div className="space-y-1">
+							<p className="text-xs font-medium text-muted-foreground">Backed up to Firebase</p>
+							<p className="text-[11px] leading-snug text-muted-foreground">
+								Firebase counts are remote totals only. Per-currency figures below are local records
+								and pending dirty flags, so no remote per-currency number is shown.
+							</p>
+						</div>
+
+						<div className="space-y-1.5">
+							{backupCounts.tables.map((t) => (
+								<div key={t.table} className="flex items-center justify-between gap-3 text-xs">
+									<span className="text-muted-foreground">{getBackupTableLabel(t.table)}</span>
+									<span className="text-right">
+										Firebase {t.remote} · Local {t.local}
+										{t.pending > 0 ? (
+											<span className="ml-1 text-amber-600 dark:text-amber-500">
+												({t.pending} pending)
+											</span>
+										) : null}
+									</span>
+								</div>
+							))}
+						</div>
+
+						<div className="space-y-2 border-t border-border/60 pt-2">
+							<div className="flex items-center justify-between gap-2 text-xs">
+								<span className="font-medium text-muted-foreground">Pending by currency</span>
+								<span className="text-muted-foreground">
+									{backupCounts.totalPending > 0
+										? `${backupCounts.totalPending} pending total`
+										: "All backed up"}
 								</span>
 							</div>
-						))}
+							<div className="space-y-2">
+								{backupCounts.currencyBreakdown.length === 0 ? (
+									<p className="rounded-md border border-border/50 bg-background/70 p-2 text-xs text-emerald-700 dark:text-emerald-400">
+										All backed up — no local pending records.
+									</p>
+								) : (
+									backupCounts.currencyBreakdown.map((currency) => {
+										const pendingTables = currency.tables.filter((table) => table.pending > 0);
+
+										return (
+											<div
+												key={currency.key}
+												className="space-y-1.5 rounded-md border border-border/50 bg-background/70 p-2">
+												<div className="flex items-start justify-between gap-2">
+													<div>
+														<p className="text-xs font-medium">{currency.label}</p>
+														<p className="text-[11px] text-muted-foreground">
+															Local {currency.local} · Pending {currency.pending}
+														</p>
+													</div>
+													<span
+														className={
+															currency.pending > 0
+																? "shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+																: "shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400"
+														}>
+														{currency.pending > 0 ? `${currency.pending} pending` : "All backed up"}
+													</span>
+												</div>
+												{pendingTables.length > 0 && (
+													<div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+														{pendingTables.map((table) => (
+															<div
+																key={table.table}
+																className="flex items-center justify-between rounded bg-muted/50 px-2 py-1 text-[11px]">
+																<span className="text-muted-foreground">
+																	{getBackupTableLabel(table.table)}
+																</span>
+																<span>
+																	{table.pending} / {table.local} pending
+																</span>
+															</div>
+														))}
+													</div>
+												)}
+											</div>
+										);
+									})
+								)}
+							</div>
+						</div>
 					</div>
 				)}
 			</div>

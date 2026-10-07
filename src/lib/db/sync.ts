@@ -869,6 +869,10 @@ function normalizeBackupCurrencyCode(value: unknown): string | null {
 	return normalized ? normalized : null;
 }
 
+function hasPendingSync(record: unknown): boolean {
+	return (record as SyncDirtyFields).pendingSync === true;
+}
+
 function getEnabledBackupCurrencies(config: DbConfig | undefined): string[] | null {
 	const currencies = new Set<string>();
 	const defaultCurrency = normalizeBackupCurrencyCode(config?.currency);
@@ -963,8 +967,12 @@ function finalizeCurrencyBackupCounts(
 		.sort((a, b) => {
 			const kindDiff = kindOrder[a.kind] - kindOrder[b.kind];
 			if (kindDiff !== 0) return kindDiff;
-			const aOrder = a.currency ? (enabledCurrencyOrder.get(a.currency) ?? Number.MAX_SAFE_INTEGER) : 0;
-			const bOrder = b.currency ? (enabledCurrencyOrder.get(b.currency) ?? Number.MAX_SAFE_INTEGER) : 0;
+			const aOrder = a.currency
+				? (enabledCurrencyOrder.get(a.currency) ?? Number.MAX_SAFE_INTEGER)
+				: 0;
+			const bOrder = b.currency
+				? (enabledCurrencyOrder.get(b.currency) ?? Number.MAX_SAFE_INTEGER)
+				: 0;
 			if (aOrder !== bOrder) return aOrder - bOrder;
 			return a.label.localeCompare(b.label);
 		})
@@ -994,20 +1002,25 @@ async function getLocalBackupCurrencyBreakdown(
 	const buckets = new Map<string, MutableCurrencyBucket>();
 
 	for (const currency of enabledCurrencyCodes ?? []) {
-		getMutableCurrencyBucket(
-			buckets,
-			getBackupCurrencyBucket(currency, enabledCurrencies)
-		);
+		getMutableCurrencyBucket(buckets, getBackupCurrencyBucket(currency, enabledCurrencies));
 	}
 
 	const [accounts, categories, budgets] = await Promise.all([
-		localDb.accounts.where("userId").equals(userId).and((account) => !account.deletedAt).toArray(),
+		localDb.accounts
+			.where("userId")
+			.equals(userId)
+			.and((account) => !account.deletedAt)
+			.toArray(),
 		localDb.categories
 			.where("userId")
 			.equals(userId)
 			.and((category) => !category.deletedAt)
 			.toArray(),
-		localDb.budgets.where("userId").equals(userId).and((budget) => !budget.deletedAt).toArray(),
+		localDb.budgets
+			.where("userId")
+			.equals(userId)
+			.and((budget) => !budget.deletedAt)
+			.toArray(),
 	]);
 	const categoriesById = new Map(categories.map((category) => [category.id, category]));
 
@@ -1016,7 +1029,7 @@ async function getLocalBackupCurrencyBreakdown(
 			buckets,
 			getBackupCurrencyBucket(account.currency, enabledCurrencies),
 			"accounts",
-			{ local: 1, pending: account.pendingSync === true ? 1 : 0 }
+			{ local: 1, pending: hasPendingSync(account) ? 1 : 0 }
 		);
 	}
 
@@ -1025,7 +1038,7 @@ async function getLocalBackupCurrencyBreakdown(
 			buckets,
 			getBackupCurrencyBucket(category.currency, enabledCurrencies, { allowUntagged: true }),
 			"categories",
-			{ local: 1, pending: category.pendingSync === true ? 1 : 0 }
+			{ local: 1, pending: hasPendingSync(category) ? 1 : 0 }
 		);
 	}
 
@@ -1036,9 +1049,11 @@ async function getLocalBackupCurrencyBreakdown(
 			: category?.currency;
 		addCurrencyBackupCount(
 			buckets,
-			getBackupCurrencyBucket(currencySource, enabledCurrencies, { allowUntagged: Boolean(category) }),
+			getBackupCurrencyBucket(currencySource, enabledCurrencies, {
+				allowUntagged: Boolean(category),
+			}),
 			"budgets",
-			{ local: 1, pending: budget.pendingSync === true ? 1 : 0 }
+			{ local: 1, pending: hasPendingSync(budget) ? 1 : 0 }
 		);
 	}
 
@@ -1051,7 +1066,7 @@ async function getLocalBackupCurrencyBreakdown(
 		localDb.transactions
 			.where("userId")
 			.equals(userId)
-			.and((transaction) => !transaction.deletedAt && transaction.pendingSync === true)
+			.and((transaction) => !transaction.deletedAt && hasPendingSync(transaction))
 			.count(),
 	]);
 	let countedTransactionLocal = 0;
@@ -1070,9 +1085,7 @@ async function getLocalBackupCurrencyBreakdown(
 					.equals(account.id)
 					.and(
 						(transaction) =>
-							transaction.userId === userId &&
-							!transaction.deletedAt &&
-							transaction.pendingSync === true
+							transaction.userId === userId && !transaction.deletedAt && hasPendingSync(transaction)
 					)
 					.count(),
 			]);
@@ -1105,7 +1118,9 @@ async function getLocalBackupCurrencyBreakdown(
  * counts per table, so the UI can show "X of Y backed up" / "Z left to sync".
  * Remote count uses aggregate getCountFromServer reads; pending is local-only
  * and comes from the dirty flag used by sync pushes, so it does not require
- * reading every remote document.
+ * reading every remote document. Per-currency breakdowns are intentionally
+ * local/pending only because Firestore aggregate counts cannot be split by
+ * currency without reading every remote document.
  */
 export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCounts | null> {
 	try {
