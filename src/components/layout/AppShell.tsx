@@ -45,7 +45,6 @@ import {
 	scheduleAnalyticsRecompute,
 } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
-import { seedDefaultCategories } from "@/lib/db/seed";
 import { FAB, FROSTED_HEADER } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
@@ -223,7 +222,6 @@ export function AppShell({ user, children }: AppShellProps) {
 
 	useEffect(() => {
 		if (user?.id) {
-			void seedDefaultCategories(user.id);
 			scheduleAnalyticsRecompute(user.id);
 		}
 	}, [user?.id]);
