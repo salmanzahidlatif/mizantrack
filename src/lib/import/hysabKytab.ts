@@ -4,6 +4,8 @@ import * as XLSX from "xlsx";
 import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
 
+import { importHysabKytabSqlite, isHysabKytabSqliteFile } from "./hysabKytabSqlite";
+
 import type { HKAccountRow, HKActivityRow, HKCategoryRow } from "./types";
 import type { Transaction } from "@/types";
 
@@ -104,6 +106,12 @@ function getTransferPairScore(sourceRow: HKActivityRow, destRow: HKActivityRow):
 }
 
 export async function importHysabKytab(file: File, userId: string, targetCurrency?: string) {
+	if (isHysabKytabSqliteFile(file)) {
+		const userConfig = await db.dbConfig.get(userId);
+		const currency = targetCurrency ?? userConfig?.currency ?? "PKR";
+		return importHysabKytabSqlite(file, userId, currency);
+	}
+
 	const buffer = await file.arrayBuffer();
 	const wb = XLSX.read(buffer);
 	const now = Date.now();
