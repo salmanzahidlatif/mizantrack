@@ -34,7 +34,7 @@ import { getZakatYear } from "@/lib/islamicCalendar";
 import { exportZakatSummary } from "@/lib/zakatExport";
 import { useFilterStore } from "@/store/filter-store";
 
-import type { GoldPurity } from "@/types";
+import type { Account, GoldItem, GoldPurity } from "@/types";
 
 const NISAB_GOLD_GRAMS = 85;
 const NISAB_SILVER_GRAMS = 595;
@@ -45,6 +45,21 @@ const PURITY_TO_PURE_GOLD: Record<GoldPurity, number> = {
 	"24k": 1.0,
 };
 
+export function getZakatAccountsForCurrency(accounts: Account[], currency: string): Account[] {
+	return accounts.filter((account) => account.currency === currency);
+}
+
+export function getZakatGoldItemsForCurrency(items: GoldItem[], currency: string): GoldItem[] {
+	return items.filter((item) => item.currency === currency);
+}
+
+export function getPureGoldWeightGrams(items: GoldItem[]): number {
+	return items.reduce((sum, item) => {
+		const pureWeight = item.weight * PURITY_TO_PURE_GOLD[item.purity];
+		return sum + pureWeight;
+	}, 0);
+}
+
 interface ZakatPageClientProps {
 	userId?: string;
 }
@@ -53,7 +68,9 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const userId = useRequiredUserId(providedUserId);
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
-	const referenceCurrency = activeCurrency !== "" ? activeCurrency : (config?.currency ?? "PKR");
+	const trimmedActiveCurrency = activeCurrency.trim();
+	const referenceCurrency =
+		trimmedActiveCurrency !== "" ? trimmedActiveCurrency : (config?.currency ?? "PKR");
 	const accounts = useAccounts(userId);
 
 	const allTransactions = useLiveQuery(
@@ -69,11 +86,15 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const goldItems = useLiveQuery(
 		() =>
 			db.goldItems
-				.where("userId")
-				.equals(userId)
+				.where("[userId+currency]")
+				.equals([userId, referenceCurrency])
 				.filter((g) => !g.deletedAt)
 				.toArray(),
-		[userId]
+		[userId, referenceCurrency]
+	);
+	const zakatAccounts = useMemo(
+		() => getZakatAccountsForCurrency(accounts ?? [], referenceCurrency),
+		[accounts, referenceCurrency]
 	);
 
 	// ── Form state ──────────────────────────────────────────────────────────
@@ -102,73 +123,65 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 	// Pre-select all asset accounts as zakatable (not liabilities)
 	useEffect(() => {
-		if (accounts && zakatableIds.size === 0) {
-			const assetAccounts = accounts.filter((a) => a.accountType !== "liability");
+		if (zakatAccounts.length > 0 && zakatableIds.size === 0) {
+			const assetAccounts = zakatAccounts.filter((a) => a.accountType !== "liability");
 			setZakatableIds(new Set(assetAccounts.map((a) => a.id)));
 		}
-	}, [accounts]);
+	}, [zakatAccounts, zakatableIds.size]);
+
+	useEffect(() => {
+		setZakatableIds((prev) => {
+			const accountIds = new Set(zakatAccounts.map((account) => account.id));
+			const next = new Set([...prev].filter((id) => accountIds.has(id)));
+			return next.size === prev.size ? prev : next;
+		});
+	}, [zakatAccounts]);
 
 	// ── Balance at assessment date ──────────────────────────────────────────
 	const accountBalances = useMemo(() => {
-		if (!accounts || !allTransactions) return new Map<string, number>();
+		if (!allTransactions) return new Map<string, number>();
 		const asOf = endOfDay(assessmentDate).getTime();
-		return computeAccountBalances(userId, accounts, allTransactions, { asOfMs: asOf }).balances;
-	}, [accounts, allTransactions, assessmentDate, userId]);
+		return computeAccountBalances(userId, zakatAccounts, allTransactions, { asOfMs: asOf })
+			.balances;
+	}, [zakatAccounts, allTransactions, assessmentDate, userId]);
 
 	// ── Gold calculation ────────────────────────────────────────────────────
 	const totalGoldWeightGrams = useMemo(() => {
 		if (!goldItems) return 0;
-		return goldItems.reduce((sum, item) => {
-			const pureWeight = item.weight * PURITY_TO_PURE_GOLD[item.purity];
-			return sum + pureWeight;
-		}, 0);
+		return getPureGoldWeightGrams(goldItems);
 	}, [goldItems]);
 
 	const goldValue = totalGoldWeightGrams * goldPrice;
 
 	// ── Unique non-reference currencies ────────────────────────────────────
 	const foreignCurrencies = useMemo(() => {
-		if (!accounts) return [];
-		return [
-			...new Set(
-				accounts
-					.filter((a) => zakatableIds.has(a.id) && a.currency !== referenceCurrency)
-					.map((a) => a.currency)
-			),
-		];
-	}, [accounts, zakatableIds, referenceCurrency]);
+		return [];
+	}, []);
 
 	// ── Zakat calculation ───────────────────────────────────────────────────
 	const { totalAssets, totalLiabilities, totalZakatable } = useMemo(() => {
-		if (!accounts) return { totalAssets: 0, totalLiabilities: 0, totalZakatable: 0 };
-
 		let assets = goldValue;
 		let liabilities = 0;
 
-		for (const account of accounts) {
+		for (const account of zakatAccounts) {
 			if (!zakatableIds.has(account.id)) continue;
 
 			const balance = accountBalances.get(account.id) ?? 0;
 			const isLiability = account.accountType === "liability";
 
-			// Convert to reference currency
-			const rate =
-				account.currency === referenceCurrency ? 1 : (exchangeRates[account.currency] ?? 1);
-			const balanceInRef = balance * rate;
-
 			if (isLiability) {
 				// Liabilities reduce zakatable wealth (negative values)
-				liabilities += Math.abs(balanceInRef);
+				liabilities += Math.abs(balance);
 			} else if (balance > 0) {
 				// Only positive balances count as assets
-				assets += balanceInRef;
+				assets += balance;
 			}
 		}
 
 		const zakatable = Math.max(0, assets - liabilities);
 
 		return { totalAssets: assets, totalLiabilities: liabilities, totalZakatable: zakatable };
-	}, [accounts, zakatableIds, accountBalances, goldValue, referenceCurrency, exchangeRates]);
+	}, [zakatAccounts, zakatableIds, accountBalances, goldValue]);
 
 	const nisabThreshold =
 		nisab === "gold" ? NISAB_GOLD_GRAMS * goldPrice : NISAB_SILVER_GRAMS * silverPrice;
@@ -177,11 +190,12 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 	// ── Save calculation ────────────────────────────────────────────────────
 	async function handleSaveCalculation() {
-		if (!accounts || !isLiable) return;
+		if (!isLiable) return;
 
 		await db.zakatCalculations.add({
 			id: uuid(),
 			userId,
+			currency: referenceCurrency,
 			islamicYear: currentIslamicYear,
 			assessmentDate: assessmentDate.getTime(),
 			nisabStandard: nisab,
@@ -190,15 +204,14 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 			referenceCurrency,
 			totalGoldWeightGrams,
 			totalGoldValue: goldValue,
-			accountBalances: accounts.map((a) => {
+			accountBalances: zakatAccounts.map((a) => {
 				const balance = accountBalances.get(a.id) ?? 0;
-				const rate = a.currency === referenceCurrency ? 1 : (exchangeRates[a.currency] ?? 1);
 				return {
 					accountId: a.id,
 					accountTitle: a.title,
 					balance,
 					currency: a.currency,
-					exchangeRate: rate,
+					exchangeRate: 1,
 					zakatable: zakatableIds.has(a.id),
 					accountType: a.accountType ?? "asset",
 				};
@@ -217,7 +230,6 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 	// ── Export ──────────────────────────────────────────────────────────────
 	function handleExport() {
-		if (!accounts) return;
 		exportZakatSummary({
 			assessmentDate,
 			nisabStandard: nisab,
@@ -228,15 +240,14 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 			totalZakatable,
 			zakatObligation,
 			referenceCurrency,
-			accounts: accounts.map((a) => {
+			accounts: zakatAccounts.map((a) => {
 				const balance = accountBalances.get(a.id) ?? 0;
-				const rate = a.currency === referenceCurrency ? 1 : (exchangeRates[a.currency] ?? 1);
 				return {
 					title: a.title,
 					currency: a.currency,
 					balance,
-					exchangeRate: rate,
-					balanceInRef: balance * rate,
+					exchangeRate: 1,
+					balanceInRef: balance,
 					zakatable: zakatableIds.has(a.id),
 				};
 			}),
@@ -306,7 +317,7 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 					<div className="space-y-2">
 						<Label>Zakatable Accounts</Label>
 						<div className="space-y-2">
-							{(accounts ?? []).map((account) => {
+							{zakatAccounts.map((account) => {
 								const selected = zakatableIds.has(account.id);
 								const balance = accountBalances.get(account.id) ?? 0;
 								const isLiability = account.accountType === "liability";
@@ -345,13 +356,19 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 										</div>
 										<span
 											className={`text-sm font-medium tabular-nums ${balance < 0 ? "text-destructive" : ""}`}>
-											{balance.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+											<CurrencyAmount
+												amount={balance}
+												currency={account.currency}
+												className="font-medium tracking-normal"
+											/>
 										</span>
 									</button>
 								);
 							})}
-							{accounts?.length === 0 && (
-								<p className="text-sm text-muted-foreground">No accounts found.</p>
+							{zakatAccounts.length === 0 && (
+								<p className="text-sm text-muted-foreground">
+									No {referenceCurrency} accounts found.
+								</p>
 							)}
 						</div>
 					</div>
@@ -558,7 +575,7 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 					<ZakatMonthlyBalances
 						userId={userId}
 						zakatYear={currentIslamicYear}
-						accounts={accounts ?? []}
+						accounts={zakatAccounts}
 						zakatableIds={zakatableIds}
 						referenceCurrency={referenceCurrency}
 						exchangeRates={exchangeRates}
@@ -567,7 +584,7 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 				{/* HISTORY TAB */}
 				<TabsContent value="history" className="space-y-5">
-					<ZakatHistory userId={userId} />
+					<ZakatHistory userId={userId} referenceCurrency={referenceCurrency} />
 				</TabsContent>
 
 				{/* PAYMENTS TAB */}

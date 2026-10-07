@@ -43,11 +43,11 @@ export function GoldItemsManager({
 	const goldItems = useLiveQuery(
 		() =>
 			db.goldItems
-				.where("userId")
-				.equals(userId)
+				.where("[userId+currency]")
+				.equals([userId, referenceCurrency])
 				.filter((g) => !g.deletedAt)
 				.toArray(),
-		[userId]
+		[userId, referenceCurrency]
 	);
 
 	const totalPureGold =
@@ -58,11 +58,12 @@ export function GoldItemsManager({
 
 	const totalValue = totalPureGold * goldPricePerGram;
 
-	async function handleAdd(item: Omit<GoldItem, "id" | "userId" | "updatedAt">) {
+	async function handleAdd(item: Omit<GoldItem, "id" | "userId" | "currency" | "updatedAt">) {
 		await db.goldItems.add({
 			...item,
 			id: uuid(),
 			userId,
+			currency: referenceCurrency,
 			updatedAt: Date.now(),
 		});
 		setIsAdding(false);
@@ -198,7 +199,7 @@ export function GoldItemsManager({
 
 interface GoldItemFormProps {
 	initialData?: Partial<GoldItem>;
-	onSave: (data: Omit<GoldItem, "id" | "userId" | "updatedAt">) => void;
+	onSave: (data: Omit<GoldItem, "id" | "userId" | "currency" | "updatedAt">) => void;
 	onCancel: () => void;
 	referenceCurrency: string;
 }

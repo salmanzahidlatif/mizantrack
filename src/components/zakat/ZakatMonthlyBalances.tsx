@@ -187,7 +187,11 @@ export function ZakatMonthlyBalances({
 													className={`px-2 py-2 text-right tabular-nums ${
 														displayBalance < 0 ? "text-destructive" : ""
 													}`}>
-													{displayBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+													<CurrencyAmount
+														amount={displayBalance}
+														currency={account.currency}
+														className="font-normal tracking-normal"
+													/>
 												</td>
 											);
 										})}
@@ -210,7 +214,11 @@ export function ZakatMonthlyBalances({
 										className={`px-2 py-2 text-right tabular-nums ${
 											isMinimum ? "bg-primary/20 text-primary" : ""
 										}`}>
-										{total.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+										<CurrencyAmount
+											amount={total}
+											currency={referenceCurrency}
+											className="font-bold tracking-normal"
+										/>
 									</td>
 								);
 							})}

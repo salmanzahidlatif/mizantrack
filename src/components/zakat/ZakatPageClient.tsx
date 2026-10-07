@@ -37,8 +37,10 @@ interface ZakatPageClientProps {
 export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
-	const referenceCurrency = activeCurrency !== "" ? activeCurrency : (config?.currency ?? "PKR");
-	const accounts = useAccounts(userId);
+	const trimmedActiveCurrency = activeCurrency.trim();
+	const referenceCurrency =
+		trimmedActiveCurrency !== "" ? trimmedActiveCurrency : (config?.currency ?? "PKR");
+	const accounts = useAccounts(userId, { currency: referenceCurrency });
 
 	const allTransactions = useLiveQuery(
 		() =>
@@ -88,15 +90,8 @@ export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 
 	// ── Unique non-reference currencies ────────────────────────────────────
 	const foreignCurrencies = useMemo(() => {
-		if (!accounts) return [];
-		return [
-			...new Set(
-				accounts
-					.filter((a) => zakatableIds.has(a.id) && a.currency !== referenceCurrency)
-					.map((a) => a.currency)
-			),
-		];
-	}, [accounts, zakatableIds, referenceCurrency]);
+		return [];
+	}, []);
 
 	// ── Zakat calculation ───────────────────────────────────────────────────
 	const goldWeightGrams = useTola ? goldGrams * TOLA_TO_GRAMS : goldGrams;
@@ -109,15 +104,10 @@ export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 			if (!zakatableIds.has(account.id)) continue;
 			const balance = accountBalances.get(account.id) ?? 0;
 			if (balance <= 0) continue;
-			if (account.currency === referenceCurrency) {
-				total += balance;
-			} else {
-				const rate = exchangeRates[account.currency] ?? 1;
-				total += balance * rate;
-			}
+			total += balance;
 		}
 		return total;
-	}, [accounts, zakatableIds, accountBalances, goldValue, referenceCurrency, exchangeRates]);
+	}, [accounts, zakatableIds, accountBalances, goldValue]);
 
 	const nisabThreshold =
 		nisab === "gold" ? NISAB_GOLD_GRAMS * goldPrice : NISAB_SILVER_GRAMS * silverPrice;
@@ -139,13 +129,12 @@ export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 			referenceCurrency,
 			accounts: accounts.map((a) => {
 				const balance = accountBalances.get(a.id) ?? 0;
-				const rate = a.currency === referenceCurrency ? 1 : (exchangeRates[a.currency] ?? 1);
 				return {
 					title: a.title,
 					currency: a.currency,
 					balance,
-					exchangeRate: rate,
-					balanceInRef: balance * rate,
+					exchangeRate: 1,
+					balanceInRef: balance,
 					zakatable: zakatableIds.has(a.id),
 				};
 			}),
@@ -225,14 +214,16 @@ export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 									<span className="text-sm font-medium">{account.title}</span>
 									<span className="text-xs text-muted-foreground">{account.currency}</span>
 								</div>
-								<span className="text-sm font-medium tabular-nums">
-									{balance.toLocaleString("en-US", { maximumFractionDigits: 2 })}
-								</span>
+								<CurrencyAmount
+									amount={balance}
+									currency={account.currency}
+									className="text-sm font-medium tracking-normal"
+								/>
 							</button>
 						);
 					})}
 					{accounts?.length === 0 && (
-						<p className="text-sm text-muted-foreground">No accounts found.</p>
+						<p className="text-sm text-muted-foreground">No {referenceCurrency} accounts found.</p>
 					)}
 				</div>
 			</div>

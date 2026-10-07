@@ -13,30 +13,31 @@ import type { ZakatCalculation } from "@/types";
 
 interface ZakatHistoryProps {
 	userId: string;
+	referenceCurrency: string;
 }
 
-export function ZakatHistory({ userId }: ZakatHistoryProps) {
+export function ZakatHistory({ userId, referenceCurrency }: ZakatHistoryProps) {
 	const [expandedId, setExpandedId] = useState<string | null>(null);
 
 	const calculations = useLiveQuery(
 		() =>
 			db.zakatCalculations
-				.where("userId")
-				.equals(userId)
+				.where("[userId+currency]")
+				.equals([userId, referenceCurrency])
 				.filter((c) => !c.deletedAt)
 				.reverse()
 				.sortBy("assessmentDate"),
-		[userId]
+		[userId, referenceCurrency]
 	);
 
 	const payments = useLiveQuery(
 		() =>
 			db.zakatPayments
-				.where("userId")
-				.equals(userId)
+				.where("[userId+currency]")
+				.equals([userId, referenceCurrency])
 				.filter((p) => !p.deletedAt)
 				.toArray(),
-		[userId]
+		[userId, referenceCurrency]
 	);
 
 	async function handleDelete(id: string) {
@@ -64,7 +65,8 @@ export function ZakatHistory({ userId }: ZakatHistoryProps) {
 		return (
 			<div className="rounded-lg border bg-card p-8 text-center">
 				<p className="text-sm text-muted-foreground">
-					No zakat calculations saved yet. Complete a calculation to see it here.
+					No {referenceCurrency} zakat calculations saved yet. Complete a calculation to see it
+					here.
 				</p>
 			</div>
 		);
@@ -252,11 +254,11 @@ export function ZakatHistory({ userId }: ZakatHistoryProps) {
 																	</span>
 																)}
 															</div>
-															<span className="tabular-nums">
-																{account.balance.toLocaleString("en-US", {
-																	maximumFractionDigits: 0,
-																})}
-															</span>
+															<CurrencyAmount
+																amount={account.balance}
+																currency={account.currency}
+																className="font-normal tracking-normal"
+															/>
 														</div>
 													))}
 											</div>

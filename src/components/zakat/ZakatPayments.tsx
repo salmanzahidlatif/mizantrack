@@ -34,31 +34,32 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 	const payments = useLiveQuery(
 		() =>
 			db.zakatPayments
-				.where("userId")
-				.equals(userId)
+				.where("[userId+currency]")
+				.equals([userId, referenceCurrency])
 				.filter((p) => !p.deletedAt)
 				.reverse()
 				.sortBy("date"),
-		[userId]
+		[userId, referenceCurrency]
 	);
 
 	const calculations = useLiveQuery(
 		() =>
 			db.zakatCalculations
-				.where("userId")
-				.equals(userId)
+				.where("[userId+currency]")
+				.equals([userId, referenceCurrency])
 				.filter((c) => !c.deletedAt)
 				.toArray(),
-		[userId]
+		[userId, referenceCurrency]
 	);
 
 	async function handleAdd(
-		payment: Omit<ZakatPayment, "id" | "userId" | "createdAt" | "updatedAt">
+		payment: Omit<ZakatPayment, "id" | "userId" | "currency" | "createdAt" | "updatedAt">
 	) {
 		await db.zakatPayments.add({
 			...payment,
 			id: uuid(),
 			userId,
+			currency: referenceCurrency,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
 		});
@@ -170,7 +171,7 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 
 				{payments?.length === 0 && !isAdding && (
 					<p className="py-8 text-center text-sm text-muted-foreground">
-						No payments recorded yet. Add your first payment above.
+						No {referenceCurrency} payments recorded yet. Add your first payment above.
 					</p>
 				)}
 			</div>
@@ -185,7 +186,9 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 interface PaymentFormProps {
 	initialData?: Partial<ZakatPayment>;
 	calculations: Array<{ id: string; islamicYear: string; zakatObligation: number }>;
-	onSave: (data: Omit<ZakatPayment, "id" | "userId" | "createdAt" | "updatedAt">) => void;
+	onSave: (
+		data: Omit<ZakatPayment, "id" | "userId" | "currency" | "createdAt" | "updatedAt">
+	) => void;
 	onCancel: () => void;
 	referenceCurrency: string;
 }
@@ -203,7 +206,6 @@ function PaymentForm({
 			: new Date().toISOString().split("T")[0]
 	);
 	const [amount, setAmount] = useState(initialData?.amount ?? 0);
-	const [currency, setCurrency] = useState(initialData?.currency ?? referenceCurrency);
 	const [islamicYear, setIslamicYear] = useState(
 		initialData?.islamicYear ?? getZakatYear(new Date())
 	);
@@ -226,7 +228,6 @@ function PaymentForm({
 		onSave({
 			date: new Date(date).getTime(),
 			amount,
-			currency,
 			islamicYear,
 			calculationId: calculationId || undefined,
 			recipient: recipient.trim() || undefined,
@@ -245,7 +246,7 @@ function PaymentForm({
 
 				{/* Amount */}
 				<div className="space-y-1">
-					<Label className="text-xs">Amount *</Label>
+					<Label className="text-xs">Amount ({referenceCurrency}) *</Label>
 					<Input
 						type="number"
 						min={0}
@@ -254,16 +255,6 @@ function PaymentForm({
 						onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
 						placeholder="0.00"
 						required
-					/>
-				</div>
-
-				{/* Currency */}
-				<div className="space-y-1">
-					<Label className="text-xs">Currency</Label>
-					<Input
-						value={currency}
-						onChange={(e) => setCurrency(e.target.value)}
-						placeholder={referenceCurrency}
 					/>
 				</div>
 
