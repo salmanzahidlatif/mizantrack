@@ -48,6 +48,9 @@ const nextConfig = {
 
 module.exports = withPWA({
 	dest: "public",
+	// A production service worker on the dev server caches stale assets and
+	// errors on Next's HMR POST requests, so it is only built outside dev.
+	disable: process.env.NODE_ENV === "development",
 	register: false,
 	skipWaiting: true,
 	clientsClaim: true,
