@@ -1,5 +1,6 @@
 import { useLiveQuery } from "dexie-react-hooks";
 
+import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 
 import type { Category, CategoryType } from "@/types";
@@ -9,12 +10,13 @@ function categoryMatchesPicker(
 	type?: CategoryType,
 	currency?: string
 ): boolean {
-	const currencyFilter = currency?.trim();
+	const currencyFilter = normalizeCurrencyCode(currency);
+	const categoryCurrency = normalizeCurrencyCode(category.currency);
 
 	return (
 		!category.deletedAt &&
 		(type === undefined || category.type === type) &&
-		(!currencyFilter || category.currency === currencyFilter || !category.currency)
+		(!currencyFilter || categoryCurrency === currencyFilter || !categoryCurrency)
 	);
 }
 

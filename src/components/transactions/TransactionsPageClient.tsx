@@ -7,8 +7,10 @@ import { TransactionList } from "@/components/transactions/TransactionList";
 import { TransactionMonthStrip } from "@/components/transactions/TransactionMonthStrip";
 import { useActiveAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
+import { useDbConfig } from "@/hooks/useDbConfig";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
 import { useTransactions } from "@/hooks/useTransactions";
+import { normalizeCurrencyCode, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getDateRange, getLocalTimeZoneOffsetMinutes, getMonthRange } from "@/lib/dateRange";
 import { useFilterStore } from "@/store/filter-store";
 
@@ -21,6 +23,7 @@ export function TransactionsPageClient({
 }: TransactionsPageClientProps = {}) {
 	const userId = useRequiredUserId(providedUserId);
 	const accounts = useActiveAccounts(userId);
+	const config = useDbConfig(userId);
 
 	const {
 		period,
@@ -35,15 +38,15 @@ export function TransactionsPageClient({
 		setCustomRange,
 	} = useFilterStore();
 
-	const currency = activeCurrency || undefined;
+	const currency = resolveCurrencyCode(activeCurrency, config?.currency);
 	const now = new Date();
 	const timeZoneOffsetMinutes = getLocalTimeZoneOffsetMinutes(now);
 	const accountList = accounts ?? [];
-	const currencyAccounts = currency
-		? accountList.filter((account) => account.currency === currency)
-		: accountList;
+	const currencyAccounts = accountList.filter(
+		(account) => normalizeCurrencyCode(account.currency) === currency
+	);
 	const accountIdInCurrency =
-		!accountId || !currency || currencyAccounts.some((account) => account.id === accountId);
+		!accountId || currencyAccounts.some((account) => account.id === accountId);
 	const effectiveAccountId = accountIdInCurrency ? (accountId ?? undefined) : undefined;
 	const categories = useCategories(userId, undefined, currency);
 
@@ -55,7 +58,7 @@ export function TransactionsPageClient({
 			: currentMonth;
 
 	useEffect(() => {
-		if (!accounts || !currency || !accountId || accountIdInCurrency) return;
+		if (!accounts || !accountId || accountIdInCurrency) return;
 		setAccountId(null);
 	}, [accountId, accountIdInCurrency, accounts, currency, setAccountId]);
 

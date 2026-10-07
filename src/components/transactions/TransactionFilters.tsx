@@ -14,6 +14,8 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useCategories } from "@/hooks/useCategories";
+import { useDbConfig } from "@/hooks/useDbConfig";
+import { normalizeCurrencyCode, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import {
 	EMPTY_TRANSACTION_USAGE_RANKING,
@@ -110,7 +112,8 @@ export function TransactionFilters({ accounts, userId: explicitUserId }: Transac
 
 	const [draftSearch, setDraftSearch] = useState(searchQuery);
 	const userId = explicitUserId ?? accounts.find((account) => account.userId)?.userId;
-	const currency = activeCurrency || undefined;
+	const config = useDbConfig(userId ?? "");
+	const currency = resolveCurrencyCode(activeCurrency, config?.currency);
 	const categories = useCategories(userId ?? "", undefined, currency);
 	const usageRanking = useLiveQuery(
 		() =>
@@ -122,8 +125,8 @@ export function TransactionFilters({ accounts, userId: explicitUserId }: Transac
 	);
 	const visibleAccounts = useMemo(
 		() =>
-			activeCurrency ? accounts.filter((account) => account.currency === activeCurrency) : accounts,
-		[accounts, activeCurrency]
+			accounts.filter((account) => normalizeCurrencyCode(account.currency) === currency),
+		[accounts, currency]
 	);
 	const accountOptions = useMemo(
 		() => getTransactionFilterAccountOptions(visibleAccounts, usageRanking.accountUsage),

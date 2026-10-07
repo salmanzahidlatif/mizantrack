@@ -31,12 +31,18 @@ import {
 } from "@/components/ui/select";
 import { useActiveAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
+import { useDbConfig } from "@/hooks/useDbConfig";
 import { scrollFocusedFieldIntoView } from "@/hooks/useKeyboardInset";
 import {
 	createTransaction,
 	deleteTransaction,
 	updateTransaction,
 } from "@/lib/actions/transactions";
+import {
+	currencyCodesMatch,
+	normalizeCurrencyCode,
+	resolveCurrencyCode,
+} from "@/lib/analytics/balanceMath";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyDisplay } from "@/lib/currencySymbols";
 import { db } from "@/lib/db/local";
@@ -121,7 +127,7 @@ export function getTransactionAccountOptions(
 	usageCounts?: UsageCounts
 ): Account[] {
 	const currencyAccounts = currency
-		? accounts.filter((account) => account.currency === currency)
+		? accounts.filter((account) => normalizeCurrencyCode(account.currency) === currency)
 		: accounts;
 	const sortedCurrencyAccounts = usageCounts
 		? sortRecordsByUsage(currencyAccounts, usageCounts)
@@ -144,7 +150,9 @@ export function getTransferDestinationAccounts(
 	const sourceAccount = allKnownAccounts.find((account) => account.id === sourceAccountId);
 	const sameCurrencyAccounts = sourceAccount
 		? allKnownAccounts.filter(
-				(account) => account.id !== sourceAccount.id && account.currency === sourceAccount.currency
+				(account) =>
+					account.id !== sourceAccount.id &&
+					currencyCodesMatch(account.currency, sourceAccount.currency)
 			)
 		: [];
 	const sortedSameCurrencyAccounts = usageCounts
@@ -225,7 +233,9 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 	const { isTransactionDrawerOpen, editTransactionId, closeTransactionDrawer } = useUIStore();
 	const { activeCurrency } = useFilterStore();
 	const accounts = useActiveAccounts(userId);
-	const allCategories = useCategories(userId, undefined, activeCurrency || undefined);
+	const config = useDbConfig(userId);
+	const currency = resolveCurrencyCode(activeCurrency, config?.currency);
+	const allCategories = useCategories(userId, undefined, currency);
 	const usageRanking = useLiveQuery(
 		() => loadRecentTransactionUsageRanking(userId),
 		[userId],
@@ -262,7 +272,6 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 	const watchedToAccount = watch("toAccountId");
 	const watchedCategory = watch("categoryId");
 	const watchedDate = watch("date");
-	const currency = activeCurrency || undefined;
 	const baseAccounts = accounts ?? [];
 	const accountOptions = useMemo(
 		() =>
@@ -304,7 +313,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 		editTransactionId &&
 		selectedAccount &&
 		selectedDestinationAccount &&
-		selectedAccount.currency !== selectedDestinationAccount.currency
+		!currencyCodesMatch(selectedAccount.currency, selectedDestinationAccount.currency)
 			? `This existing transfer moves money between ${selectedAccount.currency} and ${selectedDestinationAccount.currency}. New transfers must use accounts in the same currency because MizanTrack does not apply FX conversion.`
 			: undefined;
 	const amountCurrencyLabel = getCurrencyLabel(selectedAccount?.currency ?? currency);
@@ -413,7 +422,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 				!editTransactionId &&
 				sourceAccount &&
 				destinationAccount &&
-				sourceAccount.currency !== destinationAccount.currency
+				!currencyCodesMatch(sourceAccount.currency, destinationAccount.currency)
 			) {
 				const message = "Transfers must use accounts in the same currency.";
 				setError("toAccountId", { type: "validate", message });
@@ -605,9 +614,10 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 											(account) => account.id === watchedToAccount
 										);
 										if (
+											v === watchedToAccount ||
 											nextSource &&
 											currentDestination &&
-											nextSource.currency !== currentDestination.currency
+											!currencyCodesMatch(nextSource.currency, currentDestination.currency)
 										) {
 											setValue("toAccountId", undefined, { shouldValidate: true });
 										}

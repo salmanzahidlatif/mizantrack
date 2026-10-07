@@ -1,5 +1,6 @@
 import { useLiveQuery } from "dexie-react-hooks";
 
+import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import { UNCATEGORIZED_CATEGORY_FILTER, type CategoryFilterValue } from "@/store/filter-store";
 
@@ -78,11 +79,7 @@ function transactionMatchesFilters(
 		if (!matchDesc && !matchPlace) return false;
 	}
 	if (currencyAccountIds) {
-		const matchSrc = currencyAccountIds.has(transaction.accountId);
-		const matchDst = transaction.toAccountId
-			? currencyAccountIds.has(transaction.toAccountId)
-			: false;
-		if (!matchSrc && !matchDst) return false;
+		if (!currencyAccountIds.has(transaction.accountId)) return false;
 	}
 	return true;
 }
@@ -136,14 +133,17 @@ export async function queryTransactionsWithStats(
 	userId: string,
 	filters: TransactionFilters = {}
 ): Promise<TransactionQueryResult> {
-	const { search, currency } = filters;
+	const { search } = filters;
+	const currency = normalizeCurrencyCode(filters.currency);
 
 	let currencyAccountIds: Set<string> | null = null;
 	if (currency) {
 		const accounts = await db.accounts
 			.where("userId")
 			.equals(userId)
-			.filter((account) => !account.deletedAt && account.currency === currency)
+			.filter(
+				(account) => !account.deletedAt && normalizeCurrencyCode(account.currency) === currency
+			)
 			.primaryKeys();
 		currencyAccountIds = new Set(accounts as string[]);
 	}

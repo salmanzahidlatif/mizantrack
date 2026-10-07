@@ -15,6 +15,7 @@ import { useCategories } from "@/hooks/useCategories";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
+import { normalizeCurrencyCode, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
@@ -32,30 +33,27 @@ export function CategoriesPageClient({ userId: providedUserId }: CategoriesPageC
 	const haptics = useHaptics();
 	const enabledCurrencies =
 		config?.enabledCurrencies && config.enabledCurrencies.length > 0
-			? config.enabledCurrencies
+			? config.enabledCurrencies.map(normalizeCurrencyCode).filter(Boolean)
 			: config?.currency
-				? [config.currency]
+				? [normalizeCurrencyCode(config.currency)]
 				: [];
-	const canToggleCurrencyScope = Boolean(activeCurrency) && enabledCurrencies.length > 1;
+	const resolvedCurrency = resolveCurrencyCode(activeCurrency, config?.currency);
+	const canToggleCurrencyScope = Boolean(resolvedCurrency) && enabledCurrencies.length > 1;
 	const [currencyScope, setCurrencyScope] = useState<CategoryCurrencyScope>("currency");
-	const effectiveCurrencyScope = activeCurrency
-		? canToggleCurrencyScope
-			? currencyScope
-			: "currency"
-		: "all";
+	const effectiveCurrencyScope = canToggleCurrencyScope ? currencyScope : "currency";
 	const allCategories = useCategories(userId);
 	const categories = filterCategoriesForManagement(
 		allCategories,
 		effectiveCurrencyScope,
-		activeCurrency || undefined
+		resolvedCurrency
 	);
 	const openAddCategory = useUIStore((s) => s.openAddCategory);
 	const [activeTab, setActiveTab] = useState<CategoryType>("Expense");
-	const activeCurrencyEntry = activeCurrency ? getCurrencyByCode(activeCurrency) : undefined;
+	const activeCurrencyEntry = getCurrencyByCode(resolvedCurrency);
 
 	useEffect(() => {
-		setCurrencyScope(activeCurrency ? "currency" : "all");
-	}, [activeCurrency, canToggleCurrencyScope]);
+		setCurrencyScope("currency");
+	}, [resolvedCurrency, canToggleCurrencyScope]);
 
 	function updateCurrencyScope(scope: CategoryCurrencyScope) {
 		haptics.selection();
@@ -92,7 +90,7 @@ export function CategoriesPageClient({ userId: providedUserId }: CategoriesPageC
 							}`}>
 							<span>{activeCurrencyEntry?.flag ?? "🌐"}</span>
 							<span>This currency</span>
-							<span className="text-xs text-muted-foreground">{activeCurrency}</span>
+							<span className="text-xs text-muted-foreground">{resolvedCurrency}</span>
 						</button>
 						<button
 							type="button"

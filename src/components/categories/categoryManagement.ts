@@ -1,3 +1,5 @@
+import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
+
 import type { Category, CategoryType } from "@/types";
 
 export type CategoryCurrencyScope = "currency" | "all";
@@ -13,11 +15,11 @@ export function filterCategoriesForManagement(
 ): Category[] | undefined {
 	if (!categories) return categories;
 
-	const currency = activeCurrency?.trim();
+	const currency = normalizeCurrencyCode(activeCurrency);
 	return categories.filter((category) => {
 		if (category.deletedAt) return false;
 		if (scope !== "currency" || !currency) return true;
-		return category.currency === currency;
+		return normalizeCurrencyCode(category.currency) === currency;
 	});
 }
 
