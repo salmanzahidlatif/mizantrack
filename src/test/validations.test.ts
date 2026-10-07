@@ -74,7 +74,7 @@ describe("accountSchema", () => {
 
 describe("categorySchema", () => {
 	it("accepts valid expense category", () => {
-		const result = categorySchema.safeParse({ title: "Food", type: "Expense" });
+		const result = categorySchema.safeParse({ title: "Food", type: "Expense", currency: "PKR" });
 		expect(result.success).toBe(true);
 	});
 
@@ -82,6 +82,7 @@ describe("categorySchema", () => {
 		const result = categorySchema.safeParse({
 			title: "Freelance",
 			type: "Income",
+			currency: "PKR",
 			parentId: "550e8400-e29b-41d4-a716-446655440001",
 		});
 		expect(result.success).toBe(true);
@@ -101,8 +102,14 @@ describe("categorySchema", () => {
 		const result = categorySchema.safeParse({
 			title: "Food",
 			type: "Expense",
+			currency: "PKR",
 			parentId: "not-a-uuid",
 		});
+		expect(result.success).toBe(false);
+	});
+
+	it("rejects missing currency", () => {
+		const result = categorySchema.safeParse({ title: "Food", type: "Expense" });
 		expect(result.success).toBe(false);
 	});
 });

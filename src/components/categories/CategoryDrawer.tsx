@@ -37,7 +37,6 @@ import { useUIStore } from "@/store/ui-store";
 
 import type { Category, CategoryType } from "@/types";
 
-const SHARED_CURRENCY_VALUE = "__shared__";
 const CATEGORY_FORM_ID = "category-drawer-form";
 const FORM_DRAWER_CONTENT_CLASS =
 	"overflow-hidden pb-0 data-[vaul-drawer-direction=bottom]:h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_1rem)] data-[vaul-drawer-direction=bottom]:max-h-[95dvh] data-[vaul-drawer-direction=bottom]:pb-0";
@@ -91,7 +90,11 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 				? [config.currency]
 				: [];
 	const defaultCurrency =
-		activeCurrency && enabledCurrencies.includes(activeCurrency) ? activeCurrency : undefined;
+		activeCurrency && enabledCurrencies.includes(activeCurrency)
+			? activeCurrency
+			: config?.currency && enabledCurrencies.includes(config.currency)
+				? config.currency
+				: enabledCurrencies[0];
 
 	const {
 		register,
@@ -113,8 +116,8 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 	const selectedColor = watch("color");
 
 	function isParentCurrencyCompatible(parent: Category, currency: string | undefined) {
-		if (!currency) return !parent.currency;
-		return !parent.currency || parent.currency === currency;
+		if (!currency) return false;
+		return parent.currency === currency;
 	}
 
 	function formatCurrency(code: string) {
@@ -152,6 +155,7 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 		watchedCurrency && !enabledCurrencies.includes(watchedCurrency)
 			? [watchedCurrency, ...enabledCurrencies]
 			: enabledCurrencies;
+	const displayedCurrency = watchedCurrency ?? defaultCurrency ?? currencyOptions[0] ?? "";
 
 	// Load category for editing
 	useEffect(() => {
@@ -170,7 +174,7 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 				title: cat.title,
 				type: cat.type,
 				parentId: cat.parentId,
-				currency: normalizeCurrency(cat.currency),
+				currency: normalizeCurrency(cat.currency) ?? defaultCurrency,
 				color: cat.color,
 				icon: cat.icon,
 			});
@@ -179,6 +183,12 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 
 	async function onSubmit(values: CategoryFormValues) {
 		const currency = normalizeCurrency(values.currency);
+		if (!currency) {
+			const message = "Currency is required.";
+			setError("currency", { type: "validate", message });
+			toast.error(message);
+			return;
+		}
 		const submittedParent = values.parentId
 			? allCategories?.find((c) => c.id === values.parentId)
 			: undefined;
@@ -291,19 +301,16 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 
 						{/* Currency */}
 						<div className="space-y-1.5">
-							<Label>Currency</Label>
+							<Label>Currency *</Label>
 							<Select
-								value={watchedCurrency ?? SHARED_CURRENCY_VALUE}
+								value={displayedCurrency}
 								onValueChange={(v) => {
-									setValue("currency", v === SHARED_CURRENCY_VALUE ? undefined : v, {
-										shouldValidate: true,
-									});
+									setValue("currency", v, { shouldValidate: true });
 								}}>
 								<SelectTrigger className="h-11 w-full">
-									<SelectValue placeholder="All currencies (shared)" />
+									<SelectValue placeholder="Select a currency" />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value={SHARED_CURRENCY_VALUE}>🌐 All currencies (shared)</SelectItem>
 									{currencyOptions.map((code) => (
 										<SelectItem key={code} value={code}>
 											{formatCurrency(code)}
@@ -313,7 +320,8 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 								</SelectContent>
 							</Select>
 							<p className="text-xs text-muted-foreground">
-								Shared categories appear for every currency.
+								Categories belong to one currency. Legacy untagged categories stay visible until you
+								assign them.
 							</p>
 							{errors.currency && (
 								<p className="text-xs text-destructive">{errors.currency.message}</p>

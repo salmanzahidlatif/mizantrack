@@ -8,6 +8,7 @@ import {
 	findDuplicateCategoryGroups,
 	mergeDuplicateCategories,
 } from "@/components/categories/duplicateCategoryMerge";
+import { filterCategoriesForPicker } from "@/hooks/useCategories";
 import { recomputeAnalyticsNow } from "@/lib/analytics/scheduleRecompute";
 import { db, withoutSyncDirtyTracking } from "@/lib/db/local";
 
@@ -82,6 +83,23 @@ describe("category management filters", () => {
 		const filtered = filterCategoriesForManagement(categories, "currency", "AED");
 
 		expect(filtered?.map((item) => item.id)).toEqual(["aed-food"]);
+	});
+
+	it("keeps legacy untagged categories selectable in currency pickers", () => {
+		const categories = [
+			category("aed-food", { currency: "AED" }),
+			category("pkr-food", { currency: "PKR" }),
+			category("legacy-untagged"),
+			category("deleted-untagged", { deletedAt: 2_000 }),
+		];
+
+		expect(filterCategoriesForPicker(categories, "Expense", "AED").map((item) => item.id)).toEqual([
+			"aed-food",
+			"legacy-untagged",
+		]);
+		expect(
+			filterCategoriesForManagement(categories, "currency", "AED")?.map((item) => item.id)
+		).toEqual(["aed-food"]);
 	});
 
 	it("keeps Expense and Income categories under their exact headings", () => {

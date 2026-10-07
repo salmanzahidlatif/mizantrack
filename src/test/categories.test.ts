@@ -14,6 +14,7 @@ describe("categorySchema", () => {
 		const result = categorySchema.safeParse({
 			title: "Food & Dining",
 			type: "Expense",
+			currency: "PKR",
 		});
 		expect(result.success).toBe(true);
 	});
@@ -22,6 +23,7 @@ describe("categorySchema", () => {
 		const result = categorySchema.safeParse({
 			title: "Salary",
 			type: "Income",
+			currency: "PKR",
 		});
 		expect(result.success).toBe(true);
 	});
@@ -40,6 +42,7 @@ describe("categorySchema", () => {
 		const result = categorySchema.safeParse({
 			title: "Restaurants",
 			type: "Expense",
+			currency: "PKR",
 			parentId: "550e8400-e29b-41d4-a716-446655440000",
 		});
 		expect(result.success).toBe(true);
@@ -49,6 +52,7 @@ describe("categorySchema", () => {
 		const result = categorySchema.safeParse({
 			title: "Restaurants",
 			type: "Expense",
+			currency: "PKR",
 			parentId: "not-a-uuid",
 		});
 		expect(result.success).toBe(false);
@@ -58,6 +62,7 @@ describe("categorySchema", () => {
 		const result = categorySchema.safeParse({
 			title: "Transport",
 			type: "Expense",
+			currency: "PKR",
 			color: "#f97316",
 			icon: "🚗",
 		});
@@ -72,12 +77,21 @@ describe("categorySchema", () => {
 		const result = categorySchema.safeParse({
 			title: "Healthcare",
 			type: "Expense",
+			currency: "PKR",
 			parentId: undefined,
 		});
 		expect(result.success).toBe(true);
 		if (result.success) {
 			expect(result.data.parentId).toBeUndefined();
 		}
+	});
+
+	it("rejects missing currency", () => {
+		const result = categorySchema.safeParse({
+			title: "Food",
+			type: "Expense",
+		});
+		expect(result.success).toBe(false);
 	});
 });
 
