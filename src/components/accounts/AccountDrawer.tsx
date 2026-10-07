@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { scrollFocusedFieldIntoView } from "@/hooks/useKeyboardInset";
 import { createAccount, updateAccount } from "@/lib/actions/accounts";
+import { normalizeCurrencyCode, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
 import { accountSchema, type AccountFormValues } from "@/lib/validations/account";
@@ -53,10 +54,10 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 	const config = useDbConfig(userId);
 
 	// Use activeCurrency from top selector; fall back to saved config currency
-	const defaultCurrency = activeCurrency !== "" ? activeCurrency : (config?.currency ?? "PKR");
+	const defaultCurrency = resolveCurrencyCode(activeCurrency, config?.currency);
 	// Show the user's enabled currencies as quick-select pills
 	const currencyShortcuts = config?.enabledCurrencies?.length
-		? config.enabledCurrencies
+		? config.enabledCurrencies.map(normalizeCurrencyCode).filter(Boolean)
 		: [defaultCurrency];
 
 	const {
@@ -108,9 +109,10 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 
 	const selectedColor = watch("color");
 	const selectedCurrency = watch("currency");
+	const selectedCurrencyCode = normalizeCurrencyCode(selectedCurrency);
 	const currencyOptions =
-		selectedCurrency && !currencyShortcuts.includes(selectedCurrency)
-			? [selectedCurrency, ...currencyShortcuts]
+		selectedCurrencyCode && !currencyShortcuts.includes(selectedCurrencyCode)
+			? [selectedCurrencyCode, ...currencyShortcuts]
 			: currencyShortcuts;
 
 	return (
@@ -172,7 +174,7 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 											type="button"
 											onClick={() => setValue("currency", c, { shouldValidate: true })}
 											className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
-												watch("currency") === c
+												selectedCurrencyCode === c
 													? "border-primary bg-primary text-primary-foreground"
 													: "border-border hover:border-primary"
 											}`}>
