@@ -247,6 +247,15 @@ describe("currency-scoped account display", () => {
 		expect(screen.queryByText((text) => text.includes("194,250.00"))).not.toBeInTheDocument();
 	});
 
+	it("falls back to the default currency when the active currency is empty", () => {
+		renderDashboardWithCurrency("");
+
+		expect(screen.getByText("AED Wallet")).toBeInTheDocument();
+		expect(screen.getByText("ENBD - Share")).toBeInTheDocument();
+		expect(screen.queryByText("PKR Wallet")).not.toBeInTheDocument();
+		expect(screen.getByText((text) => text.includes("2,050.00"))).toBeInTheDocument();
+	});
+
 	it("shows only PKR dashboard tiles when PKR is active", () => {
 		renderDashboardWithCurrency("PKR");
 

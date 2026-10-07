@@ -85,8 +85,7 @@ export function isCurrentDashboardMonth(date: Date, now = new Date()) {
 export function getDashboardBucket(stats: DashboardStats | undefined, activeCurrency?: string) {
 	if (!stats) return undefined;
 
-	const currencyKey =
-		normalizeCurrencyCode(activeCurrency) || ALL_CURRENCIES_KEY;
+	const currencyKey = normalizeCurrencyCode(activeCurrency) || ALL_CURRENCIES_KEY;
 
 	return stats.perCurrency[currencyKey] as DashboardBucket | undefined;
 }

@@ -124,8 +124,7 @@ export function TransactionFilters({ accounts, userId: explicitUserId }: Transac
 		EMPTY_TRANSACTION_USAGE_RANKING
 	);
 	const visibleAccounts = useMemo(
-		() =>
-			accounts.filter((account) => normalizeCurrencyCode(account.currency) === currency),
+		() => accounts.filter((account) => normalizeCurrencyCode(account.currency) === currency),
 		[accounts, currency]
 	);
 	const accountOptions = useMemo(

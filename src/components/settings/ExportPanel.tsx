@@ -35,7 +35,11 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 	const enabledCurrencies =
 		config?.enabledCurrencies?.map(normalizeCurrencyCode).filter(Boolean) ??
 		(config?.currency ? [normalizeCurrencyCode(config.currency)] : ["PKR"]);
-	const defaultCurrency = resolveCurrencyCode(activeCurrency, config?.currency, enabledCurrencies[0]);
+	const defaultCurrency = resolveCurrencyCode(
+		activeCurrency,
+		config?.currency,
+		enabledCurrencies[0]
+	);
 
 	const [open, setOpen] = useState(false);
 	const [exporting, setExporting] = useState(false);

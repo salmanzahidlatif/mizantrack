@@ -95,9 +95,11 @@ describe("category management filters", () => {
 			category("deleted-untagged", { deletedAt: 2_000 }),
 		];
 
-		expect(filterCategoriesForPicker(categories, "Expense", "aed").map((item) => item.id)).toEqual(
-			["aed-food", "lower-aed-food", "legacy-untagged"]
-		);
+		expect(filterCategoriesForPicker(categories, "Expense", "aed").map((item) => item.id)).toEqual([
+			"aed-food",
+			"lower-aed-food",
+			"legacy-untagged",
+		]);
 		expect(
 			filterCategoriesForManagement(categories, "currency", "AED")?.map((item) => item.id)
 		).toEqual(["aed-food", "lower-aed-food"]);

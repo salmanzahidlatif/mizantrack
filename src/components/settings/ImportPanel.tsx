@@ -77,7 +77,11 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 	const enabledCurrencies =
 		config?.enabledCurrencies?.map(normalizeCurrencyCode).filter(Boolean) ??
 		(config?.currency ? [normalizeCurrencyCode(config.currency)] : ["PKR"]);
-	const defaultCurrency = resolveCurrencyCode(activeCurrency, config?.currency, enabledCurrencies[0]);
+	const defaultCurrency = resolveCurrencyCode(
+		activeCurrency,
+		config?.currency,
+		enabledCurrencies[0]
+	);
 	const needsCurrencyPrompt = enabledCurrencies.length > 1;
 
 	const fileRef = useRef<HTMLInputElement>(null);

@@ -97,7 +97,7 @@ describe("budget progress", () => {
 			budgets,
 			categories,
 			analytics("AED", "cat-aed", 125),
-			"AED"
+			" aed "
 		);
 
 		expect(rows).toHaveLength(1);

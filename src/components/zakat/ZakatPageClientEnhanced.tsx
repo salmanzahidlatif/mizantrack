@@ -94,9 +94,7 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 			db.goldItems
 				.where("userId")
 				.equals(userId)
-				.filter(
-					(g) => !g.deletedAt && normalizeCurrencyCode(g.currency) === referenceCurrency
-				)
+				.filter((g) => !g.deletedAt && normalizeCurrencyCode(g.currency) === referenceCurrency)
 				.toArray(),
 		[userId, referenceCurrency]
 	);
