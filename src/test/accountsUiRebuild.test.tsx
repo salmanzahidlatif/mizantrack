@@ -216,7 +216,7 @@ describe("accounts UI rebuild", () => {
 			/>
 		);
 
-		expect(screen.getByText("(Inactive)")).toBeInTheDocument();
+		expect(screen.getByText("(Archived)")).toBeInTheDocument();
 	});
 
 	it("renders negative balances with the negative currency treatment", () => {

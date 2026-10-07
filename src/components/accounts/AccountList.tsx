@@ -111,8 +111,8 @@ function AccountRow({ account, balance, onEdit, onSelect, className, style }: Ac
 						{account.title}
 					</span>
 					{account.isArchived ? (
-						<span className="mt-0.5 block text-xs font-semibold text-red-600 dark:text-red-400">
-							(Inactive)
+						<span className="mt-0.5 block text-xs font-semibold text-amber-600 dark:text-amber-400">
+							(Archived)
 						</span>
 					) : (
 						<span className="mt-0.5 block truncate text-xs text-muted-foreground">
