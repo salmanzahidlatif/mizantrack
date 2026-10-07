@@ -18,32 +18,72 @@ import { sanitizeDashboardStats } from "@/lib/analytics/computeDashboardStats";
 import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 
 import { getFirestoreForUser } from "./firebase";
-import { db as localDb, withoutSyncDirtyTracking } from "./local";
+import { LEGACY_ZAKAT_CURRENCY, db as localDb, withoutSyncDirtyTracking } from "./local";
 
 import type { SyncDirtyFields } from "./local";
-import type { Account, Budget, Category, DashboardStats, Transaction } from "@/types";
+import type {
+	Account,
+	Budget,
+	Category,
+	DashboardStats,
+	DbConfig,
+	GoldItem,
+	Transaction,
+	ZakatCalculation,
+	ZakatPayment,
+} from "@/types";
 import type { Table } from "dexie";
 
-export type SyncableTable = "accounts" | "categories" | "transactions" | "budgets";
-type SyncableRecord = (Account | Category | Transaction | Budget) & SyncDirtyFields;
+export type SyncableTable =
+	| "accounts"
+	| "categories"
+	| "transactions"
+	| "budgets"
+	| "goldItems"
+	| "zakatCalculations"
+	| "zakatPayments";
+type SyncableRecord = (
+	| Account
+	| Category
+	| Transaction
+	| Budget
+	| GoldItem
+	| ZakatCalculation
+	| ZakatPayment
+) &
+	SyncDirtyFields;
 export type SyncScope = SyncableTable | "firebase" | "settings" | "dashboard";
 type OptionalSyncFieldsByTable = {
 	accounts: readonly (keyof Account)[];
 	categories: readonly (keyof Category)[];
 	transactions: readonly (keyof Transaction)[];
 	budgets: readonly (keyof Budget)[];
+	goldItems: readonly (keyof GoldItem)[];
+	zakatCalculations: readonly (keyof ZakatCalculation)[];
+	zakatPayments: readonly (keyof ZakatPayment)[];
 };
 type NonClearingOptionalSyncFieldsByTable = {
 	accounts: readonly (keyof Account)[];
 	categories: readonly (keyof Category)[];
 	transactions: readonly (keyof Transaction)[];
 	budgets: readonly (keyof Budget)[];
+	goldItems: readonly (keyof GoldItem)[];
+	zakatCalculations: readonly (keyof ZakatCalculation)[];
+	zakatPayments: readonly (keyof ZakatPayment)[];
 };
 
 export const FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT = 20_000;
 export const FIRESTORE_FREE_TIER_DAILY_READ_LIMIT = 50_000;
 export const FIRESTORE_SYNC_TIMEOUT_MS = 15_000;
-export const CORE_SYNC_TABLES = ["accounts", "categories", "transactions", "budgets"] as const;
+export const CORE_SYNC_TABLES = [
+	"accounts",
+	"categories",
+	"transactions",
+	"budgets",
+	"goldItems",
+	"zakatCalculations",
+	"zakatPayments",
+] as const;
 
 function formatFirestoreLimit(limit: number): string {
 	return new Intl.NumberFormat("en-US").format(limit);
@@ -156,6 +196,9 @@ const OPTIONAL_SYNC_FIELDS = {
 		"deletedAt",
 	],
 	budgets: ["currency", "deletedAt"],
+	goldItems: ["purchaseDate", "purchasePrice", "notes", "deletedAt"],
+	zakatCalculations: ["silverPricePerGram", "monthlyBalances", "deletedAt"],
+	zakatPayments: ["calculationId", "recipient", "notes", "deletedAt"],
 } as const satisfies OptionalSyncFieldsByTable;
 
 // sourceId is optional for legacy/manual records, but it is not null-written:
@@ -165,9 +208,17 @@ const NON_CLEARING_OPTIONAL_SYNC_FIELDS = {
 	categories: ["sourceId"],
 	transactions: ["sourceId"],
 	budgets: ["sourceId"],
+	goldItems: [],
+	zakatCalculations: [],
+	zakatPayments: [],
 } as const satisfies NonClearingOptionalSyncFieldsByTable;
 
 const LOCAL_ONLY_SYNC_FIELDS = new Set(["pendingSync", "syncedAt"]);
+const ZAKAT_SYNC_TABLES = new Set<SyncableTable>([
+	"goldItems",
+	"zakatCalculations",
+	"zakatPayments",
+]);
 
 function getLocalSyncTable(tableName: SyncableTable): Table<SyncableRecord> {
 	return localDb[tableName] as unknown as Table<SyncableRecord>;
@@ -218,6 +269,9 @@ function fromFirestoreSyncRecord<T extends SyncableRecord>(
 		if (clean[field] === null || clean[field] === undefined) {
 			delete clean[field];
 		}
+	}
+	if (ZAKAT_SYNC_TABLES.has(tableName) && !clean.currency) {
+		clean.currency = LEGACY_ZAKAT_CURRENCY;
 	}
 
 	return clean as T;
@@ -295,6 +349,15 @@ async function putLocalRecord(tableName: SyncableTable, record: SyncableRecord):
 				break;
 			case "budgets":
 				await localDb.budgets.put(localRecord as Budget);
+				break;
+			case "goldItems":
+				await localDb.goldItems.put(localRecord as GoldItem);
+				break;
+			case "zakatCalculations":
+				await localDb.zakatCalculations.put(localRecord as ZakatCalculation);
+				break;
+			case "zakatPayments":
+				await localDb.zakatPayments.put(localRecord as ZakatPayment);
 				break;
 		}
 	});
@@ -735,11 +798,306 @@ export interface SyncBackupTableCount {
 	pending: number;
 }
 
+export type SyncBackupCurrencyTable = Extract<
+	SyncableTable,
+	"accounts" | "categories" | "transactions" | "budgets"
+>;
+
+export type SyncBackupCurrencyBucketKind = "currency" | "untagged" | "unknown";
+
+export interface SyncBackupCurrencyTableCount {
+	table: SyncBackupCurrencyTable;
+	local: number;
+	pending: number;
+}
+
+export interface SyncBackupCurrencyCount {
+	key: string;
+	label: string;
+	currency?: string;
+	kind: SyncBackupCurrencyBucketKind;
+	local: number;
+	pending: number;
+	tables: SyncBackupCurrencyTableCount[];
+}
+
 export interface SyncBackupCounts {
 	tables: SyncBackupTableCount[];
+	currencyBreakdown: SyncBackupCurrencyCount[];
 	totalLocal: number;
 	totalRemote: number;
 	totalPending: number;
+}
+
+const BACKUP_CURRENCY_TABLES = [
+	"accounts",
+	"categories",
+	"transactions",
+	"budgets",
+] as const satisfies readonly SyncBackupCurrencyTable[];
+const UNTAGGED_CURRENCY_BUCKET_KEY = "__untagged";
+const UNKNOWN_CURRENCY_BUCKET_KEY = "__unknown";
+
+type CurrencyBucketDescriptor = {
+	key: string;
+	label: string;
+	currency?: string;
+	kind: SyncBackupCurrencyBucketKind;
+};
+
+type MutableCurrencyBucket = CurrencyBucketDescriptor & {
+	local: number;
+	pending: number;
+	tables: Record<SyncBackupCurrencyTable, { local: number; pending: number }>;
+};
+
+function createEmptyCurrencyTableCounts(): Record<
+	SyncBackupCurrencyTable,
+	{ local: number; pending: number }
+> {
+	return {
+		accounts: { local: 0, pending: 0 },
+		categories: { local: 0, pending: 0 },
+		transactions: { local: 0, pending: 0 },
+		budgets: { local: 0, pending: 0 },
+	};
+}
+
+function normalizeBackupCurrencyCode(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const normalized = value.trim().toUpperCase();
+	return normalized ? normalized : null;
+}
+
+function getEnabledBackupCurrencies(config: DbConfig | undefined): string[] | null {
+	const currencies = new Set<string>();
+	const defaultCurrency = normalizeBackupCurrencyCode(config?.currency);
+	if (defaultCurrency) currencies.add(defaultCurrency);
+	for (const currency of config?.enabledCurrencies ?? []) {
+		const normalized = normalizeBackupCurrencyCode(currency);
+		if (normalized) currencies.add(normalized);
+	}
+	return currencies.size > 0 ? Array.from(currencies) : null;
+}
+
+function getBackupCurrencyBucket(
+	value: unknown,
+	enabledCurrencies: Set<string> | null,
+	options: { allowUntagged?: boolean } = {}
+): CurrencyBucketDescriptor {
+	const normalized = normalizeBackupCurrencyCode(value);
+	if (!normalized) {
+		if (options.allowUntagged) {
+			return {
+				key: UNTAGGED_CURRENCY_BUCKET_KEY,
+				label: "Untagged",
+				kind: "untagged",
+			};
+		}
+		return {
+			key: UNKNOWN_CURRENCY_BUCKET_KEY,
+			label: "Other / Unknown",
+			kind: "unknown",
+		};
+	}
+
+	if (enabledCurrencies && !enabledCurrencies.has(normalized)) {
+		return {
+			key: UNKNOWN_CURRENCY_BUCKET_KEY,
+			label: "Other / Unknown",
+			kind: "unknown",
+		};
+	}
+
+	return {
+		key: normalized,
+		label: normalized,
+		currency: normalized,
+		kind: "currency",
+	};
+}
+
+function getMutableCurrencyBucket(
+	buckets: Map<string, MutableCurrencyBucket>,
+	descriptor: CurrencyBucketDescriptor
+): MutableCurrencyBucket {
+	const existing = buckets.get(descriptor.key);
+	if (existing) return existing;
+
+	const bucket: MutableCurrencyBucket = {
+		...descriptor,
+		local: 0,
+		pending: 0,
+		tables: createEmptyCurrencyTableCounts(),
+	};
+	buckets.set(descriptor.key, bucket);
+	return bucket;
+}
+
+function addCurrencyBackupCount(
+	buckets: Map<string, MutableCurrencyBucket>,
+	descriptor: CurrencyBucketDescriptor,
+	table: SyncBackupCurrencyTable,
+	counts: { local: number; pending: number }
+): void {
+	if (counts.local === 0 && counts.pending === 0) return;
+
+	const bucket = getMutableCurrencyBucket(buckets, descriptor);
+	bucket.local += counts.local;
+	bucket.pending += counts.pending;
+	bucket.tables[table].local += counts.local;
+	bucket.tables[table].pending += counts.pending;
+}
+
+function finalizeCurrencyBackupCounts(
+	buckets: Map<string, MutableCurrencyBucket>,
+	enabledCurrencyOrder: Map<string, number>
+): SyncBackupCurrencyCount[] {
+	const kindOrder: Record<SyncBackupCurrencyBucketKind, number> = {
+		currency: 0,
+		untagged: 1,
+		unknown: 2,
+	};
+
+	return Array.from(buckets.values())
+		.sort((a, b) => {
+			const kindDiff = kindOrder[a.kind] - kindOrder[b.kind];
+			if (kindDiff !== 0) return kindDiff;
+			const aOrder = a.currency ? (enabledCurrencyOrder.get(a.currency) ?? Number.MAX_SAFE_INTEGER) : 0;
+			const bOrder = b.currency ? (enabledCurrencyOrder.get(b.currency) ?? Number.MAX_SAFE_INTEGER) : 0;
+			if (aOrder !== bOrder) return aOrder - bOrder;
+			return a.label.localeCompare(b.label);
+		})
+		.map((bucket) => ({
+			key: bucket.key,
+			label: bucket.label,
+			currency: bucket.currency,
+			kind: bucket.kind,
+			local: bucket.local,
+			pending: bucket.pending,
+			tables: BACKUP_CURRENCY_TABLES.map((table) => ({
+				table,
+				local: bucket.tables[table].local,
+				pending: bucket.tables[table].pending,
+			})),
+		}));
+}
+
+async function getLocalBackupCurrencyBreakdown(
+	userId: string,
+	enabledCurrencyCodes: string[] | null
+): Promise<SyncBackupCurrencyCount[]> {
+	const enabledCurrencies = enabledCurrencyCodes ? new Set(enabledCurrencyCodes) : null;
+	const enabledCurrencyOrder = new Map(
+		(enabledCurrencyCodes ?? []).map((currency, index) => [currency, index])
+	);
+	const buckets = new Map<string, MutableCurrencyBucket>();
+
+	for (const currency of enabledCurrencyCodes ?? []) {
+		getMutableCurrencyBucket(
+			buckets,
+			getBackupCurrencyBucket(currency, enabledCurrencies)
+		);
+	}
+
+	const [accounts, categories, budgets] = await Promise.all([
+		localDb.accounts.where("userId").equals(userId).and((account) => !account.deletedAt).toArray(),
+		localDb.categories
+			.where("userId")
+			.equals(userId)
+			.and((category) => !category.deletedAt)
+			.toArray(),
+		localDb.budgets.where("userId").equals(userId).and((budget) => !budget.deletedAt).toArray(),
+	]);
+	const categoriesById = new Map(categories.map((category) => [category.id, category]));
+
+	for (const account of accounts) {
+		addCurrencyBackupCount(
+			buckets,
+			getBackupCurrencyBucket(account.currency, enabledCurrencies),
+			"accounts",
+			{ local: 1, pending: account.pendingSync === true ? 1 : 0 }
+		);
+	}
+
+	for (const category of categories) {
+		addCurrencyBackupCount(
+			buckets,
+			getBackupCurrencyBucket(category.currency, enabledCurrencies, { allowUntagged: true }),
+			"categories",
+			{ local: 1, pending: category.pendingSync === true ? 1 : 0 }
+		);
+	}
+
+	for (const budget of budgets) {
+		const category = categoriesById.get(budget.categoryId);
+		const currencySource = normalizeBackupCurrencyCode(budget.currency)
+			? budget.currency
+			: category?.currency;
+		addCurrencyBackupCount(
+			buckets,
+			getBackupCurrencyBucket(currencySource, enabledCurrencies, { allowUntagged: Boolean(category) }),
+			"budgets",
+			{ local: 1, pending: budget.pendingSync === true ? 1 : 0 }
+		);
+	}
+
+	const [transactionLocalTotal, transactionPendingTotal] = await Promise.all([
+		localDb.transactions
+			.where("userId")
+			.equals(userId)
+			.and((transaction) => !transaction.deletedAt)
+			.count(),
+		localDb.transactions
+			.where("userId")
+			.equals(userId)
+			.and((transaction) => !transaction.deletedAt && transaction.pendingSync === true)
+			.count(),
+	]);
+	let countedTransactionLocal = 0;
+	let countedTransactionPending = 0;
+
+	await Promise.all(
+		accounts.map(async (account) => {
+			const [local, pending] = await Promise.all([
+				localDb.transactions
+					.where("accountId")
+					.equals(account.id)
+					.and((transaction) => transaction.userId === userId && !transaction.deletedAt)
+					.count(),
+				localDb.transactions
+					.where("accountId")
+					.equals(account.id)
+					.and(
+						(transaction) =>
+							transaction.userId === userId &&
+							!transaction.deletedAt &&
+							transaction.pendingSync === true
+					)
+					.count(),
+			]);
+			countedTransactionLocal += local;
+			countedTransactionPending += pending;
+			addCurrencyBackupCount(
+				buckets,
+				getBackupCurrencyBucket(account.currency, enabledCurrencies),
+				"transactions",
+				{ local, pending }
+			);
+		})
+	);
+
+	addCurrencyBackupCount(
+		buckets,
+		getBackupCurrencyBucket(null, enabledCurrencies),
+		"transactions",
+		{
+			local: Math.max(0, transactionLocalTotal - countedTransactionLocal),
+			pending: Math.max(0, transactionPendingTotal - countedTransactionPending),
+		}
+	);
+
+	return finalizeCurrencyBackupCounts(buckets, enabledCurrencyOrder);
 }
 
 /**
@@ -751,39 +1109,47 @@ export interface SyncBackupCounts {
  */
 export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCounts | null> {
 	try {
-		const firestore = await withFirestoreTimeout(getFirestoreForUser(userId), "opening Firebase");
+		const [firestore, localConfig] = await Promise.all([
+			withFirestoreTimeout(getFirestoreForUser(userId), "opening Firebase"),
+			localDb.dbConfig.get(userId),
+		]);
 		if (!firestore) return null;
+		const enabledCurrencyCodes = getEnabledBackupCurrencies(localConfig);
 
-		const tables = await Promise.all(
-			CORE_SYNC_TABLES.map(async (table): Promise<SyncBackupTableCount> => {
-				const [localCount, pendingCount, remoteSnap] = await Promise.all([
-					getLocalSyncTable(table)
-						.where("userId")
-						.equals(userId)
-						.and((r: SyncableRecord) => !r.deletedAt)
-						.count(),
-					getLocalSyncTable(table)
-						.where("userId")
-						.equals(userId)
-						.and((r: SyncableRecord) => !r.deletedAt && r.pendingSync === true)
-						.count(),
-					withFirestoreTimeout(
-						getCountFromServer(collection(firestore, `users/${userId}/${table}`)),
-						`counting ${table}`
-					),
-				]);
-				const remoteCount = remoteSnap.data().count;
-				return {
-					table,
-					local: localCount,
-					remote: remoteCount,
-					pending: pendingCount,
-				};
-			})
-		);
+		const [tables, currencyBreakdown] = await Promise.all([
+			Promise.all(
+				CORE_SYNC_TABLES.map(async (table): Promise<SyncBackupTableCount> => {
+					const [localCount, pendingCount, remoteSnap] = await Promise.all([
+						getLocalSyncTable(table)
+							.where("userId")
+							.equals(userId)
+							.and((r: SyncableRecord) => !r.deletedAt)
+							.count(),
+						getLocalSyncTable(table)
+							.where("userId")
+							.equals(userId)
+							.and((r: SyncableRecord) => !r.deletedAt && r.pendingSync === true)
+							.count(),
+						withFirestoreTimeout(
+							getCountFromServer(collection(firestore, `users/${userId}/${table}`)),
+							`counting ${table}`
+						),
+					]);
+					const remoteCount = remoteSnap.data().count;
+					return {
+						table,
+						local: localCount,
+						remote: remoteCount,
+						pending: pendingCount,
+					};
+				})
+			),
+			getLocalBackupCurrencyBreakdown(userId, enabledCurrencyCodes),
+		]);
 
 		return {
 			tables,
+			currencyBreakdown,
 			totalLocal: tables.reduce((sum, t) => sum + t.local, 0),
 			totalRemote: tables.reduce((sum, t) => sum + t.remote, 0),
 			totalPending: tables.reduce((sum, t) => sum + t.pending, 0),

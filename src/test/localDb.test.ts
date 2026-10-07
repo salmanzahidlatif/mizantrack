@@ -1,7 +1,12 @@
 import Dexie from "dexie";
 import { describe, expect, it, vi } from "vitest";
 
-import { db, MizanTrackDB } from "@/lib/db/local";
+import {
+	LEGACY_ZAKAT_CURRENCY,
+	ZAKAT_CURRENCY_BACKFILL_META_ID,
+	db,
+	MizanTrackDB,
+} from "@/lib/db/local";
 
 describe("local Dexie database events", () => {
 	it("versionchange handler leaves the database reopenable", async () => {
@@ -69,7 +74,7 @@ describe("local Dexie database events", () => {
 		try {
 			await upgradedDb.open();
 
-			expect(upgradedDb.verno).toBe(9);
+			expect(upgradedDb.verno).toBe(10);
 			expect(await upgradedDb.accounts.get("acc-v7")).toMatchObject({
 				title: "Legacy Cash",
 				openingBalance: 123,
@@ -164,7 +169,7 @@ describe("local Dexie database events", () => {
 		try {
 			await upgradedDb.open();
 
-			expect(upgradedDb.verno).toBe(9);
+			expect(upgradedDb.verno).toBe(10);
 			expect(upgradedDb.tables.map((table) => table.name)).not.toContain(
 				"categoryCurrencyBackfillDecisions"
 			);
@@ -187,6 +192,119 @@ describe("local Dexie database events", () => {
 				period: "2026-10",
 				sourceId: "hk:AED:budget:food",
 			});
+		} finally {
+			upgradedDb.close();
+			await Dexie.delete(databaseName);
+		}
+	});
+
+	it("upgrades version 9 zakat tables by assigning legacy PKR currency without data loss", async () => {
+		const databaseName = "mizantrack-v9-zakat-currency-upgrade-test";
+		await Dexie.delete(databaseName);
+
+		const legacyDb = new Dexie(databaseName);
+		legacyDb.version(9).stores({
+			accounts: "id, userId, isArchived, accountType, sourceId, updatedAt, deletedAt, pendingSync",
+			categories: "id, userId, type, currency, sourceId, updatedAt, deletedAt, pendingSync",
+			transactions:
+				"id, userId, [userId+date], type, date, accountId, categoryId, toAccountId, sourceId, updatedAt, deletedAt, pendingSync",
+			budgets:
+				"id, userId, categoryId, period, [userId+period], [categoryId+period], sourceId, updatedAt, deletedAt, pendingSync",
+			dbConfig: "id",
+			syncMeta: "id",
+			categoryCurrencyBackfillDecisions: null,
+			dashboardStats: "id, updatedAt",
+			goldItems: "id, userId, purity, updatedAt, deletedAt",
+			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
+			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
+		});
+
+		await legacyDb.open();
+		await legacyDb.table("goldItems").bulkPut([
+			{
+				id: "gold-legacy",
+				userId: "user-zakat-v9",
+				title: "Legacy Ring",
+				weight: 10,
+				purity: "22k",
+				updatedAt: 9_000,
+			},
+			{
+				id: "gold-aed",
+				userId: "user-zakat-v9",
+				currency: "AED",
+				title: "AED Ring",
+				weight: 5,
+				purity: "24k",
+				updatedAt: 9_100,
+			},
+		]);
+		await legacyDb.table("zakatCalculations").put({
+			id: "calc-legacy",
+			userId: "user-zakat-v9",
+			islamicYear: "1447",
+			assessmentDate: 9_000,
+			nisabStandard: "gold",
+			goldPricePerGram: 250,
+			referenceCurrency: "PKR",
+			totalGoldWeightGrams: 10,
+			totalGoldValue: 2_500,
+			accountBalances: [],
+			totalZakatable: 2_500,
+			nisabThreshold: 20_000,
+			zakatObligation: 0,
+			isLiable: false,
+			createdAt: 9_000,
+			updatedAt: 9_000,
+		});
+		await legacyDb.table("zakatPayments").put({
+			id: "payment-legacy",
+			userId: "user-zakat-v9",
+			islamicYear: "1447",
+			date: 9_000,
+			amount: 100,
+			createdAt: 9_000,
+			updatedAt: 9_000,
+		});
+		legacyDb.close();
+
+		const upgradedDb = new MizanTrackDB(databaseName);
+		try {
+			await upgradedDb.open();
+
+			expect(upgradedDb.verno).toBe(10);
+			expect(await upgradedDb.goldItems.get("gold-legacy")).toMatchObject({
+				title: "Legacy Ring",
+				currency: LEGACY_ZAKAT_CURRENCY,
+				pendingSync: true,
+			});
+			expect(await upgradedDb.goldItems.get("gold-aed")).toMatchObject({
+				title: "AED Ring",
+				currency: "AED",
+			});
+			expect(await upgradedDb.zakatCalculations.get("calc-legacy")).toMatchObject({
+				totalZakatable: 2_500,
+				currency: LEGACY_ZAKAT_CURRENCY,
+				pendingSync: true,
+			});
+			expect(await upgradedDb.zakatPayments.get("payment-legacy")).toMatchObject({
+				amount: 100,
+				currency: LEGACY_ZAKAT_CURRENCY,
+				pendingSync: true,
+			});
+			expect(await upgradedDb.syncMeta.get(ZAKAT_CURRENCY_BACKFILL_META_ID)).toBeTruthy();
+
+			await upgradedDb.goldItems.update("gold-legacy", { currency: undefined });
+			upgradedDb.close();
+
+			const reopenedDb = new MizanTrackDB(databaseName);
+			try {
+				await reopenedDb.open();
+				expect((await reopenedDb.goldItems.get("gold-legacy"))?.currency).toBeUndefined();
+				expect(await reopenedDb.syncMeta.get(ZAKAT_CURRENCY_BACKFILL_META_ID)).toBeTruthy();
+			} finally {
+				reopenedDb.close();
+			}
 		} finally {
 			upgradedDb.close();
 			await Dexie.delete(databaseName);

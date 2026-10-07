@@ -8,11 +8,12 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { db } from "@/lib/db/local";
+import { db, withoutSyncDirtyTracking } from "@/lib/db/local";
 import {
 	CORE_SYNC_TABLES,
 	FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE,
 	getFirestoreUsage,
+	getSyncBackupCounts,
 	syncAll,
 } from "@/lib/db/sync";
 import { useSyncStore } from "@/store/sync-store";
@@ -138,6 +139,230 @@ describe("getFirestoreUsage", () => {
 
 		const result = await getFirestoreUsage("user-1");
 		expect(result).toBeNull();
+	});
+});
+
+describe("getSyncBackupCounts — currency breakdown", () => {
+	const USER_ID = "backup-currency-test-user";
+
+	beforeEach(async () => {
+		await db.accounts.where("userId").equals(USER_ID).delete();
+		await db.categories.where("userId").equals(USER_ID).delete();
+		await db.transactions.where("userId").equals(USER_ID).delete();
+		await db.budgets.where("userId").equals(USER_ID).delete();
+		await db.dbConfig.delete(USER_ID);
+	});
+
+	it("getSyncBackupCounts_GroupsLocalAndPendingRecordsByCurrencyWithoutExtraFirestoreReads", async () => {
+		const { getFirestoreForUser } = await import("@/lib/db/firebase");
+		const firestore = await import("firebase/firestore");
+
+		vi.mocked(getFirestoreForUser).mockResolvedValue(
+			{} as Awaited<ReturnType<typeof getFirestoreForUser>>
+		);
+		vi.mocked(firestore.getCountFromServer).mockResolvedValue({
+			data: () => ({ count: 10 }),
+		} as unknown as Awaited<ReturnType<typeof firestore.getCountFromServer>>);
+
+		await db.dbConfig.put({
+			id: USER_ID,
+			firebaseConfig: "{}",
+			enabled: true,
+			currency: "PKR",
+			fiscalYearStartMonth: 1,
+			enabledCurrencies: [" pkr ", "AED"],
+		});
+
+		await withoutSyncDirtyTracking(async () => {
+			await db.accounts.bulkPut([
+				{
+					id: "acc-aed",
+					userId: USER_ID,
+					title: "AED Cash",
+					openingBalance: 0,
+					currency: "AED",
+					isArchived: false,
+					updatedAt: 1_000,
+				},
+				{
+					id: "acc-blank",
+					userId: USER_ID,
+					title: "Blank Currency",
+					openingBalance: 0,
+					currency: " ",
+					isArchived: false,
+					updatedAt: 1_000,
+				},
+			]);
+			await db.categories.bulkPut([
+				{
+					id: "cat-aed",
+					userId: USER_ID,
+					title: "AED Groceries",
+					type: "Expense",
+					currency: "AED",
+					updatedAt: 1_000,
+				},
+				{
+					id: "cat-pkr",
+					userId: USER_ID,
+					title: "PKR Food",
+					type: "Expense",
+					currency: "PKR",
+					updatedAt: 1_000,
+				},
+			]);
+			await db.transactions.bulkPut([
+				{
+					id: "txn-aed",
+					userId: USER_ID,
+					type: "Expense",
+					date: 1_000,
+					amount: 10,
+					accountId: "acc-aed",
+					updatedAt: 1_000,
+				},
+				{
+					id: "txn-unknown-account",
+					userId: USER_ID,
+					type: "Expense",
+					date: 1_000,
+					amount: 15,
+					accountId: "acc-unknown",
+					updatedAt: 1_000,
+				},
+			]);
+			await db.budgets.bulkPut([
+				{
+					id: "budget-via-category",
+					userId: USER_ID,
+					categoryId: "cat-pkr",
+					period: "2026-10",
+					amount: 100,
+					active: true,
+					updatedAt: 1_000,
+				},
+				{
+					id: "budget-explicit-aed",
+					userId: USER_ID,
+					categoryId: "cat-pkr",
+					period: "2026-11",
+					amount: 200,
+					currency: "AED",
+					active: true,
+					updatedAt: 1_000,
+				},
+			]);
+		});
+
+		await db.accounts.bulkPut([
+			{
+				id: "acc-pkr",
+				userId: USER_ID,
+				title: "PKR Cash",
+				openingBalance: 0,
+				currency: " pkr ",
+				isArchived: false,
+				updatedAt: 2_000,
+			},
+			{
+				id: "acc-usd",
+				userId: USER_ID,
+				title: "USD Cash",
+				openingBalance: 0,
+				currency: "usd",
+				isArchived: false,
+				updatedAt: 2_000,
+			},
+		]);
+		await db.categories.put({
+			id: "cat-untagged",
+			userId: USER_ID,
+			title: "Legacy Category",
+			type: "Expense",
+			updatedAt: 2_000,
+		});
+		await db.transactions.bulkPut([
+			{
+				id: "txn-pkr",
+				userId: USER_ID,
+				type: "Expense",
+				date: 2_000,
+				amount: 20,
+				accountId: "acc-pkr",
+				updatedAt: 2_000,
+			},
+			{
+				id: "txn-usd",
+				userId: USER_ID,
+				type: "Expense",
+				date: 2_000,
+				amount: 22,
+				accountId: "acc-usd",
+				updatedAt: 2_000,
+			},
+			{
+				id: "txn-missing-account",
+				userId: USER_ID,
+				type: "Expense",
+				date: 2_000,
+				amount: 25,
+				accountId: "missing-account",
+				updatedAt: 2_000,
+			},
+		]);
+		await db.budgets.put({
+			id: "budget-untagged-category",
+			userId: USER_ID,
+			categoryId: "cat-untagged",
+			period: "2026-12",
+			amount: 300,
+			active: true,
+			updatedAt: 2_000,
+		});
+
+		const result = await getSyncBackupCounts(USER_ID);
+		expect(result).not.toBeNull();
+
+		const pkr = result?.currencyBreakdown.find((bucket) => bucket.key === "PKR");
+		const aed = result?.currencyBreakdown.find((bucket) => bucket.key === "AED");
+		const untagged = result?.currencyBreakdown.find((bucket) => bucket.kind === "untagged");
+		const unknown = result?.currencyBreakdown.find((bucket) => bucket.kind === "unknown");
+
+		expect(pkr).toMatchObject({ label: "PKR", local: 4, pending: 2 });
+		expect(pkr?.tables.find((table) => table.table === "transactions")).toMatchObject({
+			local: 1,
+			pending: 1,
+		});
+		expect(pkr?.tables.find((table) => table.table === "budgets")).toMatchObject({
+			local: 1,
+			pending: 0,
+		});
+		expect(aed).toMatchObject({ label: "AED", local: 4, pending: 0 });
+		expect(aed?.tables.find((table) => table.table === "budgets")).toMatchObject({
+			local: 1,
+			pending: 0,
+		});
+		expect(untagged).toMatchObject({ label: "Untagged", local: 2, pending: 2 });
+		expect(untagged?.tables.find((table) => table.table === "categories")).toMatchObject({
+			local: 1,
+			pending: 1,
+		});
+		expect(untagged?.tables.find((table) => table.table === "budgets")).toMatchObject({
+			local: 1,
+			pending: 1,
+		});
+		expect(unknown).toMatchObject({ label: "Other / Unknown", local: 5, pending: 3 });
+		expect(unknown?.tables.find((table) => table.table === "accounts")).toMatchObject({
+			local: 2,
+			pending: 1,
+		});
+		expect(unknown?.tables.find((table) => table.table === "transactions")).toMatchObject({
+			local: 3,
+			pending: 2,
+		});
+		expect(firestore.getCountFromServer).toHaveBeenCalledTimes(CORE_SYNC_TABLES.length);
+		expect(firestore.getDocs).not.toHaveBeenCalled();
 	});
 });
 
@@ -499,6 +724,78 @@ describe("syncAll — source IDs and budgets", () => {
 		const category = await db.categories.get("cat-no-source");
 		expect(category).toMatchObject({ title: "Manual Food" });
 		expect(category).not.toHaveProperty("sourceId");
+	});
+});
+
+describe("syncAll — zakat currency sync", () => {
+	const USER_ID = "sync-zakat-currency-test-user";
+
+	beforeEach(async () => {
+		await db.goldItems.where("userId").equals(USER_ID).delete();
+		await db.zakatCalculations.where("userId").equals(USER_ID).delete();
+		await db.zakatPayments.where("userId").equals(USER_ID).delete();
+		await db.syncMeta.bulkDelete(coreSyncMetaKeys());
+	});
+
+	it("syncAll_ZakatTables_SyncCurrencyAndDefaultLegacyRemoteRecordsToPKR", async () => {
+		await markAllTableMigrationsDone();
+		await db.goldItems.put({
+			id: "gold-local",
+			userId: USER_ID,
+			currency: "AED",
+			title: "AED Ring",
+			weight: 5,
+			purity: "24k",
+			updatedAt: 40_000,
+		});
+
+		const { firestore, mockSet } = await configureEmptySyncMocks();
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const path = (ref as { path?: string }).path;
+			if (path === `users/${USER_ID}/zakatCalculations`) {
+				return {
+					docs: [
+						{
+							id: "calc-remote-legacy",
+							data: () => ({
+								id: "calc-remote-legacy",
+								userId: USER_ID,
+								islamicYear: "1447",
+								assessmentDate: 40_000,
+								nisabStandard: "gold",
+								goldPricePerGram: 250,
+								referenceCurrency: "PKR",
+								totalGoldWeightGrams: 10,
+								totalGoldValue: 2_500,
+								accountBalances: [],
+								totalZakatable: 2_500,
+								nisabThreshold: 20_000,
+								zakatObligation: 0,
+								isLiable: false,
+								createdAt: 40_000,
+								updatedAt: 40_000,
+								syncedAt: firestoreTimestamp(5_000),
+							}),
+						},
+					],
+				} as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+
+		const result = await syncAll(USER_ID);
+
+		expect(result.tables?.goldItems).toMatchObject({ pushed: 1 });
+		expect(mockSet).toHaveBeenCalledWith(
+			expect.objectContaining({ path: `users/${USER_ID}/goldItems/gold-local` }),
+			expect.objectContaining({ currency: "AED", title: "AED Ring" }),
+			{ merge: true }
+		);
+		expect(await db.zakatCalculations.get("calc-remote-legacy")).toMatchObject({
+			currency: "PKR",
+			pendingSync: false,
+		});
 	});
 });
 

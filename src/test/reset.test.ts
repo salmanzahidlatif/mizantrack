@@ -182,6 +182,7 @@ async function seedResetFixture() {
 		await db.goldItems.put({
 			id: "gold-aed",
 			userId: USER_ID,
+			currency: "AED",
 			title: "Ring",
 			weight: 10,
 			purity: "22k",
@@ -190,6 +191,7 @@ async function seedResetFixture() {
 		await db.zakatCalculations.put({
 			id: "zakat-calc-aed",
 			userId: USER_ID,
+			currency: "AED",
 			islamicYear: "1447",
 			assessmentDate: 1_000,
 			nisabStandard: "gold",

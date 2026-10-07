@@ -17,6 +17,9 @@ export interface SyncDirtyFields {
 	pendingSync?: boolean;
 }
 
+export const LEGACY_ZAKAT_CURRENCY = "PKR";
+export const ZAKAT_CURRENCY_BACKFILL_META_ID = "zakatCurrencyBackfill:PKR:v1";
+
 let suppressSyncDirtyTracking = 0;
 
 export async function withoutSyncDirtyTracking<T>(operation: () => Promise<T>): Promise<T> {
@@ -186,10 +189,50 @@ export class MizanTrackDB extends Dexie {
 			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
 		});
 
+		this.version(10)
+			.stores({
+				accounts:
+					"id, userId, isArchived, accountType, sourceId, updatedAt, deletedAt, pendingSync",
+				categories: "id, userId, type, currency, sourceId, updatedAt, deletedAt, pendingSync",
+				transactions:
+					"id, userId, [userId+date], type, date, accountId, categoryId, toAccountId, sourceId, updatedAt, deletedAt, pendingSync",
+				budgets:
+					"id, userId, categoryId, period, [userId+period], [categoryId+period], sourceId, updatedAt, deletedAt, pendingSync",
+				dbConfig: "id",
+				syncMeta: "id",
+				categoryCurrencyBackfillDecisions: null,
+				dashboardStats: "id, updatedAt",
+				goldItems:
+					"id, userId, currency, [userId+currency], purity, updatedAt, deletedAt, pendingSync",
+				zakatCalculations:
+					"id, userId, currency, [userId+currency], islamicYear, assessmentDate, updatedAt, deletedAt, pendingSync",
+				zakatPayments:
+					"id, userId, currency, [userId+currency], islamicYear, date, calculationId, updatedAt, deletedAt, pendingSync",
+			})
+			.upgrade(async (tx) => {
+				const syncMeta = tx.table<SyncMeta, string>("syncMeta");
+				const alreadyBackfilled = await syncMeta.get(ZAKAT_CURRENCY_BACKFILL_META_ID);
+				if (alreadyBackfilled) return;
+
+				const backfillCurrency = (record: { currency?: string } & SyncDirtyFields) => {
+					if (record.currency) return;
+					record.currency = LEGACY_ZAKAT_CURRENCY;
+					record.pendingSync = true;
+				};
+
+				await tx.table("goldItems").toCollection().modify(backfillCurrency);
+				await tx.table("zakatCalculations").toCollection().modify(backfillCurrency);
+				await tx.table("zakatPayments").toCollection().modify(backfillCurrency);
+				await syncMeta.put({ id: ZAKAT_CURRENCY_BACKFILL_META_ID, timestamp: Date.now() });
+			});
+
 		installSyncDirtyHooks(this.accounts);
 		installSyncDirtyHooks(this.categories);
 		installSyncDirtyHooks(this.transactions);
 		installSyncDirtyHooks(this.budgets);
+		installSyncDirtyHooks(this.goldItems);
+		installSyncDirtyHooks(this.zakatCalculations);
+		installSyncDirtyHooks(this.zakatPayments);
 
 		this.on("blocked", (event) => {
 			console.warn("MizanTrack IndexedDB upgrade is blocked by another open app instance.", event);

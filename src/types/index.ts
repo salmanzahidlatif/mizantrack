@@ -22,7 +22,7 @@ export interface Category {
 	userId: string;
 	title: string;
 	type: CategoryType;
-	currency?: string; // undefined/empty = shared across all currencies
+	currency?: string; // Legacy records can be untagged; new edits require a currency.
 	icon?: string;
 	color?: string;
 	parentId?: string;
@@ -197,6 +197,7 @@ export type GoldPurity = "21k" | "22k" | "24k";
 export interface GoldItem {
 	id: string;
 	userId: string;
+	currency: string;
 	title: string; // e.g., "Wedding Ring", "Necklace"
 	weight: number; // in grams
 	purity: GoldPurity;
@@ -210,6 +211,7 @@ export interface GoldItem {
 export interface ZakatCalculation {
 	id: string;
 	userId: string;
+	currency: string;
 	islamicYear: string; // e.g., "1446-1447"
 	assessmentDate: number; // Unix ms - typically end of Sha'ban
 
