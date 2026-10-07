@@ -615,9 +615,9 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 										);
 										if (
 											v === watchedToAccount ||
-											nextSource &&
-											currentDestination &&
-											!currencyCodesMatch(nextSource.currency, currentDestination.currency)
+											(nextSource &&
+												currentDestination &&
+												!currencyCodesMatch(nextSource.currency, currentDestination.currency))
 										) {
 											setValue("toAccountId", undefined, { shouldValidate: true });
 										}

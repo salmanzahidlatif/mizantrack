@@ -12,6 +12,9 @@ import type { Transaction } from "@/types";
 const USER_ID = "transactions-filters-perf-user";
 const OTHER_USER_ID = "transactions-filters-perf-other-user";
 const ACCOUNT_ID = "transactions-filters-perf-account";
+const AED_ACCOUNT_ID = "transactions-filters-perf-aed-account";
+const AED_ACCOUNT_ID_SPACED = "transactions-filters-perf-aed-spaced-account";
+const PKR_ACCOUNT_ID = "transactions-filters-perf-pkr-account";
 const CATEGORY_ID = "transactions-filters-perf-category";
 const TIME_ZONE_OFFSET_MINUTES = 240;
 
@@ -108,6 +111,68 @@ describe("transactions indexed filters", () => {
 
 		expect(result.transactions.map((item) => item.id)).toEqual(["food-1", "food-2"]);
 		expect(result.transactions.every((item) => item.categoryId === CATEGORY_ID)).toBe(true);
+	});
+
+	it("scopes transaction lists by normalized source account currency only", async () => {
+		const now = Date.now();
+		await db.accounts.bulkPut([
+			{
+				id: AED_ACCOUNT_ID,
+				userId: USER_ID,
+				title: "AED Wallet",
+				openingBalance: 0,
+				currency: "AED",
+				isArchived: false,
+				updatedAt: now,
+			},
+			{
+				id: AED_ACCOUNT_ID_SPACED,
+				userId: USER_ID,
+				title: "Untrimmed AED Wallet",
+				openingBalance: 0,
+				currency: " aed ",
+				isArchived: false,
+				updatedAt: now,
+			},
+			{
+				id: PKR_ACCOUNT_ID,
+				userId: USER_ID,
+				title: "PKR Wallet",
+				openingBalance: 0,
+				currency: "PKR",
+				isArchived: false,
+				updatedAt: now,
+			},
+		]);
+		await db.transactions.bulkPut([
+			transaction({ id: "aed-income", date: now, accountId: AED_ACCOUNT_ID }),
+			transaction({
+				id: "untrimmed-aed-expense",
+				date: now - 1,
+				accountId: AED_ACCOUNT_ID_SPACED,
+			}),
+			transaction({ id: "pkr-expense", date: now - 2, accountId: PKR_ACCOUNT_ID }),
+			transaction({
+				id: "pkr-to-aed-transfer",
+				date: now - 3,
+				type: "Transfer",
+				accountId: PKR_ACCOUNT_ID,
+				toAccountId: AED_ACCOUNT_ID,
+			}),
+		]);
+
+		const aedResult = await queryTransactionsWithStats(USER_ID, { currency: "aed" });
+		const pkrResult = await queryTransactionsWithStats(USER_ID, { currency: "PKR" });
+
+		expect(aedResult.transactions.map((item) => item.id)).toEqual([
+			"aed-income",
+			"untrimmed-aed-expense",
+		]);
+		expect(pkrResult.transactions.map((item) => item.id)).toEqual([
+			"pkr-expense",
+			"pkr-to-aed-transfer",
+		]);
+		expect(aedResult.transactions.map((item) => item.id)).not.toContain("pkr-to-aed-transfer");
 	});
 
 	// Seeds 10k+ rows into fake-indexeddb, which can exceed the default 5s timeout

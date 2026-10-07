@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
-import { computeAccountBalances } from "@/lib/analytics/balanceMath";
+import { computeAccountBalances, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import { fetchGoldPrice } from "@/lib/goldPrice";
 import { exportZakatSummary } from "@/lib/zakatExport";
@@ -37,9 +37,7 @@ interface ZakatPageClientProps {
 export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
-	const trimmedActiveCurrency = activeCurrency.trim();
-	const referenceCurrency =
-		trimmedActiveCurrency !== "" ? trimmedActiveCurrency : (config?.currency ?? "PKR");
+	const referenceCurrency = resolveCurrencyCode(activeCurrency, config?.currency);
 	const accounts = useAccounts(userId, { currency: referenceCurrency });
 
 	const allTransactions = useLiveQuery(

@@ -7,6 +7,7 @@ import { useState } from "react";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { Button } from "@/components/ui/button";
+import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 
 import type { ZakatCalculation } from "@/types";
@@ -22,9 +23,13 @@ export function ZakatHistory({ userId, referenceCurrency }: ZakatHistoryProps) {
 	const calculations = useLiveQuery(
 		() =>
 			db.zakatCalculations
-				.where("[userId+currency]")
-				.equals([userId, referenceCurrency])
-				.filter((c) => !c.deletedAt)
+				.where("userId")
+				.equals(userId)
+				.filter(
+					(c) =>
+						!c.deletedAt &&
+						normalizeCurrencyCode(c.currency) === normalizeCurrencyCode(referenceCurrency)
+				)
 				.reverse()
 				.sortBy("assessmentDate"),
 		[userId, referenceCurrency]
@@ -33,9 +38,13 @@ export function ZakatHistory({ userId, referenceCurrency }: ZakatHistoryProps) {
 	const payments = useLiveQuery(
 		() =>
 			db.zakatPayments
-				.where("[userId+currency]")
-				.equals([userId, referenceCurrency])
-				.filter((p) => !p.deletedAt)
+				.where("userId")
+				.equals(userId)
+				.filter(
+					(p) =>
+						!p.deletedAt &&
+						normalizeCurrencyCode(p.currency) === normalizeCurrencyCode(referenceCurrency)
+				)
 				.toArray(),
 		[userId, referenceCurrency]
 	);

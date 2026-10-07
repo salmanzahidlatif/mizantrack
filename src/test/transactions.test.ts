@@ -92,6 +92,12 @@ describe("transactionSchema", () => {
 			toAccountId: ACCOUNT_ID,
 		});
 		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues[0]?.path.join(".")).toBe("toAccountId");
+			expect(result.error.issues[0]?.message).toBe(
+				"Source and destination accounts must be different"
+			);
+		}
 	});
 
 	it("rejects zero amount", () => {

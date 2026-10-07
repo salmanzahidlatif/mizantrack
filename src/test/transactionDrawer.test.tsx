@@ -103,6 +103,22 @@ describe("TransactionDrawer option lists", () => {
 		expectUniqueIds(options);
 	});
 
+	it("normalizes account currencies before filtering dropdown options", () => {
+		const lowerPkrAccount = account("cash", " pkr ");
+		const pkrAccount = account("bank", "PKR");
+		const aedAccount = account("wallet", "AED");
+
+		const options = getTransactionAccountOptions(
+			[lowerPkrAccount, pkrAccount, aedAccount],
+			[],
+			"PKR",
+			undefined
+		);
+
+		expect(ids(options)).toEqual(["cash", "bank"]);
+		expectUniqueIds(options);
+	});
+
 	it("orders category options by recent usage with stable tie-breaking", () => {
 		const groceries = category("groceries", "Expense", "PKR");
 		const fuel = category("fuel", "Expense", "PKR");
@@ -214,6 +230,21 @@ describe("TransactionDrawer transfer destinations", () => {
 			[],
 			source.id,
 			undefined
+		);
+
+		expect(destinations.map((destination) => destination.id)).toEqual([sameCurrencyDestination.id]);
+	});
+
+	it("excludes the selected source account and normalizes destination currencies", () => {
+		const source = account("source-pkr", " pkr ");
+		const sameCurrencyDestination = account("destination-pkr", "PKR");
+		const crossCurrencyDestination = account("destination-aed", "AED");
+
+		const destinations = getTransferDestinationAccounts(
+			[source, sameCurrencyDestination, crossCurrencyDestination],
+			[],
+			source.id,
+			source.id
 		);
 
 		expect(destinations.map((destination) => destination.id)).toEqual([sameCurrencyDestination.id]);

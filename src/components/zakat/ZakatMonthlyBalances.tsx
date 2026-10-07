@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useMemo } from "react";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
-import { computeAccountBalances } from "@/lib/analytics/balanceMath";
+import { computeAccountBalances, normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import { getZakatYearMonths } from "@/lib/islamicCalendar";
 import { ISLAMIC_MONTHS, type Account, type IslamicMonth } from "@/types";
@@ -93,7 +93,9 @@ export function ZakatMonthlyBalances({
 
 				// Convert to reference currency
 				const rate =
-					account.currency === referenceCurrency ? 1 : (exchangeRates[account.currency] ?? 1);
+					normalizeCurrencyCode(account.currency) === normalizeCurrencyCode(referenceCurrency)
+						? 1
+						: (exchangeRates[normalizeCurrencyCode(account.currency)] ?? 1);
 				total += adjustedBalance * rate;
 			}
 

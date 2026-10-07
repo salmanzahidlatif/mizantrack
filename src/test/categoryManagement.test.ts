@@ -75,31 +75,32 @@ describe("category management filters", () => {
 	it("shows only categories tagged with the active currency in This currency scope", () => {
 		const categories = [
 			category("aed-food", { currency: "AED" }),
+			category("lower-aed-food", { currency: " aed " }),
 			category("pkr-food", { currency: "PKR" }),
 			category("shared-food"),
 			category("deleted-aed", { currency: "AED", deletedAt: 2_000 }),
 		];
 
-		const filtered = filterCategoriesForManagement(categories, "currency", "AED");
+		const filtered = filterCategoriesForManagement(categories, "currency", "aed");
 
-		expect(filtered?.map((item) => item.id)).toEqual(["aed-food"]);
+		expect(filtered?.map((item) => item.id)).toEqual(["aed-food", "lower-aed-food"]);
 	});
 
 	it("keeps legacy untagged categories selectable in currency pickers", () => {
 		const categories = [
 			category("aed-food", { currency: "AED" }),
+			category("lower-aed-food", { currency: " aed " }),
 			category("pkr-food", { currency: "PKR" }),
 			category("legacy-untagged"),
 			category("deleted-untagged", { deletedAt: 2_000 }),
 		];
 
-		expect(filterCategoriesForPicker(categories, "Expense", "AED").map((item) => item.id)).toEqual([
-			"aed-food",
-			"legacy-untagged",
-		]);
+		expect(filterCategoriesForPicker(categories, "Expense", "aed").map((item) => item.id)).toEqual(
+			["aed-food", "lower-aed-food", "legacy-untagged"]
+		);
 		expect(
 			filterCategoriesForManagement(categories, "currency", "AED")?.map((item) => item.id)
-		).toEqual(["aed-food"]);
+		).toEqual(["aed-food", "lower-aed-food"]);
 	});
 
 	it("keeps Expense and Income categories under their exact headings", () => {

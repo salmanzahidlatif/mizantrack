@@ -17,6 +17,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import { getZakatYear } from "@/lib/islamicCalendar";
 
@@ -34,9 +35,13 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 	const payments = useLiveQuery(
 		() =>
 			db.zakatPayments
-				.where("[userId+currency]")
-				.equals([userId, referenceCurrency])
-				.filter((p) => !p.deletedAt)
+				.where("userId")
+				.equals(userId)
+				.filter(
+					(p) =>
+						!p.deletedAt &&
+						normalizeCurrencyCode(p.currency) === normalizeCurrencyCode(referenceCurrency)
+				)
 				.reverse()
 				.sortBy("date"),
 		[userId, referenceCurrency]
@@ -45,9 +50,13 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 	const calculations = useLiveQuery(
 		() =>
 			db.zakatCalculations
-				.where("[userId+currency]")
-				.equals([userId, referenceCurrency])
-				.filter((c) => !c.deletedAt)
+				.where("userId")
+				.equals(userId)
+				.filter(
+					(c) =>
+						!c.deletedAt &&
+						normalizeCurrencyCode(c.currency) === normalizeCurrencyCode(referenceCurrency)
+				)
 				.toArray(),
 		[userId, referenceCurrency]
 	);
