@@ -19,6 +19,8 @@ import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { useUIStore } from "@/store/ui-store";
 
+import { getCategoryTreeCategories } from "./categoryManagement";
+
 import type { Category, CategoryType } from "@/types";
 
 // ─── CategoryRow ──────────────────────────────────────────────────────────
@@ -26,9 +28,10 @@ import type { Category, CategoryType } from "@/types";
 interface CategoryRowProps {
 	category: Category;
 	isChild?: boolean;
+	showCurrencyTag?: boolean;
 }
 
-function CategoryRow({ category, isChild = false }: CategoryRowProps) {
+function CategoryRow({ category, isChild = false, showCurrencyTag = false }: CategoryRowProps) {
 	const openEditCategory = useUIStore((s) => s.openEditCategory);
 	const haptics = useHaptics();
 	const currency = category.currency ? getCurrencyByCode(category.currency) : undefined;
@@ -58,12 +61,12 @@ function CategoryRow({ category, isChild = false }: CategoryRowProps) {
 							style={{ backgroundColor: category.color }}
 						/>
 					)}
-					{category.currency && (
+					{showCurrencyTag && (
 						<Badge
 							variant="outline"
 							className="h-5 rounded-full bg-muted/50 px-1.5 text-[10px] font-semibold text-muted-foreground">
 							<span className="text-[11px] leading-none">{currency?.flag ?? "🌐"}</span>
-							{category.currency}
+							{category.currency ?? "Shared"}
 						</Badge>
 					)}
 				</div>
@@ -105,9 +108,10 @@ function CategoryRow({ category, isChild = false }: CategoryRowProps) {
 interface CategoryTreeProps {
 	categories: Category[] | undefined;
 	type: CategoryType;
+	showCurrencyTags?: boolean;
 }
 
-export function CategoryTree({ categories, type }: CategoryTreeProps) {
+export function CategoryTree({ categories, type, showCurrencyTags = false }: CategoryTreeProps) {
 	const openAddCategory = useUIStore((s) => s.openAddCategory);
 	const haptics = useHaptics();
 
@@ -121,7 +125,7 @@ export function CategoryTree({ categories, type }: CategoryTreeProps) {
 		);
 	}
 
-	const filtered = categories.filter((c) => c.type === type);
+	const filtered = getCategoryTreeCategories(categories, type);
 	const parents = filtered.filter((c) => !c.parentId);
 	const children = filtered.filter((c) => !!c.parentId);
 
@@ -139,11 +143,16 @@ export function CategoryTree({ categories, type }: CategoryTreeProps) {
 		<div className="space-y-2">
 			{parents.map((parent) => (
 				<div key={parent.id} className="space-y-1.5">
-					<CategoryRow category={parent} />
+					<CategoryRow category={parent} showCurrencyTag={showCurrencyTags} />
 					{children
 						.filter((c) => c.parentId === parent.id)
 						.map((child) => (
-							<CategoryRow key={child.id} category={child} isChild />
+							<CategoryRow
+								key={child.id}
+								category={child}
+								isChild
+								showCurrencyTag={showCurrencyTags}
+							/>
 						))}
 				</div>
 			))}
@@ -151,7 +160,7 @@ export function CategoryTree({ categories, type }: CategoryTreeProps) {
 			{children
 				.filter((c) => !parents.find((p) => p.id === c.parentId))
 				.map((child) => (
-					<CategoryRow key={child.id} category={child} />
+					<CategoryRow key={child.id} category={child} showCurrencyTag={showCurrencyTags} />
 				))}
 
 			<button

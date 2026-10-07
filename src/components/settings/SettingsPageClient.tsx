@@ -2,7 +2,6 @@
 
 import { useCurrentUser } from "@/components/auth/OfflineAuthProvider";
 import { AppLockSettings } from "@/components/settings/AppLockSettings";
-import { CategoryCurrencyBackfillPanel } from "@/components/settings/CategoryCurrencyBackfillPanel";
 import { ExportPanel } from "@/components/settings/ExportPanel";
 import { FirebaseSyncPanel } from "@/components/settings/FirebaseSyncPanel";
 import { ImportPanel } from "@/components/settings/ImportPanel";
@@ -41,8 +40,6 @@ export function SettingsPageClient({
 			</div>
 
 			<FirebaseSyncPanel userId={userId} />
-
-			<CategoryCurrencyBackfillPanel userId={userId} />
 
 			<TransferIntegrityPanel userId={userId} />
 

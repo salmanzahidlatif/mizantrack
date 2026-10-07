@@ -161,10 +161,6 @@ vi.mock("@/lib/db/local", () => ({
 	},
 }));
 
-vi.mock("@/lib/db/seed", () => ({
-	seedDefaultCategories: vi.fn(),
-}));
-
 vi.mock("@/store/filter-store", () => ({
 	useFilterStore: () => ({
 		activeCurrency: "PKR",

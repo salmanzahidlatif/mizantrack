@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 
 import { CategoryDrawer } from "@/components/categories/CategoryDrawer";
+import {
+	filterCategoriesForManagement,
+	type CategoryCurrencyScope,
+} from "@/components/categories/categoryManagement";
 import { CategoryTree } from "@/components/categories/CategoryTree";
+import { DuplicateCategoryMergePanel } from "@/components/categories/DuplicateCategoryMergePanel";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCategories } from "@/hooks/useCategories";
@@ -20,8 +25,6 @@ interface CategoriesPageClientProps {
 	userId?: string;
 }
 
-type CurrencyScope = "currency" | "all";
-
 export function CategoriesPageClient({ userId: providedUserId }: CategoriesPageClientProps = {}) {
 	const userId = useRequiredUserId(providedUserId);
 	const config = useDbConfig(userId);
@@ -34,20 +37,27 @@ export function CategoriesPageClient({ userId: providedUserId }: CategoriesPageC
 				? [config.currency]
 				: [];
 	const canToggleCurrencyScope = Boolean(activeCurrency) && enabledCurrencies.length > 1;
-	const [currencyScope, setCurrencyScope] = useState<CurrencyScope>("currency");
-	const effectiveCurrencyScope = canToggleCurrencyScope ? currencyScope : "all";
-	const categoryCurrency =
-		effectiveCurrencyScope === "currency" ? activeCurrency || undefined : undefined;
-	const categories = useCategories(userId, undefined, categoryCurrency);
+	const [currencyScope, setCurrencyScope] = useState<CategoryCurrencyScope>("currency");
+	const effectiveCurrencyScope = activeCurrency
+		? canToggleCurrencyScope
+			? currencyScope
+			: "currency"
+		: "all";
+	const allCategories = useCategories(userId);
+	const categories = filterCategoriesForManagement(
+		allCategories,
+		effectiveCurrencyScope,
+		activeCurrency || undefined
+	);
 	const openAddCategory = useUIStore((s) => s.openAddCategory);
 	const [activeTab, setActiveTab] = useState<CategoryType>("Expense");
 	const activeCurrencyEntry = activeCurrency ? getCurrencyByCode(activeCurrency) : undefined;
 
 	useEffect(() => {
-		setCurrencyScope(canToggleCurrencyScope ? "currency" : "all");
+		setCurrencyScope(activeCurrency ? "currency" : "all");
 	}, [activeCurrency, canToggleCurrencyScope]);
 
-	function updateCurrencyScope(scope: CurrencyScope) {
+	function updateCurrencyScope(scope: CategoryCurrencyScope) {
 		haptics.selection();
 		setCurrencyScope(scope);
 	}
@@ -99,16 +109,18 @@ export function CategoriesPageClient({ userId: providedUserId }: CategoriesPageC
 				</div>
 			)}
 
+			<DuplicateCategoryMergePanel userId={userId} />
+
 			<Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as CategoryType)}>
 				<TabsList className="grid w-full grid-cols-2">
 					<TabsTrigger value="Expense">Expense</TabsTrigger>
 					<TabsTrigger value="Income">Income</TabsTrigger>
 				</TabsList>
 				<TabsContent value="Expense" className="mt-4">
-					<CategoryTree categories={categories} type="Expense" />
+					<CategoryTree categories={categories} type="Expense" showCurrencyTags />
 				</TabsContent>
 				<TabsContent value="Income" className="mt-4">
-					<CategoryTree categories={categories} type="Income" />
+					<CategoryTree categories={categories} type="Income" showCurrencyTags />
 				</TabsContent>
 			</Tabs>
 
