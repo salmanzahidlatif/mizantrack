@@ -306,14 +306,17 @@ export function AppShell({ user, children }: AppShellProps) {
 										</div>
 									</DropdownMenuLabel>
 									<DropdownMenuSeparator />
+									{canLock && (
+										<>
+											<DropdownMenuItem onSelect={handleLockNow} className="gap-2">
+												<Lock className="h-4 w-4" />
+												Lock now
+											</DropdownMenuItem>
+											<DropdownMenuSeparator />
+										</>
+									)}
 									{renderBudgetsMenuItem()}
 									{renderSettingsMenuItem()}
-									{canLock && (
-										<DropdownMenuItem onSelect={handleLockNow} className="gap-2">
-											<Lock className="h-4 w-4" />
-											Lock now
-										</DropdownMenuItem>
-									)}
 									<DropdownMenuSeparator />
 									<DropdownMenuItem
 										variant="destructive"
@@ -363,14 +366,17 @@ export function AppShell({ user, children }: AppShellProps) {
 									</button>
 								</DropdownMenuTrigger>
 								<DropdownMenuContent side="top" align="start" className="w-56">
+									{canLock && (
+										<>
+											<DropdownMenuItem onSelect={handleLockNow} className="gap-2">
+												<Lock className="h-4 w-4" />
+												Lock now
+											</DropdownMenuItem>
+											<DropdownMenuSeparator />
+										</>
+									)}
 									{renderBudgetsMenuItem()}
 									{renderSettingsMenuItem()}
-									{canLock && (
-										<DropdownMenuItem onSelect={handleLockNow} className="gap-2">
-											<Lock className="h-4 w-4" />
-											Lock now
-										</DropdownMenuItem>
-									)}
 									<DropdownMenuSeparator />
 									<DropdownMenuItem
 										variant="destructive"
