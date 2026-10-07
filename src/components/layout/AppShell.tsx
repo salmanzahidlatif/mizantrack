@@ -11,6 +11,7 @@ import {
 	Lock,
 	Moon,
 	Plus,
+	WalletCards,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -64,10 +65,12 @@ const NAV_ITEMS = [
 	{ href: "/settings", label: "Settings", icon: Settings },
 ];
 
+const PAGE_TITLE_ITEMS = [...NAV_ITEMS, { href: "/budgets", label: "Budgets" }];
+
 export function getPageTitle(pathname: string) {
 	return (
-		NAV_ITEMS.find(({ href }) => pathname === href || pathname.startsWith(`${href}/`))?.label ??
-		"Mizan Track"
+		PAGE_TITLE_ITEMS.find(({ href }) => pathname === href || pathname.startsWith(`${href}/`))
+			?.label ?? "Mizan Track"
 	);
 }
 
@@ -160,6 +163,14 @@ export function AppShell({ user, children }: AppShellProps) {
 			<Link href="/settings">
 				<Settings className="h-4 w-4" />
 				Settings
+			</Link>
+		</DropdownMenuItem>
+	);
+	const renderBudgetsMenuItem = () => (
+		<DropdownMenuItem asChild className="gap-2">
+			<Link href="/budgets">
+				<WalletCards className="h-4 w-4" />
+				Budgets
 			</Link>
 		</DropdownMenuItem>
 	);
@@ -295,6 +306,7 @@ export function AppShell({ user, children }: AppShellProps) {
 										</div>
 									</DropdownMenuLabel>
 									<DropdownMenuSeparator />
+									{renderBudgetsMenuItem()}
 									{renderSettingsMenuItem()}
 									{canLock && (
 										<DropdownMenuItem onSelect={handleLockNow} className="gap-2">
@@ -351,6 +363,7 @@ export function AppShell({ user, children }: AppShellProps) {
 									</button>
 								</DropdownMenuTrigger>
 								<DropdownMenuContent side="top" align="start" className="w-56">
+									{renderBudgetsMenuItem()}
 									{renderSettingsMenuItem()}
 									{canLock && (
 										<DropdownMenuItem onSelect={handleLockNow} className="gap-2">

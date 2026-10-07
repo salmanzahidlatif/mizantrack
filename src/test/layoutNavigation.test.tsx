@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AppShell, getPageTitle } from "@/components/layout/AppShell";
-import { BottomNav } from "@/components/layout/BottomNav";
+import { BottomNav, BOTTOM_NAV_ROUTES } from "@/components/layout/BottomNav";
 
 import type { ComponentProps, PropsWithChildren } from "react";
 
@@ -185,10 +185,12 @@ describe("mobile navigation", () => {
 			"/categories"
 		);
 		expect(screen.queryByRole("link", { name: /settings/i })).not.toBeInTheDocument();
+		expect(screen.queryByRole("link", { name: /budgets/i })).not.toBeInTheDocument();
 		expect(screen.queryByRole("link", { name: /^me$/i })).not.toBeInTheDocument();
+		expect(BOTTOM_NAV_ROUTES.some((route) => String(route.href) === "/budgets")).toBe(false);
 	});
 
-	it("keeps Settings reachable from the avatar menu", () => {
+	it("keeps Settings and Budgets reachable from the avatar menu", () => {
 		mockPathname.value = "/dashboard";
 
 		render(
@@ -212,10 +214,19 @@ describe("mobile navigation", () => {
 						?.getAttribute("href") === "/settings"
 			)
 		).toBe(true);
+		expect(
+			menuContents.some(
+				(menu) =>
+					within(menu)
+						.queryByRole("link", { name: /budgets/i })
+						?.getAttribute("href") === "/budgets"
+			)
+		).toBe(true);
 	});
 
-	it("resolves mobile page titles for Settings and Categories", () => {
+	it("resolves mobile page titles for Settings, Categories, and Budgets", () => {
 		expect(getPageTitle("/settings")).toBe("Settings");
 		expect(getPageTitle("/categories")).toBe("Categories");
+		expect(getPageTitle("/budgets")).toBe("Budgets");
 	});
 });
