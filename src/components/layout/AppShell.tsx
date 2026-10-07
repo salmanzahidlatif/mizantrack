@@ -60,6 +60,7 @@ const NAV_ITEMS = [
 	{ href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
 	{ href: "/accounts", label: "Accounts", icon: Wallet },
 	{ href: "/categories", label: "Categories", icon: Tag },
+	{ href: "/budgets", label: "Budgets", icon: WalletCards },
 	{ href: "/reports", label: "Reports", icon: BarChart3 },
 	{ href: "/zakat", label: "Zakat", icon: Moon },
 	{ href: "/settings", label: "Settings", icon: Settings },
