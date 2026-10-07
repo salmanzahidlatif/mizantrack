@@ -8,6 +8,7 @@ import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { SkeletonTransactionRow } from "@/components/shared/SkeletonTransactionRow";
 import { useHaptics } from "@/hooks/useHaptics";
+import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { CARD_SURFACE, LIST_ROW, PRESS_SCALE, TAPPABLE, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
@@ -38,6 +39,7 @@ export function RecentTransactions({ stats, selectedMonth }: RecentTransactionsP
 	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 	const haptics = useHaptics();
 	const selectedMonthRange = selectedMonth ? getDashboardMonthRange(selectedMonth) : undefined;
+	const selectedCurrency = normalizeCurrencyCode(activeCurrency);
 
 	function handleOpenTransaction(transactionId: string) {
 		haptics.light();
@@ -53,7 +55,9 @@ export function RecentTransactions({ stats, selectedMonth }: RecentTransactionsP
 	}
 
 	const recent = stats.recent
-		.filter((txn) => !activeCurrency || txn.accountCurrency === activeCurrency)
+		.filter(
+			(txn) => !selectedCurrency || normalizeCurrencyCode(txn.accountCurrency) === selectedCurrency
+		)
 		.filter((txn) => {
 			if (!selectedMonthRange) return true;
 
