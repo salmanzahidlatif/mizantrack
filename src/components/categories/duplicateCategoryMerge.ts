@@ -41,13 +41,37 @@ function getDuplicateKey(category: Category): string | undefined {
 	return [category.type, currency, normalizeCategoryTitle(category.title)].join("\u0000");
 }
 
-function countTransactions(transactions: Transaction[], categoryId: string): number {
-	return transactions.filter((transaction) => transaction.categoryId === categoryId).length;
+export function buildCategoryTransactionCounts(transactions: Transaction[]): Map<string, number> {
+	const counts = new Map<string, number>();
+
+	for (const transaction of transactions) {
+		if (transaction.deletedAt) continue;
+		const categoryId = transaction.categoryId;
+		if (!categoryId) continue;
+		counts.set(categoryId, (counts.get(categoryId) ?? 0) + 1);
+	}
+
+	return counts;
 }
 
-function countChildren(categories: Category[], categoryId: string): number {
+export function countTransactions(transactions: Transaction[], categoryId: string): number {
+	return buildCategoryTransactionCounts(transactions).get(categoryId) ?? 0;
+}
+
+export function countChildren(categories: Category[], categoryId: string): number {
 	return categories.filter((category) => !category.deletedAt && category.parentId === categoryId)
 		.length;
+}
+
+export function buildCategoryChildCounts(categories: Category[]): Map<string, number> {
+	const counts = new Map<string, number>();
+
+	for (const category of categories) {
+		if (category.deletedAt || !category.parentId) continue;
+		counts.set(category.parentId, (counts.get(category.parentId) ?? 0) + 1);
+	}
+
+	return counts;
 }
 
 export function findDuplicateCategoryGroups(
@@ -56,6 +80,8 @@ export function findDuplicateCategoryGroups(
 ): DuplicateCategoryGroup[] {
 	const activeCategories = categories.filter((category) => !category.deletedAt);
 	const groups = new Map<string, Category[]>();
+	const transactionCounts = buildCategoryTransactionCounts(transactions);
+	const childCounts = buildCategoryChildCounts(activeCategories);
 
 	for (const category of activeCategories) {
 		const key = getDuplicateKey(category);
@@ -73,8 +99,8 @@ export function findDuplicateCategoryGroups(
 			const candidates = group
 				.map((category) => ({
 					category,
-					transactionCount: countTransactions(transactions, category.id),
-					childCount: countChildren(activeCategories, category.id),
+					transactionCount: transactionCounts.get(category.id) ?? 0,
+					childCount: childCounts.get(category.id) ?? 0,
 				}))
 				.sort((a, b) => a.category.title.localeCompare(b.category.title));
 
