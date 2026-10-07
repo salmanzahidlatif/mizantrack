@@ -51,3 +51,7 @@ next-env.d.ts
 public/fallback-*.js
 public/fallback-*.js.map
 public/sql-wasm*.wasm
+
+# Local financial backups — never commit real data
+docs/*.db
+docs/*.db-journal
