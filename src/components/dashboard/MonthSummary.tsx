@@ -4,6 +4,7 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
 import { getDashboardMonthRange, getMonthlyTotals } from "@/components/dashboard/monthData";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
+import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { CARD_SURFACE, LIST_ROW, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
@@ -23,9 +24,9 @@ export function MonthSummary({
 }: MonthSummaryProps) {
 	const { activeCurrency } = useFilterStore();
 	// Use the live currency selector if set, otherwise fall back to prop
-	const displayCurrency = activeCurrency || currency;
+	const displayCurrency = normalizeCurrencyCode(activeCurrency) || normalizeCurrencyCode(currency);
 	const selectedMonthRange = getDashboardMonthRange(selectedMonth);
-	const totals = getMonthlyTotals(stats, activeCurrency || undefined, selectedMonth);
+	const totals = getMonthlyTotals(stats, displayCurrency, selectedMonth);
 	const income = totals?.income ?? 0;
 	const expense = totals?.expense ?? 0;
 	const net = income - expense;
