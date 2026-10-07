@@ -7,6 +7,16 @@ export default function RegisterSW() {
 	useEffect(() => {
 		if (!("serviceWorker" in navigator)) return;
 
+		// next-pwa does not build a worker in development, so a leftover
+		// public/sw.js from a previous production build would otherwise keep
+		// controlling the dev server and serving stale assets.
+		if (process.env.NODE_ENV === "development") {
+			void navigator.serviceWorker.getRegistrations().then((registrations) => {
+				for (const registration of registrations) void registration.unregister();
+			});
+			return;
+		}
+
 		let hadController = Boolean(navigator.serviceWorker.controller);
 		let notified = false;
 		let reloading = false;
