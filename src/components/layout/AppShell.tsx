@@ -376,9 +376,6 @@ export function AppShell({ user, children }: AppShellProps) {
 											<DropdownMenuSeparator />
 										</>
 									)}
-									{renderBudgetsMenuItem()}
-									{renderSettingsMenuItem()}
-									<DropdownMenuSeparator />
 									<DropdownMenuItem
 										variant="destructive"
 										onSelect={handleSignOut}
