@@ -10,6 +10,7 @@ import {
 } from "@/components/dashboard/monthData";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { SkeletonChart } from "@/components/shared/SkeletonChart";
+import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { CARD_SURFACE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
@@ -130,8 +131,8 @@ export function CategoryBreakdownChart({
 }: CategoryBreakdownChartProps) {
 	const { activeCurrency } = useFilterStore();
 	void userId;
-	const selectedCurrency = activeCurrency.length > 0 ? activeCurrency : undefined;
-	const displayCurrency = selectedCurrency ?? currency ?? "PKR";
+	const selectedCurrency = normalizeCurrencyCode(activeCurrency);
+	const displayCurrency = selectedCurrency || normalizeCurrencyCode(currency) || "PKR";
 	const selectedMonthRange = getDashboardMonthRange(selectedMonth);
 
 	const analyticsChartData = useMemo(() => mapAnalyticsBreakdown(breakdown), [breakdown]);
