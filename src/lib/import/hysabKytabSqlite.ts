@@ -170,11 +170,14 @@ const internalPlans = new WeakMap<HysabKytabSqliteImportPlan, InternalImportPlan
 let sqlJsPromise: Promise<initSqlJs.SqlJsStatic> | undefined;
 
 function getSqlWasmPath(file: string): string {
-	if (file !== "sql-wasm.wasm") return file;
+	if (!file.endsWith(".wasm")) return file;
+	// Node (including jsdom tests) reads the binary straight from the package.
 	if (typeof process !== "undefined" && process.versions?.node) {
-		return `${process.cwd()}/node_modules/sql.js/dist/sql-wasm.wasm`;
+		return `${process.cwd()}/node_modules/sql.js/dist/${file}`;
 	}
-	return new URL("../../../node_modules/sql.js/dist/sql-wasm.wasm", import.meta.url).toString();
+	// In the browser sql.js fetches over HTTP, so it must come from public/.
+	// Note the browser build asks for sql-wasm-browser.wasm, not sql-wasm.wasm.
+	return `/${file}`;
 }
 
 async function loadSqlJs(): Promise<initSqlJs.SqlJsStatic> {

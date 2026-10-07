@@ -14,7 +14,10 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
-		"validate": "npm run typecheck && npm run lint && npm run format:check"
+		"validate": "npm run typecheck && npm run lint && npm run format:check",
+		"postinstall": "node scripts/copy-sql-wasm.mjs",
+		"prebuild": "node scripts/copy-sql-wasm.mjs",
+		"predev": "node scripts/copy-sql-wasm.mjs"
 	},
 	"dependencies": {
 		"@auth/firebase-adapter": "^2.11.1",
