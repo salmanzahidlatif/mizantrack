@@ -4,10 +4,10 @@ import type {
 	Account,
 	Category,
 	Transaction,
+	Budget,
 	DbConfig,
 	DashboardStats,
 	SyncMeta,
-	CategoryCurrencyBackfillDecision,
 	GoldItem,
 	ZakatCalculation,
 	ZakatPayment,
@@ -50,20 +50,20 @@ function installSyncDirtyHooks<T extends object>(table: Table<T>): void {
 	});
 }
 
-class MizanTrackDB extends Dexie {
+export class MizanTrackDB extends Dexie {
 	accounts!: Table<Account>;
 	categories!: Table<Category>;
 	transactions!: Table<Transaction>;
+	budgets!: Table<Budget>;
 	dbConfig!: Table<DbConfig>;
 	syncMeta!: Table<SyncMeta>;
-	categoryCurrencyBackfillDecisions!: Table<CategoryCurrencyBackfillDecision>;
 	dashboardStats!: Table<DashboardStats>;
 	goldItems!: Table<GoldItem>;
 	zakatCalculations!: Table<ZakatCalculation>;
 	zakatPayments!: Table<ZakatPayment>;
 
-	constructor() {
-		super("mizantrack");
+	constructor(databaseName = "mizantrack") {
+		super(databaseName);
 		this.version(1).stores({
 			accounts: "id, userId, isArchived, updatedAt, deletedAt",
 			categories: "id, userId, type, updatedAt, deletedAt",
@@ -154,9 +154,42 @@ class MizanTrackDB extends Dexie {
 			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
 		});
 
+		this.version(8).stores({
+			accounts: "id, userId, isArchived, accountType, sourceId, updatedAt, deletedAt, pendingSync",
+			categories: "id, userId, type, currency, sourceId, updatedAt, deletedAt, pendingSync",
+			transactions:
+				"id, userId, [userId+date], type, date, accountId, categoryId, toAccountId, sourceId, updatedAt, deletedAt, pendingSync",
+			budgets:
+				"id, userId, categoryId, period, [userId+period], [categoryId+period], sourceId, updatedAt, deletedAt, pendingSync",
+			dbConfig: "id",
+			syncMeta: "id",
+			categoryCurrencyBackfillDecisions: "id, userId, categoryId, action, assignedAt",
+			dashboardStats: "id, updatedAt",
+			goldItems: "id, userId, purity, updatedAt, deletedAt",
+			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
+			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
+		});
+
+		this.version(9).stores({
+			accounts: "id, userId, isArchived, accountType, sourceId, updatedAt, deletedAt, pendingSync",
+			categories: "id, userId, type, currency, sourceId, updatedAt, deletedAt, pendingSync",
+			transactions:
+				"id, userId, [userId+date], type, date, accountId, categoryId, toAccountId, sourceId, updatedAt, deletedAt, pendingSync",
+			budgets:
+				"id, userId, categoryId, period, [userId+period], [categoryId+period], sourceId, updatedAt, deletedAt, pendingSync",
+			dbConfig: "id",
+			syncMeta: "id",
+			categoryCurrencyBackfillDecisions: null,
+			dashboardStats: "id, updatedAt",
+			goldItems: "id, userId, purity, updatedAt, deletedAt",
+			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
+			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
+		});
+
 		installSyncDirtyHooks(this.accounts);
 		installSyncDirtyHooks(this.categories);
 		installSyncDirtyHooks(this.transactions);
+		installSyncDirtyHooks(this.budgets);
 
 		this.on("blocked", (event) => {
 			console.warn("MizanTrack IndexedDB upgrade is blocked by another open app instance.", event);

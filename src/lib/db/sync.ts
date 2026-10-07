@@ -21,22 +21,29 @@ import { getFirestoreForUser } from "./firebase";
 import { db as localDb, withoutSyncDirtyTracking } from "./local";
 
 import type { SyncDirtyFields } from "./local";
-import type { Account, Category, DashboardStats, Transaction } from "@/types";
+import type { Account, Budget, Category, DashboardStats, Transaction } from "@/types";
 import type { Table } from "dexie";
 
-export type SyncableTable = "accounts" | "categories" | "transactions";
-type SyncableRecord = (Account | Category | Transaction) & SyncDirtyFields;
+export type SyncableTable = "accounts" | "categories" | "transactions" | "budgets";
+type SyncableRecord = (Account | Category | Transaction | Budget) & SyncDirtyFields;
 export type SyncScope = SyncableTable | "firebase" | "settings" | "dashboard";
 type OptionalSyncFieldsByTable = {
 	accounts: readonly (keyof Account)[];
 	categories: readonly (keyof Category)[];
 	transactions: readonly (keyof Transaction)[];
+	budgets: readonly (keyof Budget)[];
+};
+type NonClearingOptionalSyncFieldsByTable = {
+	accounts: readonly (keyof Account)[];
+	categories: readonly (keyof Category)[];
+	transactions: readonly (keyof Transaction)[];
+	budgets: readonly (keyof Budget)[];
 };
 
 export const FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT = 20_000;
 export const FIRESTORE_FREE_TIER_DAILY_READ_LIMIT = 50_000;
 export const FIRESTORE_SYNC_TIMEOUT_MS = 15_000;
-export const CORE_SYNC_TABLES = ["accounts", "categories", "transactions"] as const;
+export const CORE_SYNC_TABLES = ["accounts", "categories", "transactions", "budgets"] as const;
 
 function formatFirestoreLimit(limit: number): string {
 	return new Intl.NumberFormat("en-US").format(limit);
@@ -148,7 +155,17 @@ const OPTIONAL_SYNC_FIELDS = {
 		"travelCurrency",
 		"deletedAt",
 	],
+	budgets: ["currency", "deletedAt"],
 } as const satisfies OptionalSyncFieldsByTable;
+
+// sourceId is optional for legacy/manual records, but it is not null-written:
+// clearing it during a merge could erase the external identity needed for safe re-imports.
+const NON_CLEARING_OPTIONAL_SYNC_FIELDS = {
+	accounts: ["sourceId"],
+	categories: ["sourceId"],
+	transactions: ["sourceId"],
+	budgets: ["sourceId"],
+} as const satisfies NonClearingOptionalSyncFieldsByTable;
 
 const LOCAL_ONLY_SYNC_FIELDS = new Set(["pendingSync", "syncedAt"]);
 
@@ -193,6 +210,11 @@ function fromFirestoreSyncRecord<T extends SyncableRecord>(
 	delete clean.syncedAt;
 
 	for (const field of OPTIONAL_SYNC_FIELDS[tableName]) {
+		if (clean[field] === null || clean[field] === undefined) {
+			delete clean[field];
+		}
+	}
+	for (const field of NON_CLEARING_OPTIONAL_SYNC_FIELDS[tableName]) {
 		if (clean[field] === null || clean[field] === undefined) {
 			delete clean[field];
 		}
@@ -270,6 +292,9 @@ async function putLocalRecord(tableName: SyncableTable, record: SyncableRecord):
 				break;
 			case "transactions":
 				await localDb.transactions.put(localRecord as Transaction);
+				break;
+			case "budgets":
+				await localDb.budgets.put(localRecord as Budget);
 				break;
 		}
 	});

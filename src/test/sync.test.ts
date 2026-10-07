@@ -59,6 +59,15 @@ function firestoreTimestamp(millis: number) {
 	return { toMillis: () => millis };
 }
 
+async function markAllTableMigrationsDone() {
+	await db.syncMeta.bulkPut(
+		CORE_SYNC_TABLES.map((table) => ({
+			id: `syncedAtMigration:${table}:v1`,
+			timestamp: 1,
+		}))
+	);
+}
+
 async function configureEmptySyncMocks() {
 	const { getFirestoreForUser } = await import("@/lib/db/firebase");
 	const firestore = await import("firebase/firestore");
@@ -315,6 +324,181 @@ describe("syncAll — optional field clearing", () => {
 		expect(Object.prototype.hasOwnProperty.call(transaction ?? {}, "categoryId")).toBe(false);
 		expect(transaction?.toAccountId).toBeUndefined();
 		expect(Object.prototype.hasOwnProperty.call(transaction ?? {}, "toAccountId")).toBe(false);
+	});
+});
+
+describe("syncAll — source IDs and budgets", () => {
+	const USER_ID = "sync-source-budget-test-user";
+
+	beforeEach(async () => {
+		await db.accounts.where("userId").equals(USER_ID).delete();
+		await db.categories.where("userId").equals(USER_ID).delete();
+		await db.transactions.where("userId").equals(USER_ID).delete();
+		await db.budgets.where("userId").equals(USER_ID).delete();
+		await db.syncMeta.bulkDelete(coreSyncMetaKeys());
+	});
+
+	it("syncAll_SourceId_SurvivesPushPullRoundTrip", async () => {
+		await db.accounts.put({
+			id: "acc-source",
+			userId: USER_ID,
+			title: "HK Cash",
+			openingBalance: 0,
+			currency: "PKR",
+			isArchived: false,
+			sourceId: "hk:PKR:account:19",
+			updatedAt: 10_000,
+		});
+
+		const { firestore, mockSet } = await configureEmptySyncMocks();
+		let syncAttempt = 1;
+		const pushedAccount: { current?: Record<string, unknown> } = {};
+
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const path = (ref as { path?: string }).path;
+			if (syncAttempt === 2 && path === `users/${USER_ID}/accounts` && pushedAccount.current) {
+				return {
+					docs: [
+						{
+							id: "acc-source",
+							data: () => ({
+								...pushedAccount.current,
+								syncedAt: firestoreTimestamp(2_000),
+							}),
+						},
+					],
+				} as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+
+		await syncAll(USER_ID);
+
+		const accountWrite = mockSet.mock.calls.find(
+			([ref]) => (ref as { path?: string }).path === `users/${USER_ID}/accounts/acc-source`
+		);
+		pushedAccount.current = accountWrite?.[1] as Record<string, unknown> | undefined;
+		expect(pushedAccount.current).toMatchObject({ sourceId: "hk:PKR:account:19" });
+
+		await db.accounts.delete("acc-source");
+		syncAttempt = 2;
+		mockSet.mockClear();
+
+		await syncAll(USER_ID);
+
+		expect(await db.accounts.get("acc-source")).toMatchObject({
+			sourceId: "hk:PKR:account:19",
+			pendingSync: false,
+		});
+	});
+
+	it("syncAll_Budgets_PushesAndPullsThroughCoreSync", async () => {
+		await markAllTableMigrationsDone();
+		await db.budgets.put({
+			id: "budget-local",
+			userId: USER_ID,
+			categoryId: "cat-food",
+			period: "2026-10",
+			amount: 15_000,
+			currency: "PKR",
+			active: true,
+			sourceId: "hk:PKR:budget:17",
+			updatedAt: 20_000,
+		});
+
+		const { firestore, mockSet } = await configureEmptySyncMocks();
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const path = (ref as { path?: string }).path;
+			if (path === `users/${USER_ID}/budgets`) {
+				return {
+					docs: [
+						{
+							id: "budget-remote",
+							data: () => ({
+								id: "budget-remote",
+								userId: USER_ID,
+								categoryId: "cat-rent",
+								period: "2026-11",
+								amount: 40_000,
+								active: false,
+								sourceId: "hk:PKR:budget:18",
+								updatedAt: 21_000,
+								syncedAt: firestoreTimestamp(3_000),
+							}),
+						},
+					],
+				} as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+
+		const result = await syncAll(USER_ID);
+
+		expect(result.tables?.budgets).toMatchObject({ pushed: 1, pulled: 1 });
+		expect(mockSet).toHaveBeenCalledWith(
+			expect.objectContaining({ path: `users/${USER_ID}/budgets/budget-local` }),
+			expect.objectContaining({
+				sourceId: "hk:PKR:budget:17",
+				currency: "PKR",
+				period: "2026-10",
+			}),
+			{ merge: true }
+		);
+		expect(await db.budgets.get("budget-remote")).toMatchObject({
+			amount: 40_000,
+			sourceId: "hk:PKR:budget:18",
+			pendingSync: false,
+		});
+	});
+
+	it("syncAll_RecordWithoutSourceId_OmitsSourceIdAndPullsAsBefore", async () => {
+		await markAllTableMigrationsDone();
+		await db.accounts.put({
+			id: "acc-no-source",
+			userId: USER_ID,
+			title: "Manual Cash",
+			openingBalance: 25,
+			currency: "AED",
+			isArchived: false,
+			updatedAt: 30_000,
+		});
+
+		const { firestore, mockSet } = await configureEmptySyncMocks();
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const path = (ref as { path?: string }).path;
+			if (path === `users/${USER_ID}/categories`) {
+				return {
+					docs: [
+						{
+							id: "cat-no-source",
+							data: () => ({
+								id: "cat-no-source",
+								userId: USER_ID,
+								title: "Manual Food",
+								type: "Expense",
+								updatedAt: 31_000,
+								syncedAt: firestoreTimestamp(4_000),
+							}),
+						},
+					],
+				} as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+
+		await syncAll(USER_ID);
+
+		const accountWrite = mockSet.mock.calls.find(
+			([ref]) => (ref as { path?: string }).path === `users/${USER_ID}/accounts/acc-no-source`
+		);
+		expect(accountWrite?.[1]).not.toHaveProperty("sourceId");
+
+		const category = await db.categories.get("cat-no-source");
+		expect(category).toMatchObject({ title: "Manual Food" });
+		expect(category).not.toHaveProperty("sourceId");
 	});
 });
 

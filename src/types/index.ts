@@ -11,6 +11,8 @@ export interface Account {
 	icon?: string;
 	isArchived: boolean;
 	accountType?: "asset" | "liability"; // Default: asset. Liability = loan you owe (reduces zakat)
+	/** External-system identity used for idempotent re-imports; never use as this app's primary key. */
+	sourceId?: string;
 	updatedAt: number;
 	deletedAt?: number;
 }
@@ -24,6 +26,8 @@ export interface Category {
 	icon?: string;
 	color?: string;
 	parentId?: string;
+	/** External-system identity used for idempotent re-imports; never use as this app's primary key. */
+	sourceId?: string;
 	updatedAt: number;
 	deletedAt?: number;
 }
@@ -46,6 +50,23 @@ export interface Transaction {
 		amount: number;
 		location: string;
 	};
+	/** External-system identity used for idempotent re-imports; never use as this app's primary key. */
+	sourceId?: string;
+	updatedAt: number;
+	deletedAt?: number;
+}
+
+export interface Budget {
+	id: string;
+	userId: string;
+	categoryId: string;
+	/** Calendar month in YYYY-MM form. This avoids timezone bugs and indexes one period key. */
+	period: string;
+	amount: number;
+	currency?: string;
+	active: boolean;
+	/** External-system identity used for idempotent re-imports; never use as this app's primary key. */
+	sourceId?: string;
 	updatedAt: number;
 	deletedAt?: number;
 }
@@ -72,28 +93,6 @@ export interface DbConfig {
 export interface SyncMeta {
 	id: string;
 	timestamp: number;
-}
-
-export type CategoryCurrencyBackfillDecisionAction =
-	| "tagged"
-	| "skipped-explicit-currency"
-	| "skipped-unused"
-	| "skipped-multi-currency"
-	| "skipped-tree-conflict";
-
-export interface CategoryCurrencyBackfillDecision {
-	id: string;
-	userId: string;
-	categoryId: string;
-	categoryTitle: string;
-	action: CategoryCurrencyBackfillDecisionAction;
-	currencies: string[];
-	assignedCurrency?: string;
-	assignedAt: number;
-	categoryUpdatedAt?: number;
-	resetAt?: number;
-	reason?: string;
-	version: 1;
 }
 
 export interface DashboardStats {
