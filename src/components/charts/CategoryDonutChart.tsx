@@ -137,8 +137,8 @@ export function CategoryBreakdownChart({
 
 	const analyticsChartData = useMemo(() => mapAnalyticsBreakdown(breakdown), [breakdown]);
 	const statsChartData = useMemo(
-		() => mapLegacyBreakdown(getCategoryBreakdown(stats, selectedCurrency, selectedMonth)),
-		[selectedCurrency, selectedMonth, stats]
+		() => mapLegacyBreakdown(getCategoryBreakdown(stats, displayCurrency, selectedMonth)),
+		[displayCurrency, selectedMonth, stats]
 	);
 
 	const chartData = analyticsChartData ?? statsChartData;

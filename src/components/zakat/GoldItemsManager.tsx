@@ -16,6 +16,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 
 import type { GoldItem, GoldPurity } from "@/types";
@@ -43,9 +44,13 @@ export function GoldItemsManager({
 	const goldItems = useLiveQuery(
 		() =>
 			db.goldItems
-				.where("[userId+currency]")
-				.equals([userId, referenceCurrency])
-				.filter((g) => !g.deletedAt)
+				.where("userId")
+				.equals(userId)
+				.filter(
+					(g) =>
+						!g.deletedAt &&
+						normalizeCurrencyCode(g.currency) === normalizeCurrencyCode(referenceCurrency)
+				)
 				.toArray(),
 		[userId, referenceCurrency]
 	);

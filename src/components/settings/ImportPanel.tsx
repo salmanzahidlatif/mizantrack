@@ -14,6 +14,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { useDbConfig } from "@/hooks/useDbConfig";
+import { normalizeCurrencyCode, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT } from "@/lib/db/sync";
 import { importHysabKytab } from "@/lib/import/hysabKytab";
 import {
@@ -22,6 +23,7 @@ import {
 	isHysabKytabSqliteFile,
 	prepareHysabKytabSqliteImport,
 } from "@/lib/import/hysabKytabSqlite";
+import { useFilterStore } from "@/store/filter-store";
 
 import type {
 	HysabKytabSqliteImportPlan,
@@ -71,8 +73,11 @@ function defaultTransferResolutions(plan: HysabKytabSqliteImportPlan): Record<st
 
 export function ImportPanel({ userId }: ImportPanelProps) {
 	const config = useDbConfig(userId);
+	const { activeCurrency } = useFilterStore();
 	const enabledCurrencies =
-		config?.enabledCurrencies ?? (config?.currency ? [config.currency] : ["PKR"]);
+		config?.enabledCurrencies?.map(normalizeCurrencyCode).filter(Boolean) ??
+		(config?.currency ? [normalizeCurrencyCode(config.currency)] : ["PKR"]);
+	const defaultCurrency = resolveCurrencyCode(activeCurrency, config?.currency, enabledCurrencies[0]);
 	const needsCurrencyPrompt = enabledCurrencies.length > 1;
 
 	const fileRef = useRef<HTMLInputElement>(null);
@@ -98,7 +103,7 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 		setImporting(true);
 		try {
 			if (isHysabKytabSqliteFile(file)) {
-				const currency = targetCurrency ?? config?.currency ?? enabledCurrencies[0] ?? "PKR";
+				const currency = normalizeCurrencyCode(targetCurrency) || defaultCurrency;
 				const plan = await prepareHysabKytabSqliteImport(file, userId, currency);
 				if (plan.unresolvedTransfers.length > 0) {
 					setPendingSqlitePlan(plan);
@@ -109,7 +114,7 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 				const res = await commitHysabKytabSqliteImport(plan);
 				setResult(res);
 			} else {
-				const res = await importHysabKytab(file, userId, targetCurrency);
+				const res = await importHysabKytab(file, userId, targetCurrency ?? defaultCurrency);
 				setResult(res);
 			}
 		} catch (err) {
@@ -128,7 +133,7 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 
 		if (needsCurrencyPrompt) {
 			setPendingFile(file);
-			setSelectedCurrency(config?.currency ?? enabledCurrencies[0] ?? "PKR");
+			setSelectedCurrency(defaultCurrency);
 			setCurrencyPickerOpen(true);
 		} else {
 			await runImport(file);
@@ -136,7 +141,7 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 	}
 
 	async function handleCurrencyConfirm(codes: string[]) {
-		const currency = codes[0] ?? enabledCurrencies[0] ?? "PKR";
+		const currency = normalizeCurrencyCode(codes[0]) || defaultCurrency;
 		setSelectedCurrency(currency);
 		setCurrencyPickerOpen(false);
 		if (pendingFile) await runImport(pendingFile, currency);

@@ -17,8 +17,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useDbConfig } from "@/hooks/useDbConfig";
+import { normalizeCurrencyCode, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getDateRange } from "@/lib/dateRange";
 import { exportToExcel, exportToHysabKytabSqliteDb } from "@/lib/export";
+import { useFilterStore } from "@/store/filter-store";
 
 import type { DateRange } from "@/types";
 
@@ -28,10 +30,12 @@ interface ExportPanelProps {
 
 export function ExportPanel({ userId }: ExportPanelProps) {
 	const config = useDbConfig(userId);
+	const { activeCurrency } = useFilterStore();
 	const fiscalYearStartMonth = config?.fiscalYearStartMonth ?? 7;
 	const enabledCurrencies =
-		config?.enabledCurrencies ?? (config?.currency ? [config.currency] : ["PKR"]);
-	const defaultCurrency = config?.currency ?? enabledCurrencies[0] ?? "PKR";
+		config?.enabledCurrencies?.map(normalizeCurrencyCode).filter(Boolean) ??
+		(config?.currency ? [normalizeCurrencyCode(config.currency)] : ["PKR"]);
+	const defaultCurrency = resolveCurrencyCode(activeCurrency, config?.currency, enabledCurrencies[0]);
 
 	const [open, setOpen] = useState(false);
 	const [exporting, setExporting] = useState(false);
@@ -42,7 +46,7 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 
 	function handleOpen() {
 		setRange(getDateRange("all"));
-		setCurrency(config?.currency ?? enabledCurrencies[0] ?? "PKR");
+		setCurrency(defaultCurrency);
 		setIncludeArchivedAccounts(true);
 		setFormat("hysab-kytab-db");
 		setOpen(true);

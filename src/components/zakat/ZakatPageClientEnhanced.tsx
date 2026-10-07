@@ -27,7 +27,11 @@ import { ZakatPayments } from "@/components/zakat/ZakatPayments";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
-import { computeAccountBalances } from "@/lib/analytics/balanceMath";
+import {
+	computeAccountBalances,
+	normalizeCurrencyCode,
+	resolveCurrencyCode,
+} from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import { fetchGoldPrice } from "@/lib/goldPrice";
 import { getZakatYear } from "@/lib/islamicCalendar";
@@ -46,11 +50,15 @@ const PURITY_TO_PURE_GOLD: Record<GoldPurity, number> = {
 };
 
 export function getZakatAccountsForCurrency(accounts: Account[], currency: string): Account[] {
-	return accounts.filter((account) => account.currency === currency);
+	const normalizedCurrency = normalizeCurrencyCode(currency);
+	return accounts.filter(
+		(account) => normalizeCurrencyCode(account.currency) === normalizedCurrency
+	);
 }
 
 export function getZakatGoldItemsForCurrency(items: GoldItem[], currency: string): GoldItem[] {
-	return items.filter((item) => item.currency === currency);
+	const normalizedCurrency = normalizeCurrencyCode(currency);
+	return items.filter((item) => normalizeCurrencyCode(item.currency) === normalizedCurrency);
 }
 
 export function getPureGoldWeightGrams(items: GoldItem[]): number {
@@ -68,9 +76,7 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const userId = useRequiredUserId(providedUserId);
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
-	const trimmedActiveCurrency = activeCurrency.trim();
-	const referenceCurrency =
-		trimmedActiveCurrency !== "" ? trimmedActiveCurrency : (config?.currency ?? "PKR");
+	const referenceCurrency = resolveCurrencyCode(activeCurrency, config?.currency);
 	const accounts = useAccounts(userId);
 
 	const allTransactions = useLiveQuery(
@@ -86,9 +92,11 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const goldItems = useLiveQuery(
 		() =>
 			db.goldItems
-				.where("[userId+currency]")
-				.equals([userId, referenceCurrency])
-				.filter((g) => !g.deletedAt)
+				.where("userId")
+				.equals(userId)
+				.filter(
+					(g) => !g.deletedAt && normalizeCurrencyCode(g.currency) === referenceCurrency
+				)
 				.toArray(),
 		[userId, referenceCurrency]
 	);
@@ -139,11 +147,10 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 	// ── Balance at assessment date ──────────────────────────────────────────
 	const accountBalances = useMemo(() => {
-		if (!allTransactions) return new Map<string, number>();
+		if (!allTransactions || !accounts) return new Map<string, number>();
 		const asOf = endOfDay(assessmentDate).getTime();
-		return computeAccountBalances(userId, zakatAccounts, allTransactions, { asOfMs: asOf })
-			.balances;
-	}, [zakatAccounts, allTransactions, assessmentDate, userId]);
+		return computeAccountBalances(userId, accounts, allTransactions, { asOfMs: asOf }).balances;
+	}, [accounts, allTransactions, assessmentDate, userId]);
 
 	// ── Gold calculation ────────────────────────────────────────────────────
 	const totalGoldWeightGrams = useMemo(() => {
