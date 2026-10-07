@@ -21,6 +21,7 @@ import { useAccountsAnalytics } from "@/hooks/useAccountsAnalytics";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
+import { resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { CARD_SURFACE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
@@ -136,7 +137,7 @@ export function AccountsPageClient({ userId: providedUserId }: AccountsPageClien
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
 	const haptics = useHaptics();
 	const config = useDbConfig(userId);
-	const resolvedCurrency = activeCurrency !== "" ? activeCurrency : (config?.currency ?? "PKR");
+	const resolvedCurrency = resolveCurrencyCode(activeCurrency, config?.currency);
 	const asOf = useMemo(() => new Date(), []);
 	const analyticsQuery = useMemo(
 		() => ({

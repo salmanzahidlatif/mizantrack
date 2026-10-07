@@ -28,6 +28,7 @@ import { useCategories } from "@/hooks/useCategories";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { scrollFocusedFieldIntoView } from "@/hooks/useKeyboardInset";
 import { createCategory, updateCategory } from "@/lib/actions/categories";
+import { currencyCodesMatch, normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
@@ -85,15 +86,17 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 	const allCategories = useCategories(userId);
 	const enabledCurrencies =
 		config?.enabledCurrencies && config.enabledCurrencies.length > 0
-			? config.enabledCurrencies
+			? config.enabledCurrencies.map(normalizeCurrencyCode).filter(Boolean)
 			: config?.currency
-				? [config.currency]
+				? [normalizeCurrencyCode(config.currency)]
 				: [];
 	const defaultCurrency =
-		activeCurrency && enabledCurrencies.includes(activeCurrency)
-			? activeCurrency
-			: config?.currency && enabledCurrencies.includes(config.currency)
-				? config.currency
+		normalizeCurrencyCode(activeCurrency) &&
+		enabledCurrencies.includes(normalizeCurrencyCode(activeCurrency))
+			? normalizeCurrencyCode(activeCurrency)
+			: normalizeCurrencyCode(config?.currency) &&
+				  enabledCurrencies.includes(normalizeCurrencyCode(config?.currency))
+				? normalizeCurrencyCode(config?.currency)
 				: enabledCurrencies[0];
 
 	const {
@@ -110,14 +113,14 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 	});
 
 	const watchedType = watch("type") as CategoryType | undefined;
-	const rawWatchedCurrency = watch("currency")?.trim();
+	const rawWatchedCurrency = normalizeCurrencyCode(watch("currency"));
 	const watchedCurrency = rawWatchedCurrency === "" ? undefined : rawWatchedCurrency;
 	const watchedParentId = watch("parentId");
 	const selectedColor = watch("color");
 
 	function isParentCurrencyCompatible(parent: Category, currency: string | undefined) {
 		if (!currency) return false;
-		return parent.currency === currency;
+		return currencyCodesMatch(parent.currency, currency);
 	}
 
 	function formatCurrency(code: string) {
@@ -126,7 +129,7 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 	}
 
 	function normalizeCurrency(value: string | undefined) {
-		const currency = value?.trim();
+		const currency = normalizeCurrencyCode(value);
 		return currency === "" ? undefined : currency;
 	}
 
