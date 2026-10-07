@@ -8,6 +8,7 @@ import {
 	subMonths,
 } from "date-fns";
 
+import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { ALL_CURRENCIES_KEY } from "@/lib/analytics/computeDashboardStats";
 
 import type { DashboardStats } from "@/types";
@@ -85,12 +86,9 @@ export function getDashboardBucket(stats: DashboardStats | undefined, activeCurr
 	if (!stats) return undefined;
 
 	const currencyKey =
-		activeCurrency && activeCurrency.length > 0 ? activeCurrency : ALL_CURRENCIES_KEY;
+		normalizeCurrencyCode(activeCurrency) || ALL_CURRENCIES_KEY;
 
-	return (
-		(stats.perCurrency[currencyKey] as DashboardBucket | undefined) ??
-		(stats.perCurrency[ALL_CURRENCIES_KEY] as DashboardBucket | undefined)
-	);
+	return stats.perCurrency[currencyKey] as DashboardBucket | undefined;
 }
 
 export function getMonthlyTotals(

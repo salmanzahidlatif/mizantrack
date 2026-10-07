@@ -12,6 +12,7 @@ import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePeriodAnalytics } from "@/hooks/usePeriodAnalytics";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
+import { resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import {
 	formatMonthLabel,
 	getLocalTimeZoneOffsetMinutes,
@@ -168,8 +169,7 @@ export function BudgetsPageClient({ userId: providedUserId }: BudgetsPageClientP
 	const [selectedMonth, setSelectedMonth] = useState(() => new Date());
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
-	const activeCurrencyCode = activeCurrency.trim();
-	const currency = activeCurrencyCode.length > 0 ? activeCurrencyCode : (config?.currency ?? "PKR");
+	const currency = resolveCurrencyCode(activeCurrency, config?.currency);
 	const timeZoneOffsetMinutes = useMemo(() => getLocalTimeZoneOffsetMinutes(now), [now]);
 	const monthRange = useMemo(
 		() => getMonthRange(selectedMonth, { timeZoneOffsetMinutes }),

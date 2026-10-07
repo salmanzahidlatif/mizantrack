@@ -32,6 +32,7 @@ import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePeriodAnalytics } from "@/hooks/usePeriodAnalytics";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
+import { resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import {
 	getLocalTimeZoneOffsetMinutes,
 	getMonthKey,
@@ -446,8 +447,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	const haptics = useHaptics();
 	const { activeCurrency } = useFilterStore();
 	const openAddAccount = useUIStore((state) => state.openAddAccount);
-	const activeCurrencyCode = activeCurrency.trim();
-	const currency = activeCurrencyCode.length > 0 ? activeCurrencyCode : (config?.currency ?? "PKR");
+	const currency = resolveCurrencyCode(activeCurrency, config?.currency);
 	const fiscalYearStartMonth = config?.fiscalYearStartMonth ?? 7;
 	const [now] = useState(() => new Date());
 	const [selectedMonth, setSelectedMonth] = useState(() => clampDashboardMonth(new Date()));

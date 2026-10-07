@@ -6,7 +6,9 @@ import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { SkeletonBalance } from "@/components/shared/SkeletonBalance";
 import { useAccounts } from "@/hooks/useAccounts";
+import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
+import { resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { CARD_SURFACE, LIST_ROW, PRESS_SCALE, TAPPABLE, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -71,8 +73,10 @@ interface BalanceCardsProps {
 export function BalanceCards({ userId, stats }: BalanceCardsProps) {
 	const { activeCurrency } = useFilterStore();
 	const haptics = useHaptics();
+	const config = useDbConfig(userId);
+	const currency = resolveCurrencyCode(activeCurrency, config?.currency);
 	// Filter accounts by the active currency context from the header selector
-	const accounts = useAccounts(userId, { currency: activeCurrency ? activeCurrency : undefined });
+	const accounts = useAccounts(userId, { currency });
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
 
 	function handleAddAccount() {
