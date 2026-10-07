@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useDbConfig } from "@/hooks/useDbConfig";
-import { db } from "@/lib/db/local";
 import { upsertDbConfig } from "@/lib/db/dbConfig";
 import { hashPin, verifyPin } from "@/lib/pinCrypto";
 import { isBiometricAvailable, registerBiometric } from "@/lib/webAuthn";

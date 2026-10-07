@@ -1,5 +1,5 @@
-import { db } from "@/lib/db/local";
 import { upsertDbConfig } from "@/lib/db/dbConfig";
+import { db } from "@/lib/db/local";
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const GOLD_API_URL = "https://www.goldapi.io/api/XAU/USD";
