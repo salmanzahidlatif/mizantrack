@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { db } from "@/lib/db/local";
+import { upsertDbConfig } from "@/lib/db/dbConfig";
 import { hashPin, verifyPin } from "@/lib/pinCrypto";
 import { isBiometricAvailable, registerBiometric } from "@/lib/webAuthn";
 
@@ -40,7 +41,7 @@ export function AppLockSettings({ userId, userDisplay }: AppLockSettingsProps) {
 			setPinMode("set");
 			return;
 		}
-		await db.dbConfig.update(userId, { appLockEnabled: enabled });
+		await upsertDbConfig(userId, { appLockEnabled: enabled });
 		toast.success(enabled ? "App Lock enabled." : "App Lock disabled.");
 	};
 
@@ -50,7 +51,7 @@ export function AppLockSettings({ userId, userDisplay }: AppLockSettingsProps) {
 		try {
 			if (pinMode === "set") {
 				const hash = await hashPin(pinInput);
-				await db.dbConfig.update(userId, { pinHash: hash, appLockEnabled: true });
+				await upsertDbConfig(userId, { pinHash: hash, appLockEnabled: true });
 				toast.success("PIN set. App Lock is now active.");
 			} else if (pinMode === "change-new") {
 				setNewPin(pinInput);
@@ -66,7 +67,7 @@ export function AppLockSettings({ userId, userDisplay }: AppLockSettingsProps) {
 					return;
 				}
 				const hash = await hashPin(pinInput);
-				await db.dbConfig.update(userId, { pinHash: hash });
+				await upsertDbConfig(userId, { pinHash: hash });
 				toast.success("PIN changed successfully.");
 			}
 			setPinMode("idle");
@@ -98,7 +99,7 @@ export function AppLockSettings({ userId, userDisplay }: AppLockSettingsProps) {
 	};
 
 	const handleRemovePin = async () => {
-		await db.dbConfig.update(userId, {
+		await upsertDbConfig(userId, {
 			pinHash: undefined,
 			appLockEnabled: false,
 			biometricEnabled: false,
@@ -112,7 +113,7 @@ export function AppLockSettings({ userId, userDisplay }: AppLockSettingsProps) {
 		if (enabled) {
 			try {
 				const credentialId = await registerBiometric(userId, userDisplay ?? undefined);
-				await db.dbConfig.update(userId, {
+				await upsertDbConfig(userId, {
 					biometricEnabled: true,
 					biometricCredentialId: credentialId,
 				});
@@ -121,7 +122,7 @@ export function AppLockSettings({ userId, userDisplay }: AppLockSettingsProps) {
 				toast.error("Biometric setup failed. Please try again.");
 			}
 		} else {
-			await db.dbConfig.update(userId, {
+			await upsertDbConfig(userId, {
 				biometricEnabled: false,
 				biometricCredentialId: undefined,
 			});

@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { resetFirestoreForUser } from "@/lib/db/firebase";
 import { db } from "@/lib/db/local";
+import { upsertDbConfig } from "@/lib/db/dbConfig";
 import { clearFirestoreForUser, getFirestoreUsage, getSyncBackupCounts } from "@/lib/db/sync";
 import { parseFirebaseConfigJson } from "@/lib/firebaseConfigParser";
 import { useSyncStore } from "@/store/sync-store";
@@ -99,7 +100,7 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 		if (!result.valid) return;
 		setSaving(true);
 		try {
-			await db.dbConfig.update(userId, {
+			await upsertDbConfig(userId, {
 				firebaseConfig: configJson,
 				enabled,
 			});
@@ -120,7 +121,7 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 	}
 
 	async function handleReset() {
-		await db.dbConfig.update(userId, { firebaseConfig: "", enabled: false });
+		await upsertDbConfig(userId, { firebaseConfig: "", enabled: false });
 		await resetFirestoreForUser(userId);
 		setConfigJson("");
 		setEnabled(false);

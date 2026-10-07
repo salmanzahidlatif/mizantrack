@@ -1,4 +1,5 @@
 import { db } from "@/lib/db/local";
+import { upsertDbConfig } from "@/lib/db/dbConfig";
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const GOLD_API_URL = "https://www.goldapi.io/api/XAU/USD";
@@ -54,7 +55,7 @@ export async function fetchGoldPrice(userId: string): Promise<number | null> {
 		}
 
 		// Cache the result
-		await db.dbConfig.update(userId, {
+		await upsertDbConfig(userId, {
 			lastGoldPricePerGram: pricePerGram,
 			lastGoldPriceFetchedAt: now,
 		});
