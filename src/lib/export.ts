@@ -5,6 +5,7 @@ import {
 	buildHysabKytabSqliteExport,
 	HYSAB_KYTAB_SQLITE_FLEX_MAPPING,
 } from "./export/hysabKytabSqlite";
+import { buildMizanTrackBackupWorkbook } from "./export/mizanTrackWorkbook";
 
 import type { DateRange } from "@/types";
 
@@ -15,8 +16,13 @@ export interface ExportOptions {
 	includeArchivedAccounts: boolean;
 }
 
+function normalizeCurrency(value: string | undefined): string {
+	return value?.trim().toUpperCase() ?? "";
+}
+
 export async function exportToExcel(userId: string, range: DateRange, options: ExportOptions) {
 	const { currency, includeArchivedAccounts } = options;
+	const selectedCurrency = normalizeCurrency(currency);
 
 	const [allAccounts, categories, allTransactions] = await Promise.all([
 		db.accounts
@@ -45,7 +51,9 @@ export async function exportToExcel(userId: string, range: DateRange, options: E
 	// Accounts actually listed in the ACCOUNT sheet: filtered by currency, and
 	// by active-only vs. all (archived included) per the user's choice.
 	const accountsInCurrency = allAccounts.filter(
-		(a) => a.currency === currency && (includeArchivedAccounts || !a.isArchived)
+		(a) =>
+			(normalizeCurrency(a.currency) === selectedCurrency || !normalizeCurrency(a.currency)) &&
+			(includeArchivedAccounts || !a.isArchived)
 	);
 	const accountIdsInCurrency = new Set(accountsInCurrency.map((a) => a.id));
 
@@ -73,7 +81,7 @@ export async function exportToExcel(userId: string, range: DateRange, options: E
 		"Travel Location": t.travelCurrency?.location ?? "",
 	}));
 
-	const wb = XLSX.utils.book_new();
+	const wb = await buildMizanTrackBackupWorkbook(userId);
 
 	XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(actRows), "ACTIVITIES");
 	XLSX.utils.book_append_sheet(
@@ -100,7 +108,7 @@ export async function exportToExcel(userId: string, range: DateRange, options: E
 		"CATEGORY"
 	);
 
-	XLSX.writeFile(wb, `mizantrack-export-${currency}-${Date.now()}.xlsx`);
+	XLSX.writeFile(wb, `mizantrack-backup-${selectedCurrency || "all"}-${Date.now()}.xlsx`);
 }
 
 function writeBinaryFile(bytes: Uint8Array, filename: string) {
@@ -128,4 +136,15 @@ export async function exportToHysabKytabSqliteDb(
 	writeBinaryFile(bytes, `mizantrack-hysab-kytab-${options.currency}-${Date.now()}.db`);
 }
 
-export { buildHysabKytabSqliteExport, HYSAB_KYTAB_SQLITE_FLEX_MAPPING };
+export {
+	buildHysabKytabSqliteExport,
+	buildMizanTrackBackupWorkbook,
+	HYSAB_KYTAB_SQLITE_FLEX_MAPPING,
+};
+export {
+	buildMizanTrackBackupWorkbookBytes,
+	decodeMizanTrackBackupWorkbook,
+	MIZAN_TRACK_BACKUP_ENCODING,
+	MIZAN_TRACK_BACKUP_SHEETS,
+	SECURITY_EXCLUDED_DB_CONFIG_FIELDS,
+} from "./export/mizanTrackWorkbook";

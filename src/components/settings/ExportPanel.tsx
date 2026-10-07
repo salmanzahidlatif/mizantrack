@@ -1,5 +1,6 @@
 "use client";
 
+import { useLiveQuery } from "dexie-react-hooks";
 import { Download, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -19,6 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { normalizeCurrencyCode, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getDateRange } from "@/lib/dateRange";
+import { db } from "@/lib/db/local";
 import { exportToExcel, exportToHysabKytabSqliteDb } from "@/lib/export";
 import { useFilterStore } from "@/store/filter-store";
 
@@ -31,14 +33,45 @@ interface ExportPanelProps {
 export function ExportPanel({ userId }: ExportPanelProps) {
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
+	const discoveredCurrencies = useLiveQuery(async () => {
+		const [accounts, categories, budgets, goldItems, zakatCalculations, zakatPayments] =
+			await Promise.all([
+				db.accounts.where("userId").equals(userId).toArray(),
+				db.categories.where("userId").equals(userId).toArray(),
+				db.budgets.where("userId").equals(userId).toArray(),
+				db.goldItems.where("userId").equals(userId).toArray(),
+				db.zakatCalculations.where("userId").equals(userId).toArray(),
+				db.zakatPayments.where("userId").equals(userId).toArray(),
+			]);
+		const categoriesById = new Map(categories.map((category) => [category.id, category]));
+		const currencies = new Set<string>();
+		const addCurrency = (value: string | undefined) => {
+			const normalized = normalizeCurrencyCode(value);
+			if (normalized) currencies.add(normalized);
+		};
+
+		accounts.forEach((account) => addCurrency(account.currency));
+		categories.forEach((category) => addCurrency(category.currency));
+		budgets.forEach((budget) =>
+			addCurrency(budget.currency ?? categoriesById.get(budget.categoryId)?.currency)
+		);
+		goldItems.forEach((item) => addCurrency(item.currency));
+		zakatCalculations.forEach((calculation) => addCurrency(calculation.currency));
+		zakatPayments.forEach((payment) => addCurrency(payment.currency));
+
+		return [...currencies].sort();
+	}, [userId]);
 	const fiscalYearStartMonth = config?.fiscalYearStartMonth ?? 7;
 	const enabledCurrencies =
 		config?.enabledCurrencies?.map(normalizeCurrencyCode).filter(Boolean) ??
 		(config?.currency ? [normalizeCurrencyCode(config.currency)] : ["PKR"]);
+	const exportCurrencies = [
+		...new Set([...enabledCurrencies, ...(discoveredCurrencies ?? [])].filter(Boolean)),
+	];
 	const defaultCurrency = resolveCurrencyCode(
 		activeCurrency,
 		config?.currency,
-		enabledCurrencies[0]
+		exportCurrencies[0]
 	);
 
 	const [open, setOpen] = useState(false);
@@ -80,7 +113,7 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 			<div>
 				<h2 className="font-semibold">Export Data</h2>
 				<p className="mt-0.5 text-sm text-muted-foreground">
-					Download your data as a Hysab Kytab .db file or Excel workbook
+					Download a full MizanTrack Excel backup or a Hysab Kytab .db file
 				</p>
 			</div>
 
@@ -94,8 +127,8 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 					<DialogHeader>
 						<DialogTitle>Export Data</DialogTitle>
 						<DialogDescription>
-							Only one currency is exported at a time. Hysab Kytab .db exports keep transfer legs
-							paired with mutual REFNO values and populate account currencies.
+							Excel includes full-fidelity MizanTrack sheets for every local table plus
+							Hysab-compatible sheets. Hysab Kytab .db exports remain one currency at a time.
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 py-2">
@@ -128,7 +161,7 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 						<div className="space-y-1.5">
 							<Label>Currency</Label>
 							<div className="flex flex-wrap gap-1.5">
-								{enabledCurrencies.map((code) => (
+								{exportCurrencies.map((code) => (
 									<button
 										key={code}
 										type="button"
