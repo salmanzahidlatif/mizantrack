@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { CategoryDrawer } from "@/components/categories/CategoryDrawer";
@@ -12,6 +13,7 @@ import { DuplicateCategoryMergePanel } from "@/components/categories/DuplicateCa
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCategories } from "@/hooks/useCategories";
+import { useCategoryUsageCounts } from "@/hooks/useCategoryUsageCounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
@@ -20,7 +22,7 @@ import { getCurrencyByCode } from "@/lib/currencies";
 import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
-import type { CategoryType } from "@/types";
+import type { Category, CategoryType } from "@/types";
 
 interface CategoriesPageClientProps {
 	userId?: string;
@@ -28,8 +30,9 @@ interface CategoriesPageClientProps {
 
 export function CategoriesPageClient({ userId: providedUserId }: CategoriesPageClientProps = {}) {
 	const userId = useRequiredUserId(providedUserId);
+	const router = useRouter();
 	const config = useDbConfig(userId);
-	const { activeCurrency } = useFilterStore();
+	const { activeCurrency, setActiveCurrency, setCategoryId, setTransactionType } = useFilterStore();
 	const haptics = useHaptics();
 	const enabledCurrencies =
 		config?.enabledCurrencies && config.enabledCurrencies.length > 0
@@ -47,6 +50,7 @@ export function CategoriesPageClient({ userId: providedUserId }: CategoriesPageC
 		effectiveCurrencyScope,
 		resolvedCurrency
 	);
+	const { childCounts, transactionCounts } = useCategoryUsageCounts(userId, categories);
 	const openAddCategory = useUIStore((s) => s.openAddCategory);
 	const [activeTab, setActiveTab] = useState<CategoryType>("Expense");
 	const activeCurrencyEntry = getCurrencyByCode(resolvedCurrency);
@@ -58,6 +62,15 @@ export function CategoriesPageClient({ userId: providedUserId }: CategoriesPageC
 	function updateCurrencyScope(scope: CategoryCurrencyScope) {
 		haptics.selection();
 		setCurrencyScope(scope);
+	}
+
+	function handleSelectCategory(category: Category) {
+		setCategoryId(category.id);
+		setTransactionType(category.type);
+		if (category.currency) {
+			setActiveCurrency(category.currency);
+		}
+		router.push("/transactions");
 	}
 
 	return (
@@ -115,10 +128,24 @@ export function CategoriesPageClient({ userId: providedUserId }: CategoriesPageC
 					<TabsTrigger value="Income">Income</TabsTrigger>
 				</TabsList>
 				<TabsContent value="Expense" className="mt-4">
-					<CategoryTree categories={categories} type="Expense" showCurrencyTags />
+					<CategoryTree
+						categories={categories}
+						childCounts={childCounts}
+						onSelectCategory={handleSelectCategory}
+						type="Expense"
+						showCurrencyTags
+						transactionCounts={transactionCounts}
+					/>
 				</TabsContent>
 				<TabsContent value="Income" className="mt-4">
-					<CategoryTree categories={categories} type="Income" showCurrencyTags />
+					<CategoryTree
+						categories={categories}
+						childCounts={childCounts}
+						onSelectCategory={handleSelectCategory}
+						type="Income"
+						showCurrencyTags
+						transactionCounts={transactionCounts}
+					/>
 				</TabsContent>
 			</Tabs>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -32,6 +33,11 @@ import { currencyCodesMatch, normalizeCurrencyCode } from "@/lib/analytics/balan
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { db } from "@/lib/db/local";
+import {
+	EMPTY_TRANSACTION_USAGE_RANKING,
+	loadRecentTransactionUsageRanking,
+	sortRecordsByUsage,
+} from "@/lib/usageRanking";
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
@@ -84,6 +90,11 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 	const { activeCurrency } = useFilterStore();
 	const config = useDbConfig(userId);
 	const allCategories = useCategories(userId);
+	const usageRanking = useLiveQuery(
+		() => loadRecentTransactionUsageRanking(userId),
+		[userId],
+		EMPTY_TRANSACTION_USAGE_RANKING
+	);
 	const enabledCurrencies =
 		config?.enabledCurrencies && config.enabledCurrencies.length > 0
 			? config.enabledCurrencies.map(normalizeCurrencyCode).filter(Boolean)
@@ -140,9 +151,11 @@ export function CategoryDrawer({ userId, defaultType = "Expense" }: CategoryDraw
 			c.id !== editCategoryId &&
 			isParentCurrencyCompatible(c, watchedCurrency)
 	);
-	const parentOptions = includeRecordsById(compatibleParentOptions, allCategories ?? [], [
-		watchedParentId,
-	]).filter((c) => c.id !== editCategoryId);
+	const parentOptions = includeRecordsById(
+		sortRecordsByUsage(compatibleParentOptions, usageRanking.categoryUsage),
+		allCategories ?? [],
+		[watchedParentId]
+	).filter((c) => c.id !== editCategoryId);
 	const selectedParent = watchedParentId
 		? (allCategories ?? []).find((c) => c.id === watchedParentId)
 		: undefined;
