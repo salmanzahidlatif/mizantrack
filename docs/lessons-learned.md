@@ -1,5 +1,130 @@
 # Lessons Learned
 
+## 2026-10-07 - Compute with the full invariant, then scope presentation separately
+
+### What Happened
+Fixing one multi-currency balance bug created another. Commit `9cbb789` fixed a production balance reading of **-4,494,676.42** by making transfer balance arithmetic see every active account, not only the selected currency. Minutes later, commit `e93fe6f` had to fix the dashboard and Accounts page because they now displayed AED and PKR accounts together and summed them into one meaningless total.
+
+### Root Cause
+The original regression was caused by mixing two different scopes inside the same calculation:
+
+- `hasInvalidTransferCounterparty` checked transfer counterparties against **all active accounts**.
+- The balance map being updated was **currency-scoped**.
+
+A transfer from an in-scope account to an out-of-scope account therefore debited the source but failed to credit the destination. Across thousands of transfers, the drift was unbounded.
+
+The first fix removed the currency constraint globally. That restored transfer-leg symmetry, but it also removed the presentation constraint that prevents cross-currency totals.
+
+### Fix Applied
+- **`9cbb789`** introduced `src/lib/analytics/balanceMath.ts` and moved balance computation to a shared invariant: build balances from all active accounts, and apply transfer legs symmetrically or not at all.
+- **`e93fe6f`** separated computation scope from display scope at the analytics boundary: balances can be computed from all active accounts, but the returned lists and totals are scoped to the selected currency. Unknown or blank currency accounts are shown under "Other / Unknown currency" rather than disappearing.
+
+### Prevention
+- Do not fix a layer-specific bug by removing a constraint globally. Preserve the invariant at the computation layer, then apply display filters at the boundary.
+- Tests must encode money invariants, not only example outputs:
+  - transfers conserve value inside a currency;
+  - both transfer legs are visible to balance computation;
+  - no displayed total sums unrelated currencies.
+
+## 2026-10-07 - Silent failures cost more than loud crashes
+
+### What Happened
+Several production regressions shared the same shape: the app failed, but the user received no actionable signal.
+
+- Transfer submit appeared to do nothing (`23af589`): destination options had been filtered to an empty list, validation errors were attached to fields the user did not see, and Dexie upgrade blocking could leave the PWA stuck on a crash screen.
+- Analytics screens could load forever (`6a7ebc7`): a cache entry that read back invalid blocked retries because a one-shot recompute token had already been spent.
+- Offline PWA cold start showed a white screen (`da2ff05`): Workbox threw `add-to-cache-list-conflicting-entries` inside a swallowed promise, so the service worker still reported "activated" while registering no precache or runtime routes.
+
+### Root Cause
+Each failure path had a hidden gate that controlled correctness, not just speed or polish:
+
+- validation existed, but its error was not surfaced where the user could act on it;
+- a cache miss or invalid cache entry could decide whether the UI rendered at all;
+- a service-worker setup exception was swallowed by generated code, so devtools state looked healthy while the cache was empty.
+
+### Fix Applied
+- **`23af589`** routed transaction writes through `src/lib/actions/transactions.ts`, added visible invalid-submit toasts, save/delete timeouts, same-currency transfer destination handling, and Dexie `blocked` / `versionchange` events in `src/lib/db/local.ts`.
+- **`6a7ebc7`** added `src/hooks/useCachedAnalyticsValue.ts` and changed analytics hooks to render freshly computed values directly. A cache can now speed up rendering, but it cannot decide whether rendering is possible.
+- **`da2ff05`** removed the duplicate `/` entry from `additionalManifestEntries` and added `src/test/serviceWorkerManifest.test.ts` to catch conflicting Workbox revisions before deploy.
+
+### Prevention
+- A cache may affect speed, never whether the UI works.
+- Every `handleSubmit` invalid path needs a user-visible error, especially in drawers where the invalid field may be below the fold.
+- Treat "service worker activated" as insufficient evidence. Verify actual cache contents and an offline cold start.
+
+## 2026-10-07 - Wall-clock timestamps are not distributed sync cursors
+
+### What Happened
+Cross-device sync could silently lose records. One device wrote a record, but another device did not pull it.
+
+### Root Cause
+The sync cursor used device wall-clock `updatedAt` values as a distributed version counter. If Device A's clock was slower than Device B's, a record written on A could fall below B's existing watermark. B would query "records newer than my watermark" and skip the record forever.
+
+### Fix Applied
+Commit `19f214e` changed the core sync model in `src/lib/db/sync.ts` and `src/lib/db/local.ts`:
+
+- local creates/updates mark core records with `pendingSync`;
+- pushes write a Firestore `serverTimestamp()` as `syncedAt`;
+- pulls query `where("syncedAt", ">", cursor)` and `orderBy("syncedAt")`;
+- `pendingSync` is cleared only after a successful push;
+- each table reports isolated errors instead of making the whole sync opaque;
+- a migration stamps existing remote records so older data participates in the server-cursor model.
+
+### Prevention
+- Never use unsynchronised device clocks as the only cursor for cross-device replication.
+- Use a server-authoritative cursor for "what has been seen remotely" and a local dirty flag for "what still needs to be pushed".
+- Per-table or per-scope errors must be visible; otherwise a partial failure looks like a successful sync.
+
+## 2026-10-07 - Green tests are not enough unless they encode invariants
+
+### What Happened
+Several P0 regressions reached the owner with tests passing:
+
+- unpaired HK transfers destroyed real balances (`8038ba0`);
+- balance computation drifted to **-4,494,676.42** (`9cbb789`);
+- dashboard/account totals mixed AED and PKR (`e93fe6f`);
+- analytics performance regressed to **21,392ms** (`607dee6`);
+- offline cold start failed despite a registered service worker (`da2ff05`).
+
+### Root Cause
+The suite had many example tests but too few invariant tests. It checked that specific screens and helper cases worked, but not the properties that must never be violated: money conservation, transfer-leg symmetry, currency separation, cache liveness, and real offline cold-start behaviour.
+
+One perf test also intermittently timed out and was tolerated. Commit `12d0fde` records the durable lesson: a flaky suite destroys the signal. Once failures are treated as noise, real regressions pass unnoticed.
+
+### Fix Applied
+Recent commits added tests that assert the invariants directly:
+
+- transfer integrity and importer regressions in `src/test/transferIntegrity.test.ts` and `src/test/hkImportPairing.test.ts`;
+- balance and no-cross-currency-total coverage in `src/test/analyticsHistory.test.ts`, `src/test/computeDashboardStats.test.ts`, and `src/test/currencyDisplayScope.test.tsx`;
+- analytics cache validation in `src/test/analyticsCache.test.ts`;
+- service-worker manifest conflict coverage in `src/test/serviceWorkerManifest.test.ts`;
+- indexed transaction query bounds in `src/test/transactionsFiltersPerf.test.tsx`.
+
+### Prevention
+- Add at least one invariant test for every financial bug, not only a fixture that reproduces the immediate symptom.
+- Do not tolerate flaky tests in critical paths. Raise a timeout or make the assertion deterministic, but do not normalise intermittent red builds.
+- When many agents edit shared files in parallel, give shared arithmetic and persistence layers a dedicated review pass before the owner tests on real data.
+
+## 2026-10-07 - Never let derived data masquerade as stored data
+
+### What Happened
+Display bugs looked like data corruption. The owner saw a Cash balance off by hundreds of thousands of PKR after the HK importer wrote invalid transfer records, then entered a fabricated opening balance of **532,154.23** to compensate. Later balance-display regressions made good data look bad again.
+
+### Root Cause
+Balances are derived from accounts and transactions. When a derived balance is wrong, changing stored opening balances "to make the screen right" creates real corruption on top of the display bug.
+
+Commit `8038ba0` showed the worst case: unpaired HK transfers were stored as `Transfer` records with no `toAccountId`, so balance math debited the source and credited nothing. A synthetic reproduction turned a true Cash balance of **378.09** into **-531,776.14**, matching the compensating opening balance the owner entered.
+
+### Fix Applied
+- Unmatched HK transfer rows now import as explicit one-sided Income/Expense adjustments with `[HK unmatched transfer]` descriptions instead of invalid destination-less transfers.
+- Existing invalid transfer records are skipped with warnings and surfaced through a Settings Transfer Integrity Check.
+- Balance display fixes now focus on recomputation and repair rather than asking the user to edit opening balances.
+
+### Prevention
+- Treat balances as computed output. Do not "repair" them by editing stored opening balances unless the opening balance itself is proven wrong.
+- Importers must never create financially invalid records silently. If the source data is ambiguous, preserve it visibly and require explicit resolution.
+- Add repair tools that explain affected records and only mutate data after explicit confirmation.
+
 ## 2026-08-30 - One shared sync watermark can silently burn Firestore quota after partial failure
 
 ### What Happened
