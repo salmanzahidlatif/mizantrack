@@ -364,6 +364,49 @@ describe("getSyncBackupCounts — currency breakdown", () => {
 		expect(firestore.getCountFromServer).toHaveBeenCalledTimes(CORE_SYNC_TABLES.length);
 		expect(firestore.getDocs).not.toHaveBeenCalled();
 	});
+
+	it("getSyncBackupCounts_IncludesEnabledCurrenciesThatHaveNoPendingRecords", async () => {
+		const { getFirestoreForUser } = await import("@/lib/db/firebase");
+		const firestore = await import("firebase/firestore");
+
+		vi.mocked(getFirestoreForUser).mockResolvedValue(
+			{} as Awaited<ReturnType<typeof getFirestoreForUser>>
+		);
+		vi.mocked(firestore.getCountFromServer).mockResolvedValue({
+			data: () => ({ count: 0 }),
+		} as unknown as Awaited<ReturnType<typeof firestore.getCountFromServer>>);
+
+		await db.dbConfig.put({
+			id: USER_ID,
+			firebaseConfig: "{}",
+			enabled: true,
+			currency: "PKR",
+			fiscalYearStartMonth: 1,
+			enabledCurrencies: ["PKR", "AED"],
+		});
+		await withoutSyncDirtyTracking(async () => {
+			await db.accounts.put({
+				id: "acc-pkr-clean",
+				userId: USER_ID,
+				title: "PKR Clean",
+				openingBalance: 0,
+				currency: "PKR",
+				isArchived: false,
+				updatedAt: 1_000,
+			});
+		});
+
+		const result = await getSyncBackupCounts(USER_ID);
+
+		expect(result?.currencyBreakdown).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ key: "PKR", local: 1, pending: 0 }),
+				expect.objectContaining({ key: "AED", local: 0, pending: 0 }),
+			])
+		);
+		expect(firestore.getCountFromServer).toHaveBeenCalledTimes(CORE_SYNC_TABLES.length);
+		expect(firestore.getDocs).not.toHaveBeenCalled();
+	});
 });
 
 // ─── syncAll: undefined field stripping ──────────────────────────────────────
