@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { getDateRange } from "@/lib/dateRange";
-import { exportToExcel } from "@/lib/export";
+import { exportToExcel, exportToHysabKytabSqliteDb } from "@/lib/export";
 
 import type { DateRange } from "@/types";
 
@@ -38,18 +38,27 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 	const [range, setRange] = useState<DateRange>(() => getDateRange("all"));
 	const [currency, setCurrency] = useState(defaultCurrency);
 	const [includeArchivedAccounts, setIncludeArchivedAccounts] = useState(true);
+	const [format, setFormat] = useState<"xlsx" | "hysab-kytab-db">("hysab-kytab-db");
 
 	function handleOpen() {
 		setRange(getDateRange("all"));
 		setCurrency(config?.currency ?? enabledCurrencies[0] ?? "PKR");
 		setIncludeArchivedAccounts(true);
+		setFormat("hysab-kytab-db");
 		setOpen(true);
 	}
 
 	async function handleDownload() {
 		setExporting(true);
 		try {
-			await exportToExcel(userId, range, { currency, includeArchivedAccounts });
+			if (format === "hysab-kytab-db") {
+				await exportToHysabKytabSqliteDb(userId, range, {
+					currency,
+					includeArchivedAccounts,
+				});
+			} else {
+				await exportToExcel(userId, range, { currency, includeArchivedAccounts });
+			}
 			setOpen(false);
 		} catch {
 			toast.error("Export failed. Please try again.");
@@ -63,7 +72,7 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 			<div>
 				<h2 className="font-semibold">Export Data</h2>
 				<p className="mt-0.5 text-sm text-muted-foreground">
-					Download your transactions as an Excel file
+					Download your data as a Hysab Kytab .db file or Excel workbook
 				</p>
 			</div>
 
@@ -75,13 +84,39 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 			<Dialog open={open} onOpenChange={setOpen}>
 				<DialogContent className="max-w-sm">
 					<DialogHeader>
-						<DialogTitle>Export to Excel</DialogTitle>
+						<DialogTitle>Export Data</DialogTitle>
 						<DialogDescription>
-							Only one currency can be exported at a time — this matches the Hysab Kytab format,
-							which has no currency column.
+							Only one currency is exported at a time. Hysab Kytab .db exports keep transfer legs
+							paired with mutual REFNO values and populate account currencies.
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 py-2">
+						<div className="space-y-1.5">
+							<Label>Format</Label>
+							<div className="flex flex-wrap gap-1.5">
+								<button
+									type="button"
+									onClick={() => setFormat("hysab-kytab-db")}
+									className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+										format === "hysab-kytab-db"
+											? "border-primary bg-primary/10 text-primary"
+											: "border-border text-muted-foreground hover:bg-muted/50"
+									}`}>
+									Hysab Kytab .db
+								</button>
+								<button
+									type="button"
+									onClick={() => setFormat("xlsx")}
+									className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+										format === "xlsx"
+											? "border-primary bg-primary/10 text-primary"
+											: "border-border text-muted-foreground hover:bg-muted/50"
+									}`}>
+									Excel .xlsx
+								</button>
+							</div>
+						</div>
+
 						<div className="space-y-1.5">
 							<Label>Currency</Label>
 							<div className="flex flex-wrap gap-1.5">

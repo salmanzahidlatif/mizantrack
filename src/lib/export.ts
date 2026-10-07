@@ -1,6 +1,10 @@
 import * as XLSX from "xlsx";
 
 import { db } from "./db/local";
+import {
+	buildHysabKytabSqliteExport,
+	HYSAB_KYTAB_SQLITE_FLEX_MAPPING,
+} from "./export/hysabKytabSqlite";
 
 import type { DateRange } from "@/types";
 
@@ -98,3 +102,30 @@ export async function exportToExcel(userId: string, range: DateRange, options: E
 
 	XLSX.writeFile(wb, `mizantrack-export-${currency}-${Date.now()}.xlsx`);
 }
+
+function writeBinaryFile(bytes: Uint8Array, filename: string) {
+	const blobPart = bytes.buffer.slice(
+		bytes.byteOffset,
+		bytes.byteOffset + bytes.byteLength
+	) as ArrayBuffer;
+	const blob = new Blob([blobPart], { type: "application/vnd.sqlite3" });
+	const url = URL.createObjectURL(blob);
+	const anchor = document.createElement("a");
+	anchor.href = url;
+	anchor.download = filename;
+	document.body.appendChild(anchor);
+	anchor.click();
+	anchor.remove();
+	URL.revokeObjectURL(url);
+}
+
+export async function exportToHysabKytabSqliteDb(
+	userId: string,
+	range: DateRange,
+	options: ExportOptions
+) {
+	const { bytes } = await buildHysabKytabSqliteExport(userId, range, options);
+	writeBinaryFile(bytes, `mizantrack-hysab-kytab-${options.currency}-${Date.now()}.db`);
+}
+
+export { buildHysabKytabSqliteExport, HYSAB_KYTAB_SQLITE_FLEX_MAPPING };
