@@ -16,6 +16,7 @@ import {
 	YAxis,
 } from "recharts";
 
+import { MeasuredChartContainer } from "@/components/charts/MeasuredChartContainer";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { SkeletonChart } from "@/components/shared/SkeletonChart";
 import { CARD_SURFACE } from "@/lib/motion";
@@ -85,7 +86,7 @@ function ChartEmptyState({
 		<section
 			className={cn(
 				CARD_SURFACE,
-				"flex min-h-[320px] flex-col items-center justify-center border-dashed p-6 text-center md:h-full",
+				"flex min-h-56 flex-col items-center justify-center border-dashed p-4 text-center md:min-h-[320px] md:p-6",
 				className
 			)}>
 			<h2 className="text-sm font-semibold">{title}</h2>
@@ -168,9 +169,9 @@ export function CashFlowTrendChart({ summaries, currency, isLoading, className }
 
 	return (
 		<section
-			className={cn(CARD_SURFACE, "overflow-hidden p-5 md:h-full", className)}
+			className={cn(CARD_SURFACE, "overflow-hidden p-4 md:h-full md:p-5", className)}
 			aria-labelledby="cash-flow-trend-title">
-			<div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+			<div className="mb-3 flex flex-wrap items-start justify-between gap-3 md:mb-4 md:gap-4">
 				<div>
 					<h2 id="cash-flow-trend-title" className="text-sm font-semibold">
 						Income vs expense trend
@@ -180,7 +181,7 @@ export function CashFlowTrendChart({ summaries, currency, isLoading, className }
 					</p>
 				</div>
 				{latest && (
-					<div className="grid grid-cols-3 gap-3 text-right text-xs">
+					<div className="grid grid-cols-3 gap-2 text-right text-[11px] md:gap-3 md:text-xs">
 						<div>
 							<p className="text-muted-foreground">Income</p>
 							<CurrencyAmount
@@ -213,41 +214,46 @@ export function CashFlowTrendChart({ summaries, currency, isLoading, className }
 				)}
 			</div>
 
-			<div
-				className="h-72"
-				role="img"
-				aria-labelledby="cash-flow-trend-title"
-				aria-describedby="cash-flow-trend-legend">
-				<ResponsiveContainer width="100%" height="100%" debounce={80}>
-					<BarChart data={data} margin={{ top: 12, right: 8, left: 8, bottom: 0 }}>
-						<CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-						<XAxis dataKey="month" tick={{ fontSize: 11 }} />
-						<YAxis hide />
-						<Tooltip content={<MoneyTooltip currency={currency} />} />
-						<Bar
-							dataKey="income"
-							name="Income"
-							fill="#22c55e"
-							radius={[5, 5, 0, 0]}
-							isAnimationActive={false}
-						/>
-						<Bar
-							dataKey="expense"
-							name="Expense"
-							fill="#ef4444"
-							radius={[5, 5, 0, 0]}
-							isAnimationActive={false}
-						/>
-					</BarChart>
-				</ResponsiveContainer>
+			<div className="no-scrollbar overflow-x-auto">
+				<MeasuredChartContainer
+					className="h-56 min-w-[460px] md:h-72 md:min-w-0"
+					labelledBy="cash-flow-trend-title"
+					describedBy="cash-flow-trend-legend">
+					{(size) => (
+						<ResponsiveContainer width="100%" height="100%" debounce={80} initialDimension={size}>
+							<BarChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+								<CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+								<XAxis dataKey="month" tick={{ fontSize: 10 }} />
+								<YAxis hide />
+								<Tooltip content={<MoneyTooltip currency={currency} />} />
+								<Bar
+									dataKey="income"
+									name="Income"
+									fill="#22c55e"
+									radius={[5, 5, 0, 0]}
+									isAnimationActive={false}
+								/>
+								<Bar
+									dataKey="expense"
+									name="Expense"
+									fill="#ef4444"
+									radius={[5, 5, 0, 0]}
+									isAnimationActive={false}
+								/>
+							</BarChart>
+						</ResponsiveContainer>
+					)}
+				</MeasuredChartContainer>
 			</div>
 
-			<div id="cash-flow-trend-legend" className="mt-4 flex flex-wrap gap-3 text-xs">
-				<span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1.5">
+			<div
+				id="cash-flow-trend-legend"
+				className="mt-3 flex flex-wrap gap-2 text-xs md:mt-4 md:gap-3">
+				<span className="inline-flex items-center gap-2 rounded-full bg-muted px-2.5 py-1.5 md:px-3">
 					<span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
 					Income bars
 				</span>
-				<span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1.5">
+				<span className="inline-flex items-center gap-2 rounded-full bg-muted px-2.5 py-1.5 md:px-3">
 					<span className="h-2.5 w-2.5 rounded-full bg-red-500" />
 					Expense bars
 				</span>
@@ -289,9 +295,9 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 
 	return (
 		<section
-			className={cn(CARD_SURFACE, "overflow-hidden p-5 md:h-full", className)}
+			className={cn(CARD_SURFACE, "overflow-hidden p-4 md:h-full md:p-5", className)}
 			aria-labelledby="spending-trend-title">
-			<div className="mb-4">
+			<div className="mb-3 md:mb-4">
 				<h2 id="spending-trend-title" className="text-sm font-semibold">
 					Spending trend
 				</h2>
@@ -299,33 +305,36 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 					Expense movement for the selected currency
 				</p>
 			</div>
-			<div
-				className="h-48"
-				role="img"
-				aria-labelledby="spending-trend-title"
-				aria-describedby="spending-trend-legend">
-				<ResponsiveContainer width="100%" height="100%" debounce={80}>
-					<AreaChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-						<CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-						<XAxis dataKey="month" tick={{ fontSize: 11 }} />
-						<YAxis hide />
-						<Tooltip content={<MoneyTooltip currency={currency} />} />
-						<Area
-							type="monotone"
-							dataKey="expense"
-							name="Expense"
-							stroke="#ef4444"
-							fill="#ef4444"
-							fillOpacity={0.18}
-							isAnimationActive={false}
-						/>
-					</AreaChart>
-				</ResponsiveContainer>
+			<div className="no-scrollbar overflow-x-auto">
+				<MeasuredChartContainer
+					className="h-40 min-w-[420px] md:h-48 md:min-w-0"
+					labelledBy="spending-trend-title"
+					describedBy="spending-trend-legend">
+					{(size) => (
+						<ResponsiveContainer width="100%" height="100%" debounce={80} initialDimension={size}>
+							<AreaChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+								<CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+								<XAxis dataKey="month" tick={{ fontSize: 10 }} />
+								<YAxis hide />
+								<Tooltip content={<MoneyTooltip currency={currency} />} />
+								<Area
+									type="monotone"
+									dataKey="expense"
+									name="Expense"
+									stroke="#ef4444"
+									fill="#ef4444"
+									fillOpacity={0.18}
+									isAnimationActive={false}
+								/>
+							</AreaChart>
+						</ResponsiveContainer>
+					)}
+				</MeasuredChartContainer>
 			</div>
 			<div
 				id="spending-trend-legend"
-				className="mt-4 grid w-full grid-cols-[repeat(2,minmax(0,1fr))] gap-3 text-xs">
-				<div className="min-w-0 rounded-2xl bg-muted/45 p-3">
+				className="mt-3 grid w-full grid-cols-[repeat(2,minmax(0,1fr))] gap-2 text-xs md:mt-4 md:gap-3">
+				<div className="min-w-0 rounded-2xl bg-muted/45 p-2.5 md:p-3">
 					<p className="text-muted-foreground">Highest month</p>
 					<p className="mt-1 font-semibold">{highest?.month}</p>
 					<CurrencyAmount
@@ -335,7 +344,7 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 						className="tabular-nums"
 					/>
 				</div>
-				<div className="min-w-0 rounded-2xl bg-muted/45 p-3">
+				<div className="min-w-0 rounded-2xl bg-muted/45 p-2.5 md:p-3">
 					<p className="text-muted-foreground">Average active month</p>
 					<CurrencyAmount
 						amount={average}
@@ -381,10 +390,10 @@ export function AccountDistributionChart({
 
 	return (
 		<section
-			className={cn(CARD_SURFACE, "flex flex-col overflow-hidden p-5 md:h-full", className)}
+			className={cn(CARD_SURFACE, "flex flex-col overflow-hidden p-4 md:h-full md:p-5", className)}
 			aria-labelledby="account-distribution-title"
 			data-testid="account-distribution-chart">
-			<div className="mb-4 flex items-start justify-between gap-3">
+			<div className="mb-3 flex items-start justify-between gap-3 md:mb-4">
 				<div>
 					<h2 id="account-distribution-title" className="text-sm font-semibold">
 						Account distribution
@@ -402,34 +411,35 @@ export function AccountDistributionChart({
 				/>
 			</div>
 			<div className="grid min-h-0 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-center gap-4 md:flex-1">
-				<div
-					className="h-44"
-					role="img"
-					aria-labelledby="account-distribution-title"
-					aria-describedby="account-distribution-legend">
-					<ResponsiveContainer width="100%" height="100%" debounce={80}>
-						<PieChart>
-							<Pie
-								data={data}
-								cx="50%"
-								cy="50%"
-								innerRadius="56%"
-								outerRadius="84%"
-								paddingAngle={2}
-								dataKey="value"
-								isAnimationActive={false}>
-								{data.map((item) => (
-									<Cell key={item.accountId} fill={item.color} />
-								))}
-							</Pie>
-							<Tooltip content={<AccountTooltip />} />
-						</PieChart>
-					</ResponsiveContainer>
-				</div>
+				<MeasuredChartContainer
+					className="h-36 md:h-44"
+					labelledBy="account-distribution-title"
+					describedBy="account-distribution-legend">
+					{(size) => (
+						<ResponsiveContainer width="100%" height="100%" debounce={80} initialDimension={size}>
+							<PieChart>
+								<Pie
+									data={data}
+									cx="50%"
+									cy="50%"
+									innerRadius="56%"
+									outerRadius="84%"
+									paddingAngle={2}
+									dataKey="value"
+									isAnimationActive={false}>
+									{data.map((item) => (
+										<Cell key={item.accountId} fill={item.color} />
+									))}
+								</Pie>
+								<Tooltip content={<AccountTooltip />} />
+							</PieChart>
+						</ResponsiveContainer>
+					)}
+				</MeasuredChartContainer>
 				<div
 					id="account-distribution-legend"
 					data-testid="account-distribution-legend"
-					className="no-scrollbar max-h-44 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-1">
+					className="no-scrollbar max-h-36 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-1 md:max-h-44">
 					{data.map((account) => (
 						<div
 							key={account.accountId}

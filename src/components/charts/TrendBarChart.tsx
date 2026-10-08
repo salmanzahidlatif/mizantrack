@@ -11,6 +11,7 @@ import {
 	YAxis,
 } from "recharts";
 
+import { MeasuredChartContainer } from "@/components/charts/MeasuredChartContainer";
 import { getDashboardMonthRange, getTrendWindow } from "@/components/dashboard/monthData";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { SkeletonChart } from "@/components/shared/SkeletonChart";
@@ -113,17 +114,21 @@ export function TrendChart({
 			<p className="mb-3 text-sm font-semibold">
 				Income vs Expenses through {selectedMonthRange.label}
 			</p>
-			<ResponsiveContainer width="100%" height={200} debounce={80}>
-				<BarChart data={data} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
-					<CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-					<XAxis dataKey="month" tick={{ fontSize: 11 }} />
-					<YAxis tick={{ fontSize: 11 }} />
-					<Tooltip content={<TrendTooltip currency={displayCurrency} />} />
-					<Legend wrapperStyle={{ fontSize: 12 }} />
-					<Bar dataKey="income" name="Income" fill="#22c55e" radius={[3, 3, 0, 0]} />
-					<Bar dataKey="expense" name="Expense" fill="#ef4444" radius={[3, 3, 0, 0]} />
-				</BarChart>
-			</ResponsiveContainer>
+			<MeasuredChartContainer className="h-[200px]">
+				{(size) => (
+					<ResponsiveContainer width="100%" height="100%" debounce={80} initialDimension={size}>
+						<BarChart data={data} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+							<CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+							<XAxis dataKey="month" tick={{ fontSize: 11 }} />
+							<YAxis tick={{ fontSize: 11 }} />
+							<Tooltip content={<TrendTooltip currency={displayCurrency} />} />
+							<Legend wrapperStyle={{ fontSize: 12 }} />
+							<Bar dataKey="income" name="Income" fill="#22c55e" radius={[3, 3, 0, 0]} />
+							<Bar dataKey="expense" name="Expense" fill="#ef4444" radius={[3, 3, 0, 0]} />
+						</BarChart>
+					</ResponsiveContainer>
+				)}
+			</MeasuredChartContainer>
 		</div>
 	);
 }

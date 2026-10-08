@@ -114,38 +114,6 @@ interface WhatYouHaveCardProps {
 	className?: string;
 }
 
-function useDesktopDashboardEnabled() {
-	const [enabled, setEnabled] = useState(() => {
-		if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
-		return window.matchMedia("(min-width: 768px)").matches;
-	});
-
-	useEffect(() => {
-		if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-
-		const query = window.matchMedia("(min-width: 768px)");
-		const handleChange = (event: MediaQueryListEvent) => {
-			setEnabled(event.matches);
-		};
-		setEnabled(query.matches);
-		if (typeof query.addEventListener === "function") {
-			query.addEventListener("change", handleChange);
-		} else {
-			query.addListener(handleChange);
-		}
-
-		return () => {
-			if (typeof query.removeEventListener === "function") {
-				query.removeEventListener("change", handleChange);
-			} else {
-				query.removeListener(handleChange);
-			}
-		};
-	}, []);
-
-	return enabled;
-}
-
 function sortDashboardAccounts(accounts: AccountsAnalytics["accounts"]) {
 	return accounts
 		.map((account, index) => ({ account, index }))
@@ -365,10 +333,7 @@ function WhatYouHaveSkeleton({ className }: { className?: string }) {
 					{Array.from({ length: 5 }).map((_, index) => (
 						<div
 							key={index}
-							className={cn(
-								"min-h-[72px] rounded-2xl border border-border/60 bg-muted/35 p-3",
-								index >= 3 && "xl:hidden"
-							)}>
+							className={cn("min-h-[72px] rounded-2xl border border-border/60 bg-muted/35 p-3")}>
 							<div className="shimmer h-3 w-20 rounded-full bg-muted/70" />
 							<div className="shimmer mt-2 h-5 w-24 rounded-full bg-muted/70" />
 						</div>
@@ -419,10 +384,8 @@ function WhatYouHaveCard({ analytics, onAddAccount, className }: WhatYouHaveCard
 						data-testid="dashboard-account-tile"
 						data-account-id={account.accountId}
 						data-balance={account.balance}
-						data-dashboard-extra-account={index >= 3 ? "true" : undefined}
 						className={cn(
 							"press min-h-[72px] rounded-2xl border border-border/60 bg-muted/35 p-3 text-left",
-							index >= 3 && "xl:hidden",
 							LIST_ROW
 						)}
 						style={staggerDelay(index, 30)}>
@@ -525,9 +488,9 @@ function DesktopMetricStrip({
 }) {
 	if (!analytics || !accountAnalytics) {
 		return (
-			<section className="grid grid-cols-4 gap-3" aria-busy="true">
+			<section className="grid grid-cols-2 gap-3 md:grid-cols-4" aria-busy="true">
 				{Array.from({ length: 4 }).map((_, index) => (
-					<SkeletonCard key={index} className="h-28" />
+					<SkeletonCard key={index} className="h-24 md:h-28" />
 				))}
 			</section>
 		);
@@ -543,7 +506,7 @@ function DesktopMetricStrip({
 					currency={currency}
 					colorized
 					showNegativeSign
-					className="text-xl leading-7 tabular-nums"
+					className="text-lg leading-6 tabular-nums md:text-xl md:leading-7"
 				/>
 			),
 			helper: analytics.period.label,
@@ -553,7 +516,7 @@ function DesktopMetricStrip({
 			value: (
 				<span
 					className={cn(
-						"text-xl leading-7 font-semibold tabular-nums",
+						"text-lg leading-6 font-semibold tabular-nums md:text-xl md:leading-7",
 						savingsRate >= 0
 							? "text-emerald-600 dark:text-emerald-400"
 							: "text-red-600 dark:text-red-400"
@@ -571,7 +534,7 @@ function DesktopMetricStrip({
 					currency={accountAnalytics.currency}
 					colorized
 					showNegativeSign
-					className="text-xl leading-7 tabular-nums"
+					className="text-lg leading-6 tabular-nums md:text-xl md:leading-7"
 				/>
 			),
 			helper: "Account inflow less outflow",
@@ -579,7 +542,7 @@ function DesktopMetricStrip({
 		{
 			label: "Transactions",
 			value: (
-				<span className="text-xl leading-7 font-semibold tabular-nums">
+				<span className="text-lg leading-6 font-semibold tabular-nums md:text-xl md:leading-7">
 					{analytics.transactionCount}
 				</span>
 			),
@@ -588,9 +551,9 @@ function DesktopMetricStrip({
 	];
 
 	return (
-		<section className="grid grid-cols-4 gap-3" aria-label="Desktop financial overview">
+		<section className="grid grid-cols-2 gap-3 md:grid-cols-4" aria-label="Financial overview">
 			{metrics.map((metric) => (
-				<div key={metric.label} className={cn(CARD_SURFACE, "min-h-28 p-4")}>
+				<div key={metric.label} className={cn(CARD_SURFACE, "min-h-24 p-3 md:min-h-28 md:p-4")}>
 					<p className="text-xs font-medium text-muted-foreground">{metric.label}</p>
 					<div className="mt-2">{metric.value}</div>
 					<p className="mt-2 text-[11px] leading-4 text-muted-foreground">{metric.helper}</p>
@@ -613,7 +576,7 @@ function BudgetProgressPanel({
 }) {
 	if (isLoading) {
 		return (
-			<section className={cn(CARD_SURFACE, "p-5 md:h-full md:w-full")} aria-busy="true">
+			<section className={cn(CARD_SURFACE, "p-4 md:h-full md:w-full md:p-5")} aria-busy="true">
 				<div className="shimmer mb-4 h-4 w-32 rounded-full bg-muted/70" />
 				<div className="space-y-4">
 					{Array.from({ length: 3 }).map((_, index) => (
@@ -634,7 +597,7 @@ function BudgetProgressPanel({
 
 	return (
 		<section
-			className={cn(CARD_SURFACE, "overflow-hidden p-5 md:h-full md:w-full")}
+			className={cn(CARD_SURFACE, "overflow-hidden p-4 md:h-full md:w-full md:p-5")}
 			aria-labelledby="budget-progress-title">
 			<div className="mb-4 flex items-start justify-between gap-3">
 				<div>
@@ -717,7 +680,6 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	const [intervalOpen, setIntervalOpen] = useState(false);
 	const timeZoneOffsetMinutes = useMemo(() => getLocalTimeZoneOffsetMinutes(now), [now]);
 	const canGoNext = !isCurrentDashboardMonth(selectedMonth, now);
-	const desktopDashboardEnabled = useDesktopDashboardEnabled();
 
 	const periodQuery = useMemo<PeriodAnalyticsQuery>(
 		() => ({
@@ -744,7 +706,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	const periodAnalytics = usePeriodAnalytics(userId, periodQuery);
 	const monthlyBudgetAnalytics = usePeriodAnalytics(
 		userId,
-		desktopDashboardEnabled && interval !== "monthly"
+		interval !== "monthly"
 			? {
 					currency,
 					interval: "monthly",
@@ -768,18 +730,13 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 		},
 		timeZoneOffsetMinutes,
 	});
-	const trendSummaries = useAnalyticsMonthSummaries(
-		userId,
-		desktopDashboardEnabled
-			? {
-					currency,
-					months: 8,
-					anchorDate: selectedMonth,
-					mode: "ending",
-					timeZoneOffsetMinutes,
-				}
-			: undefined
-	);
+	const trendSummaries = useAnalyticsMonthSummaries(userId, {
+		currency,
+		months: 8,
+		anchorDate: selectedMonth,
+		mode: "ending",
+		timeZoneOffsetMinutes,
+	});
 	const periodLabel = periodAnalytics?.period.label ?? resolvedPeriod.label;
 	const budgetPeriodKey = useMemo(
 		() => getMonthKey(selectedMonth, { timeZoneOffsetMinutes }),
@@ -797,7 +754,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	);
 	const budgetProgress = useBudgets(
 		userId,
-		desktopDashboardEnabled ? budgetPeriodKey : "",
+		budgetPeriodKey,
 		currency,
 		interval === "monthly" ? periodAnalytics : monthlyBudgetAnalytics
 	);
@@ -830,7 +787,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	const isAnalyticsBusy = periodAnalytics === undefined || accountAnalytics === undefined;
 
 	return (
-		<div className="space-y-5" aria-busy={isAnalyticsBusy}>
+		<div className="space-y-4 md:space-y-5" aria-busy={isAnalyticsBusy}>
 			<div>
 				<h1 className="hidden text-2xl font-bold tracking-tight md:block">Dashboard</h1>
 				<p className="text-sm text-muted-foreground">
@@ -861,11 +818,9 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 				data-swipe-navigation-ignore
 				aria-label="Swipe dashboard month summary"
 				data-testid="dashboard-responsive-grid"
-				className="touch-pan-y space-y-5 md:grid md:grid-cols-12 md:items-stretch md:gap-5 md:space-y-0 xl:gap-6"
+				className="touch-pan-y space-y-4 md:grid md:grid-cols-12 md:items-stretch md:gap-5 md:space-y-0 xl:gap-6"
 				style={{ touchAction: "pan-y" }}>
-				<div
-					className="md:col-span-5 md:flex xl:col-span-4"
-					data-testid="dashboard-top-card-cell">
+				<div className="md:col-span-5 md:flex xl:col-span-4" data-testid="dashboard-top-card-cell">
 					<WhatYouHaveCard
 						analytics={accountAnalytics}
 						onAddAccount={handleAddAccount}
@@ -873,9 +828,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					/>
 				</div>
 
-				<div
-					className="md:col-span-7 md:flex xl:col-span-4"
-					data-testid="dashboard-top-card-cell">
+				<div className="md:col-span-7 md:flex xl:col-span-4" data-testid="dashboard-top-card-cell">
 					<SummarySplitCard
 						analytics={periodAnalytics}
 						currency={currency}
@@ -884,62 +837,38 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					/>
 				</div>
 
-				<div
-					className="hidden xl:col-span-4 xl:flex"
-					data-testid="dashboard-top-card-cell">
-					{desktopDashboardEnabled ? (
-						<AccountDistributionChart
-							analytics={accountAnalytics}
-							isLoading={accountAnalytics === undefined}
-							className="xl:w-full"
-						/>
-					) : null}
+				<div className="md:col-span-12 md:flex xl:col-span-4" data-testid="dashboard-top-card-cell">
+					<AccountDistributionChart
+						analytics={accountAnalytics}
+						isLoading={accountAnalytics === undefined}
+						className="md:w-full"
+					/>
 				</div>
 
-				<div className="hidden md:col-span-12 md:block">
-					{desktopDashboardEnabled ? (
-						<DesktopMetricStrip
-							analytics={periodAnalytics}
-							accountAnalytics={accountAnalytics}
-							currency={currency}
-						/>
-					) : null}
+				<div className="md:col-span-12 md:block">
+					<DesktopMetricStrip
+						analytics={periodAnalytics}
+						accountAnalytics={accountAnalytics}
+						currency={currency}
+					/>
 				</div>
 
-				<div className="hidden md:col-span-12 md:flex lg:col-span-7">
-					{desktopDashboardEnabled ? (
-						<CashFlowTrendChart
-							summaries={trendSummaries}
-							currency={currency}
-							isLoading={trendSummaries === undefined}
-							className="md:w-full"
-						/>
-					) : (
-						<SkeletonChart height={320} />
-					)}
+				<div className="md:col-span-12 md:flex lg:col-span-7">
+					<CashFlowTrendChart
+						summaries={trendSummaries}
+						currency={currency}
+						isLoading={trendSummaries === undefined}
+						className="md:w-full"
+					/>
 				</div>
 
-				<div className="hidden md:col-span-6 md:flex lg:col-span-5 xl:hidden">
-					{desktopDashboardEnabled ? (
-						<AccountDistributionChart
-							analytics={accountAnalytics}
-							isLoading={accountAnalytics === undefined}
-							className="md:w-full"
-						/>
-					) : null}
-				</div>
-
-				<div className="hidden md:col-span-6 md:flex lg:col-span-5">
-					{desktopDashboardEnabled ? (
-						<SpendingTrendChart
-							summaries={trendSummaries}
-							currency={currency}
-							isLoading={trendSummaries === undefined}
-							className="md:w-full"
-						/>
-					) : (
-						<SkeletonChart height={260} />
-					)}
+				<div className="md:col-span-6 md:flex lg:col-span-5">
+					<SpendingTrendChart
+						summaries={trendSummaries}
+						currency={currency}
+						isLoading={trendSummaries === undefined}
+						className="md:w-full"
+					/>
 				</div>
 
 				<div className="md:col-span-6 md:flex lg:col-span-5">
@@ -962,15 +891,13 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					/>
 				</div>
 
-				<div className="hidden md:col-span-6 md:flex lg:col-span-7">
-					{desktopDashboardEnabled ? (
-						<BudgetProgressPanel
-							rows={budgetProgress?.rows ?? []}
-							isLoading={budgetProgress === undefined}
-							currency={currency}
-							periodLabel={budgetMonthLabel}
-						/>
-					) : null}
+				<div className="md:col-span-6 md:flex lg:col-span-7">
+					<BudgetProgressPanel
+						rows={budgetProgress?.rows ?? []}
+						isLoading={budgetProgress === undefined}
+						currency={currency}
+						periodLabel={budgetMonthLabel}
+					/>
 				</div>
 			</div>
 		</div>

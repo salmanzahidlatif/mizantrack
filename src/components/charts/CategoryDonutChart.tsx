@@ -3,6 +3,7 @@
 import { useMemo, type ReactNode } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import { MeasuredChartContainer } from "@/components/charts/MeasuredChartContainer";
 import {
 	getCategoryBreakdown,
 	getDashboardMonthRange,
@@ -156,7 +157,7 @@ export function CategoryBreakdownChart({
 		return (
 			<div
 				className={cn(
-					"flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-card p-6 text-center shadow-[var(--shadow-card)]",
+					"flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-card p-4 text-center shadow-[var(--shadow-card)] md:min-h-56 md:p-6",
 					"md:h-full",
 					className
 				)}>
@@ -191,35 +192,36 @@ export function CategoryBreakdownChart({
 			</div>
 
 			<div className="grid grid-cols-[minmax(112px,0.9fr)_minmax(0,1.1fr)] items-center gap-3">
-				<div
-					className="h-36 min-w-0"
-					role="img"
-					aria-labelledby={describedById}
-					aria-describedby={`${describedById}-legend`}>
-					<ResponsiveContainer width="100%" height="100%" debounce={80}>
-						<PieChart>
-							<Pie
-								data={visibleChartData}
-								cx="50%"
-								cy="50%"
-								innerRadius="58%"
-								outerRadius="84%"
-								paddingAngle={2}
-								dataKey="value"
-								isAnimationActive={false}>
-								{visibleChartData.map((item, index) => (
-									<Cell
-										key={`${item.id ?? item.name}-${index}`}
-										fill={getSliceColor(item, index)}
-									/>
-								))}
-							</Pie>
-							<Tooltip
-								content={<CategoryTooltip total={computedTotal} currency={displayCurrency} />}
-							/>
-						</PieChart>
-					</ResponsiveContainer>
-				</div>
+				<MeasuredChartContainer
+					className="h-32 min-w-0 md:h-36"
+					labelledBy={describedById}
+					describedBy={`${describedById}-legend`}>
+					{(size) => (
+						<ResponsiveContainer width="100%" height="100%" debounce={80} initialDimension={size}>
+							<PieChart>
+								<Pie
+									data={visibleChartData}
+									cx="50%"
+									cy="50%"
+									innerRadius="58%"
+									outerRadius="84%"
+									paddingAngle={2}
+									dataKey="value"
+									isAnimationActive={false}>
+									{visibleChartData.map((item, index) => (
+										<Cell
+											key={`${item.id ?? item.name}-${index}`}
+											fill={getSliceColor(item, index)}
+										/>
+									))}
+								</Pie>
+								<Tooltip
+									content={<CategoryTooltip total={computedTotal} currency={displayCurrency} />}
+								/>
+							</PieChart>
+						</ResponsiveContainer>
+					)}
+				</MeasuredChartContainer>
 
 				<div
 					id={`${describedById}-legend`}

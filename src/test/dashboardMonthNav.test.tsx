@@ -254,9 +254,9 @@ async function mockHooks(empty = false) {
 	mocks.useBudgets.mockReturnValue({ budgets: [], categories: [], rows: [] });
 }
 
-function mockMatchMedia(matches: boolean) {
+function mockMatchMedia(matches: boolean | Record<string, boolean>) {
 	window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-		matches,
+		matches: typeof matches === "boolean" ? matches : (matches[query] ?? false),
 		media: query,
 		onchange: null,
 		addEventListener: vi.fn(),
@@ -298,7 +298,7 @@ describe("dashboard UI rebuild", () => {
 
 		render(<DashboardPageClient userId={USER_ID} />);
 
-		expect(screen.getByText((text) => text.includes("-4,355,391.13"))).toBeInTheDocument();
+		expect(screen.getAllByText((text) => text.includes("-4,355,391.13")).length).toBeGreaterThan(0);
 	});
 
 	it("changing interval updates every figure on the reports screen", async () => {
@@ -343,37 +343,28 @@ describe("dashboard UI rebuild", () => {
 		expect(screen.getByText("Uncategorized")).toBeInTheDocument();
 	});
 
-	it("keeps the mobile stack spacing while enabling a desktop grid at wider breakpoints", () => {
-		mockMatchMedia(true);
-
+	it("shows every dashboard widget on mobile while reflowing to a desktop grid", () => {
 		render(<DashboardPageClient userId={USER_ID} />);
 
 		const grid = screen.getByTestId("dashboard-responsive-grid");
-		expect(grid).toHaveClass("space-y-5");
+		expect(grid).toHaveClass("space-y-4");
 		expect(grid).toHaveClass("md:grid");
 		expect(grid).toHaveClass("md:grid-cols-12");
 		expect(grid).toHaveClass("md:items-stretch");
 		expect(screen.getByLabelText("Swipe dashboard month summary")).toHaveAttribute(
 			"data-swipe-navigation-ignore"
 		);
-		expect(screen.getByLabelText("Desktop financial overview")).toBeInTheDocument();
+		expect(screen.getByText("What You Have")).toBeInTheDocument();
+		expect(screen.getByLabelText(/Income and expense for/i)).toBeInTheDocument();
+		expect(screen.getByTestId("account-distribution-chart")).toBeInTheDocument();
+		expect(screen.getByLabelText("Financial overview")).toBeInTheDocument();
+		expect(screen.getByText("Income vs expense trend")).toBeInTheDocument();
+		expect(screen.getByText("Spending trend")).toBeInTheDocument();
+		expect(screen.getByText("Your Monthly Expense")).toBeInTheDocument();
+		expect(screen.getByText("Budget progress")).toBeInTheDocument();
 	});
 
-	it("keeps desktop stretching behind breakpoints so the mobile stack stays unchanged", () => {
-		mockMatchMedia(false);
-
-		render(<DashboardPageClient userId={USER_ID} />);
-
-		const grid = screen.getByTestId("dashboard-responsive-grid");
-		expect(grid).toHaveClass("touch-pan-y");
-		expect(grid).toHaveClass("space-y-5");
-		expect(grid.className.split(/\s+/)).not.toContain("grid");
-		expect(grid).toHaveClass("md:grid");
-		expect(grid).toHaveClass("md:items-stretch");
-	});
-
-	it("stretches desktop row cards to a consistent row height without changing mobile order", async () => {
-		mockMatchMedia(true);
+	it("stretches desktop row cards to a consistent row height without hiding mobile content", async () => {
 		const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
 		const analytics = buildAccountsAnalytics();
 		analytics.accounts = [
@@ -406,11 +397,19 @@ describe("dashboard UI rebuild", () => {
 			expect(cell.className).toMatch(/md:flex|xl:flex/);
 		});
 		expect(screen.getByTestId("what-you-have-card")).toHaveClass("md:h-full");
-		expect(screen.getAllByTestId("dashboard-account-tile")[3]).toHaveClass("xl:hidden");
+		expect(screen.getAllByTestId("dashboard-account-tile")[3]).not.toHaveClass("xl:hidden");
 	});
 
-	it("requests desktop chart data from the shared cached analytics hook", async () => {
-		mockMatchMedia(true);
+	it("mounts one shared account distribution widget instead of breakpoint-specific copies", () => {
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		expect(screen.getAllByTestId("account-distribution-chart")).toHaveLength(1);
+		const topCells = screen.getAllByTestId("dashboard-top-card-cell");
+		expect(topCells).toHaveLength(3);
+		expect(within(topCells[2]!).getByTestId("account-distribution-chart")).toBeInTheDocument();
+	});
+
+	it("requests chart data from the shared cached analytics hook on every viewport", async () => {
 		const { useAnalyticsMonthSummaries } = await import("@/hooks/useAnalyticsMonthSummaries");
 
 		render(<DashboardPageClient userId={USER_ID} />);
@@ -548,7 +547,8 @@ describe("dashboard UI rebuild", () => {
 
 		const legend = screen.getByTestId("account-distribution-legend");
 		expect(legend).toHaveClass("overflow-y-auto");
-		expect(legend).toHaveClass("max-h-44");
+		expect(legend).toHaveClass("max-h-36");
+		expect(legend).toHaveClass("md:max-h-44");
 
 		const rows = screen.getAllByTestId("account-distribution-row");
 		expect(rows).toHaveLength(5);
