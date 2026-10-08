@@ -677,8 +677,11 @@ export function aggregateAccountsAnalytics(
 	const asOf = query.asOf ?? new Date();
 	const period = resolvePeriod(query.period);
 	const scope = getAccountScope(userId, accounts, currency, query.enabledCurrencies);
-	const asOfMs = getEndOfAsOfDay(asOf, query.timeZoneOffsetMinutes).getTime();
-	const balanceComputation = computeAccountBalances(userId, accounts, transactions, { asOfMs });
+	// Account balances deliberately include future-dated transactions. The owner records
+	// post-dated cheques and instalments months ahead, so a balance cut off at today hid
+	// money they had already committed and disagreed with the source system they migrated
+	// from. Period figures below still respect the selected range.
+	const balanceComputation = computeAccountBalances(userId, accounts, transactions);
 	const balances = balanceComputation.balances;
 	const accountCurrencyWarnings = getAccountCurrencyWarnings(scope.accounts, query);
 
