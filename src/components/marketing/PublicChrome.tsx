@@ -17,12 +17,12 @@ export function PublicHeader() {
 				<nav aria-label="Public pages" className="flex items-center gap-2 text-sm">
 					<Link
 						href="/privacy"
-						className="rounded-lg px-2.5 py-2 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+						className="rounded-lg px-2.5 py-2 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
 						Privacy
 					</Link>
 					<Link
 						href="/terms-of-service"
-						className="rounded-lg px-2.5 py-2 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+						className="rounded-lg px-2.5 py-2 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
 						Terms
 					</Link>
 					<Button asChild size="sm" className="hidden sm:inline-flex">
@@ -40,12 +40,14 @@ export function PublicFooter() {
 			<div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 py-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
 				<p>© MizanTrack. Personal finance tracking for your own data.</p>
 				<div className="flex gap-4">
-					<Link href="/privacy" className="underline-offset-4 hover:text-foreground hover:underline">
+					<Link
+						href="/privacy"
+						className="rounded-md underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
 						Privacy
 					</Link>
 					<Link
 						href="/terms-of-service"
-						className="underline-offset-4 hover:text-foreground hover:underline">
+						className="rounded-md underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
 						Terms of Service
 					</Link>
 				</div>

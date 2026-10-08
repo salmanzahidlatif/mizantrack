@@ -36,9 +36,9 @@ export default function TermsOfServicePage() {
 					body: (
 						<>
 							<p>
-								You are responsible for entering accurate data, reviewing imports, checking balances,
-								and verifying reports before relying on them. MizanTrack can contain bugs, stale
-								cached data, incomplete imports, or configuration mistakes.
+								You are responsible for entering accurate data, reviewing imports, checking
+								balances, and verifying reports before relying on them. MizanTrack can contain bugs,
+								stale cached data, incomplete imports, or configuration mistakes.
 							</p>
 							<p>
 								Do not use MizanTrack as the only source for tax, accounting, investment, banking,
@@ -79,8 +79,8 @@ export default function TermsOfServicePage() {
 						<>
 							<p>
 								MizanTrack is provided as is and as available. There is no promise that it will be
-								error-free, uninterrupted, compatible with every browser or device, or suitable for a
-								particular purpose.
+								error-free, uninterrupted, compatible with every browser or device, or suitable for
+								a particular purpose.
 							</p>
 						</>
 					),
@@ -91,8 +91,8 @@ export default function TermsOfServicePage() {
 						<>
 							<p>
 								To the maximum extent permitted by law, the developer is not liable for financial
-								losses, missed obligations, data loss, incorrect calculations, failed sync or backup,
-								service outages, or other damages arising from use of MizanTrack.
+								losses, missed obligations, data loss, incorrect calculations, failed sync or
+								backup, service outages, or other damages arising from use of MizanTrack.
 							</p>
 						</>
 					),

@@ -41,9 +41,9 @@ export default function PrivacyPage() {
 								settings such as app-lock preferences.
 							</p>
 							<p>
-								Google sign-in is used to identify your local records. For offline reopening, the app
-								stores a local session snapshot containing your Google user id, name, email address,
-								and avatar URL, plus the time it was verified.
+								Google sign-in is used to identify your local records. For offline reopening, the
+								app stores a local session snapshot containing your Google user id, name, email
+								address, and avatar URL, plus the time it was verified.
 							</p>
 						</>
 					),
@@ -53,13 +53,13 @@ export default function PrivacyPage() {
 					body: (
 						<>
 							<p>
-								MizanTrack uses Google OAuth for sign-in. The basic sign-in permission identifies you
-								to the app; it is not used to read your Gmail, Google Drive, contacts, or other Google
-								data.
+								MizanTrack uses Google OAuth for sign-in. The basic sign-in permission identifies
+								you to the app; it is not used to read your Gmail, Google Drive, contacts, or other
+								Google data.
 							</p>
 							<p>
-								The hosted app handles the OAuth callback and session needed for sign-in. It does not
-								store your finance records in a developer-operated application database.
+								The hosted app handles the OAuth callback and session needed for sign-in. It does
+								not store your finance records in a developer-operated application database.
 							</p>
 						</>
 					),
@@ -69,9 +69,9 @@ export default function PrivacyPage() {
 					body: (
 						<>
 							<p>
-								Firebase sync is optional. If you enable it, you provide configuration for a Firebase
-								project that you create and own. Sync writes your records to Firestore paths under
-								your user id in that project.
+								Firebase sync is optional. If you enable it, you provide configuration for a
+								Firebase project that you create and own. Sync writes your records to Firestore
+								paths under your user id in that project.
 							</p>
 							<p>
 								The synced data can include accounts, categories, transactions, budgets, gold items,
@@ -81,8 +81,8 @@ export default function PrivacyPage() {
 							<p>
 								Firebase sync deliberately does not sync your Firebase configuration JSON, GoldAPI
 								key, or device-local biometric credential id. App-lock PIN data is different: when
-								Firebase sync is enabled, the app-lock PIN hash and app-lock preferences are synced to
-								your own Firebase project so the lock setting can follow your devices.
+								Firebase sync is enabled, the app-lock PIN hash and app-lock preferences are synced
+								to your own Firebase project so the lock setting can follow your devices.
 							</p>
 						</>
 					),
@@ -94,9 +94,8 @@ export default function PrivacyPage() {
 							<p>
 								Google Sheets backup is optional and one-way. When you connect it, MizanTrack asks
 								for the <code>https://www.googleapis.com/auth/drive.file</code> permission. That
-								permission allows the app to create and access only files that this app creates or
-								that you explicitly open with it; it does not grant access to your wider Google
-								Drive.
+								permission is used only for backup spreadsheets this app creates; MizanTrack does
+								not request wider Drive access or browse your Google Drive.
 							</p>
 							<p>
 								Your browser prepares the backup and writes it to spreadsheets in your Google Drive.
@@ -136,20 +135,18 @@ export default function PrivacyPage() {
 						<>
 							<ul className="list-disc space-y-2 pl-5">
 								<li>
-									Use the in-app reset tools or your browser&apos;s site-data controls to clear local
-									IndexedDB data from a device.
+									Use the in-app reset tools or your browser&apos;s site-data controls to clear
+									local IndexedDB data from a device.
 								</li>
 								<li>
 									Use the Firebase settings panel to clear Firebase data from your configured
 									Firestore project or to remove the Firebase configuration from this browser.
 								</li>
 								<li>
-									Use the Google Sheets panel to disconnect the Sheets permission. You can also delete
-									backup spreadsheets directly from your Google Drive.
+									Use the Google Sheets panel to disconnect the Sheets permission. You can also
+									delete backup spreadsheets directly from your Google Drive.
 								</li>
-								<li>
-									Signing out removes the local offline session snapshot from this browser.
-								</li>
+								<li>Signing out removes the local offline session snapshot from this browser.</li>
 							</ul>
 						</>
 					),

@@ -66,14 +66,13 @@ export function MarketingLandingPage() {
 					<aside className="rounded-[2rem] border border-border/70 bg-card p-5 shadow-[var(--shadow-card)]">
 						<div className="space-y-4 rounded-[1.5rem] bg-muted/40 p-5">
 							<p className="text-sm font-medium text-muted-foreground">Data model</p>
-							<h2 className="text-2xl font-semibold">Your browser first. Your services if enabled.</h2>
+							<h2 className="text-2xl font-semibold">
+								Your browser first. Your services if enabled.
+							</h2>
 							<ul className="space-y-3 text-sm leading-6 text-muted-foreground">
 								{privacyPoints.map((point) => (
 									<li key={point} className="flex gap-3">
-										<span
-											aria-hidden="true"
-											className="mt-2 size-2 rounded-full bg-primary"
-										/>
+										<span aria-hidden="true" className="mt-2 size-2 rounded-full bg-primary" />
 										<span>{point}</span>
 									</li>
 								))}
@@ -110,9 +109,9 @@ export function MarketingLandingPage() {
 					<div className="rounded-3xl border border-border/70 bg-card p-6 shadow-[var(--shadow-card)]">
 						<h2 className="text-2xl font-semibold">Built for everyday review</h2>
 						<p className="mt-3 leading-7 text-muted-foreground">
-							Use MizanTrack to understand cash flow, inspect categories, manage budgets, record gold
-							holdings, and estimate zakat obligations. You remain responsible for checking the data
-							and making financial or religious decisions.
+							Use MizanTrack to understand cash flow, inspect categories, manage budgets, record
+							gold holdings, and estimate zakat obligations. You remain responsible for checking the
+							data and making financial or religious decisions.
 						</p>
 					</div>
 				</section>
