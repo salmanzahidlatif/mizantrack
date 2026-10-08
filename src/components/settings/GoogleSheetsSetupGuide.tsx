@@ -42,7 +42,7 @@ function CopyableScope() {
 					{copied ? "Copied" : "Copy scope"}
 				</Button>
 			</div>
-			<code className="block overflow-x-auto rounded bg-background px-2 py-2 font-mono text-xs">
+			<code className="block overflow-x-auto rounded bg-background px-2 py-2 font-mono text-xs break-all whitespace-pre-wrap">
 				{GOOGLE_DRIVE_FILE_SCOPE}
 			</code>
 		</div>
@@ -60,10 +60,10 @@ export function GoogleSheetsSetupGuide({ open, onOpenChange }: GoogleSheetsSetup
 					</SheetDescription>
 				</SheetHeader>
 
-				<ScrollArea className="flex-1 px-6">
+				<ScrollArea className="w-full min-w-0 flex-1 px-6">
 					<section
 						aria-labelledby="google-sheets-setup-heading"
-						className="space-y-4 py-3 text-sm leading-relaxed text-muted-foreground">
+						className="min-w-0 space-y-4 py-3 pb-10 text-sm leading-relaxed [overflow-wrap:anywhere] break-words text-muted-foreground">
 						<div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
 							<p className="font-medium">Most common mistake</p>
 							<p>

@@ -95,7 +95,7 @@ export function SyncSetupWizard({
 				</ScrollArea>
 
 				{/* Navigation footer */}
-				<SheetFooter className="flex justify-between px-6 pb-6">
+				<SheetFooter className="pb-safe flex justify-between px-6 [padding-bottom:calc(env(safe-area-inset-bottom,0px)_+_1.5rem)]">
 					<Button
 						variant="outline"
 						disabled={activeStep === 0}
