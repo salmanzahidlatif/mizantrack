@@ -10,8 +10,10 @@ import {
 	serverTimestamp,
 	setDoc,
 	startAfter,
-	type QueryDocumentSnapshot,
+	type DocumentData,
 	type Firestore,
+	type Query,
+	type QueryDocumentSnapshot,
 	writeBatch,
 	where,
 } from "firebase/firestore";
@@ -609,12 +611,12 @@ async function pullRemoteRecords(
 	let persistedCursor = cursor;
 	let durableCursor = cursor;
 	let trailingSyncedAt: number | null = cursor > 0 ? cursor : null;
-	let lastDocSnap: QueryDocumentSnapshot | null = null;
+	let lastDocSnap: QueryDocumentSnapshot<unknown, DocumentData> | null = null;
 	let invalidatedAnalytics = false;
 
 	while (true) {
 		const baseCollection = collection(firestore, `users/${userId}/${tableName}`);
-		const remoteQuery = lastDocSnap
+		const remoteQuery: Query<DocumentData, DocumentData> = lastDocSnap
 			? query(
 					baseCollection,
 					where("syncedAt", ">", cursor),
@@ -628,7 +630,7 @@ async function pullRemoteRecords(
 					orderBy("syncedAt"),
 					firestoreLimit(FIRESTORE_PULL_PAGE_SIZE)
 				);
-		const remoteSnap = await withFirestoreTimeout(
+		const remoteSnap: Awaited<ReturnType<typeof getDocs>> = await withFirestoreTimeout(
 			getDocs(remoteQuery),
 			`pulling ${tableName} page`
 		);

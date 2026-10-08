@@ -1117,29 +1117,35 @@ describe("syncAll — server syncedAt cursors", () => {
 		const pageCalls: string[][] = [];
 		const tableCalls: Record<string, number> = {};
 
-		vi.mocked(firestore.where).mockImplementation(
-			((field: string, operator: string, value: unknown) => ({
-				type: "where",
-				field,
-				operator,
-				value,
-			})) as typeof firestore.where
-		);
-		vi.mocked(firestore.orderBy).mockImplementation(
-			((field: string) => ({ type: "orderBy", field })) as typeof firestore.orderBy
-		);
-		vi.mocked(firestore.limit).mockImplementation(
-			((count: number) => ({ type: "limit", count })) as typeof firestore.limit
-		);
-		vi.mocked(firestore.startAfter).mockImplementation(
-			((docSnap: unknown) => ({ type: "startAfter", docSnap })) as typeof firestore.startAfter
-		);
-		vi.mocked(firestore.query).mockImplementation(
-			((ref: { path?: string }, ...constraints: unknown[]) => ({
-				path: ref.path,
-				constraints,
-			})) as typeof firestore.query
-		);
+		vi.mocked(firestore.where).mockImplementation(((
+			field: string,
+			operator: string,
+			value: unknown
+		) => ({
+			type: "where",
+			field,
+			operator,
+			value,
+		})) as typeof firestore.where);
+		vi.mocked(firestore.orderBy).mockImplementation(((field: string) => ({
+			type: "orderBy",
+			field,
+		})) as typeof firestore.orderBy);
+		vi.mocked(firestore.limit).mockImplementation(((count: number) => ({
+			type: "limit",
+			count,
+		})) as typeof firestore.limit);
+		vi.mocked(firestore.startAfter).mockImplementation(((docSnap: unknown) => ({
+			type: "startAfter",
+			docSnap,
+		})) as typeof firestore.startAfter);
+		vi.mocked(firestore.query).mockImplementation(((
+			ref: { path?: string },
+			...constraints: unknown[]
+		) => ({
+			path: ref.path,
+			constraints,
+		})) as unknown as typeof firestore.query);
 		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
 			const queryRef = ref as { path?: string; constraints?: unknown[] };
 			const path = queryRef.path;
@@ -1313,14 +1319,16 @@ describe("syncAll — server syncedAt cursors", () => {
 
 	it("syncAll_MidPullFailure_PersistsPageProgressAndRetryResumes", async () => {
 		await markMigrationDone();
+		const midUserId = `${USER_ID}-mid`;
 		const remoteDocs = Array.from({ length: 1_200 }, (_, index) =>
-			remoteTransactionDoc(index + 1)
+			remoteTransactionDoc(index + 1, midUserId, "txn-mid")
 		);
 		const firstAttempt = await configurePaginatedPull("transactions", remoteDocs, {
 			failOnPage: 3,
+			userId: midUserId,
 		});
 
-		const firstResult = await syncAll(USER_ID);
+		const firstResult = await syncAll(midUserId);
 
 		expect(firstResult.status).toBe("partial");
 		expect(firstResult.errors).toEqual([
@@ -1330,18 +1338,21 @@ describe("syncAll — server syncedAt cursors", () => {
 				message: "Injected transactions page failure",
 			}),
 		]);
-		expect(await db.transactions.where("userId").equals(USER_ID).count()).toBe(1_000);
+		expect(await db.transactions.where("userId").equals(midUserId).count()).toBe(1_000);
 		expect((await db.syncMeta.get("lastSync:transactions"))?.timestamp).toBe(999);
-		expect(firstAttempt.getPageCalls()[0]?.[0]).toBe("txn-remote-1");
+		expect(firstAttempt.getPageCalls()[0]?.[0]).toBe("txn-mid-1");
 
-		const secondAttempt = await configurePaginatedPull("transactions", remoteDocs);
-		const secondResult = await syncAll(USER_ID);
+		const secondAttempt = await configurePaginatedPull("transactions", remoteDocs, {
+			userId: midUserId,
+		});
+		const secondResult = await syncAll(midUserId);
 
 		expect(secondResult.status).toBe("success");
-		expect(await db.transactions.where("userId").equals(USER_ID).count()).toBe(1_200);
+		expect(await db.transactions.where("userId").equals(midUserId).count()).toBe(1_200);
 		expect((await db.syncMeta.get("lastSync:transactions"))?.timestamp).toBe(1_200);
-		expect(secondAttempt.getPageCalls()[0]?.[0]).toBe("txn-remote-1000");
+		expect(secondAttempt.getPageCalls()[0]?.[0]).toBe("txn-mid-1000");
 		expect(secondAttempt.getDocumentReads()).toBe(201);
+		await db.syncMeta.delete("lastSync:transactions");
 	});
 
 	it("syncAll_LocalWriteFailure_DoesNotAdvanceCursorPastUnwrittenDocument", async () => {
@@ -1349,12 +1360,12 @@ describe("syncAll — server syncedAt cursors", () => {
 		const remoteDocs = Array.from({ length: 3 }, (_, index) => remoteTransactionDoc(index + 1));
 		await configurePaginatedPull("transactions", remoteDocs);
 		const originalPut = db.transactions.put.bind(db.transactions);
-		const putSpy = vi.spyOn(db.transactions, "put").mockImplementation(async (record) => {
+		const putSpy = vi.spyOn(db.transactions, "put").mockImplementation(((record) => {
 			if (record.id === "txn-remote-2") {
 				throw new Error("IndexedDB write failed");
 			}
 			return originalPut(record);
-		});
+		}) as typeof db.transactions.put);
 
 		const result = await syncAll(USER_ID);
 		putSpy.mockRestore();
