@@ -1,3 +1,7 @@
+import {
+	DASHBOARD_GRID_CELL_CLASSNAMES,
+	DASHBOARD_GRID_CLASSNAME,
+} from "@/components/dashboard/dashboardGrid";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
 import { SkeletonChart } from "@/components/shared/SkeletonChart";
 import { SkeletonTransactionRow } from "@/components/shared/SkeletonTransactionRow";
@@ -48,9 +52,11 @@ function PillStripSkeleton({ count = 5 }: { count?: number }) {
 	);
 }
 
-function AccountTileGridSkeleton() {
+function AccountTileGridSkeleton({ className }: { className?: string }) {
 	return (
-		<div className={cn(CARD_SURFACE, "overflow-hidden p-4")} data-testid="account-tile-skeleton">
+		<div
+			className={cn(CARD_SURFACE, "overflow-hidden p-4 md:flex md:h-full md:flex-col", className)}
+			data-testid="account-tile-skeleton">
 			<div className="mb-4 flex items-start justify-between gap-3">
 				<div className="space-y-2">
 					<div aria-hidden="true" className="shimmer h-4 w-28 rounded-full bg-muted/70" />
@@ -73,7 +79,41 @@ function AccountTileGridSkeleton() {
 					className="min-h-[72px] rounded-2xl border border-dashed border-border/80 bg-muted/20 p-3"
 				/>
 			</div>
+			<div className="mt-4 flex justify-end">
+				<div aria-hidden="true" className="shimmer h-5 w-20 rounded-full bg-muted/70" />
+			</div>
 		</div>
+	);
+}
+
+function DashboardMetricStripSkeleton() {
+	return (
+		<section className="grid grid-cols-2 gap-3 md:grid-cols-4" aria-hidden="true">
+			{Array.from({ length: 4 }).map((_, index) => (
+				<SkeletonCard key={index} className="h-24 md:h-28" />
+			))}
+		</section>
+	);
+}
+
+function DashboardBudgetPanelSkeleton() {
+	return (
+		<section
+			className={cn(CARD_SURFACE, "overflow-hidden p-4 md:h-full md:w-full md:p-5")}
+			aria-hidden="true">
+			<div className="shimmer mb-4 h-4 w-32 rounded-full bg-muted/70" />
+			<div className="space-y-4">
+				{Array.from({ length: 4 }).map((_, index) => (
+					<div key={index}>
+						<div className="mb-2 flex justify-between gap-4">
+							<div className="shimmer h-3 w-28 rounded-full bg-muted/70" />
+							<div className="shimmer h-3 w-20 rounded-full bg-muted/70" />
+						</div>
+						<div className="shimmer h-2 w-full rounded-full bg-muted/70" />
+					</div>
+				))}
+			</div>
+		</section>
 	);
 }
 
@@ -81,9 +121,37 @@ export function DashboardLoadingSkeleton() {
 	return (
 		<RouteLoadingFrame title="Dashboard" testId="dashboard-route-loading">
 			<PillStripSkeleton />
-			<AccountTileGridSkeleton />
-			<SkeletonCard className="h-28" />
-			<SkeletonChart height={280} />
+			<div
+				data-swipe-navigation-ignore
+				aria-hidden="true"
+				data-testid="dashboard-responsive-grid"
+				className={DASHBOARD_GRID_CLASSNAME}
+				style={{ touchAction: "pan-y" }}>
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[0]}>
+					<AccountTileGridSkeleton className="md:w-full" />
+				</div>
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[1]}>
+					<SkeletonCard className="h-28 md:h-full md:w-full" />
+				</div>
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[2]}>
+					<SkeletonChart className="md:h-full md:w-full md:p-5" chartClassName="h-36 md:h-44" />
+				</div>
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[3]}>
+					<DashboardMetricStripSkeleton />
+				</div>
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[4]}>
+					<SkeletonChart className="md:h-full md:w-full md:p-5" chartClassName="h-56 md:h-72" />
+				</div>
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[5]}>
+					<SkeletonChart className="md:h-full md:w-full md:p-5" chartClassName="h-40 md:h-48" />
+				</div>
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[6]}>
+					<SkeletonChart className="md:h-full md:w-full" chartClassName="h-32 md:h-36" />
+				</div>
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[7]}>
+					<DashboardBudgetPanelSkeleton />
+				</div>
+			</div>
 		</RouteLoadingFrame>
 	);
 }

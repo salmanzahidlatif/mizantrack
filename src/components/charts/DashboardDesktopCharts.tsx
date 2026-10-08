@@ -156,7 +156,11 @@ export function CashFlowTrendChart({ summaries, currency, isLoading, className }
 	const latest = data?.at(-1);
 	const hasData = data?.some((item) => item.income > 0 || item.expense > 0);
 
-	if (isLoading || summaries === undefined) return <SkeletonChart height={320} />;
+	if (isLoading || summaries === undefined) {
+		return (
+			<SkeletonChart className={cn("md:h-full md:p-5", className)} chartClassName="h-56 md:h-72" />
+		);
+	}
 	if (!hasData) {
 		return (
 			<ChartEmptyState
@@ -282,7 +286,11 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 			? nonZeroExpenses.reduce((sum, item) => sum + item.expense, 0) / nonZeroExpenses.length
 			: 0;
 
-	if (isLoading || summaries === undefined) return <SkeletonChart height={260} />;
+	if (isLoading || summaries === undefined) {
+		return (
+			<SkeletonChart className={cn("md:h-full md:p-5", className)} chartClassName="h-40 md:h-48" />
+		);
+	}
 	if (!nonZeroExpenses.length) {
 		return (
 			<ChartEmptyState
@@ -377,7 +385,11 @@ export function AccountDistributionChart({
 		[analytics]
 	);
 
-	if (isLoading || analytics === undefined) return <SkeletonChart height={260} />;
+	if (isLoading || analytics === undefined) {
+		return (
+			<SkeletonChart className={cn("md:h-full md:p-5", className)} chartClassName="h-36 md:h-44" />
+		);
+	}
 	if (!data?.length) {
 		return (
 			<ChartEmptyState

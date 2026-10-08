@@ -1,6 +1,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+	DASHBOARD_GRID_CELL_CLASSNAMES,
+	DASHBOARD_GRID_CLASSNAME,
+} from "@/components/dashboard/dashboardGrid";
 import { DashboardPageClient } from "@/components/dashboard/DashboardPageClient";
 import {
 	AccountsLoadingSkeleton,
@@ -205,6 +209,10 @@ function buildAccountsAnalytics(): AccountsAnalytics {
 	};
 }
 
+function orderedGridCellClassNames(grid: HTMLElement) {
+	return Array.from(grid.children, (child) => (child as HTMLElement).className);
+}
+
 beforeEach(() => {
 	vi.useFakeTimers();
 	vi.setSystemTime(NOW);
@@ -245,6 +253,29 @@ describe("route loading shells", () => {
 		expect(screen.getByTestId(testId)).toHaveAttribute("aria-busy", "true");
 		expect(screen.getByRole("status")).toHaveTextContent(`Loading ${name}`);
 		expect(container.querySelector(".shimmer")).not.toBeNull();
+	});
+
+	it("keeps the dashboard route skeleton grid in lockstep with the real dashboard grid", () => {
+		mocks.useAccountsAnalytics.mockReturnValue(buildAccountsAnalytics());
+		mocks.usePeriodAnalytics.mockReturnValue(buildPeriodAnalytics());
+
+		const { unmount } = render(<DashboardLoadingSkeleton />);
+		const skeletonGrid = screen.getByTestId("dashboard-responsive-grid");
+
+		expect(skeletonGrid.className).toBe(DASHBOARD_GRID_CLASSNAME);
+		expect(orderedGridCellClassNames(skeletonGrid)).toEqual([...DASHBOARD_GRID_CELL_CLASSNAMES]);
+		expect(screen.getByTestId("dashboard-route-loading")).toHaveAttribute("aria-busy", "true");
+		expect(screen.getByRole("status")).toHaveTextContent("Loading Dashboard");
+		expect(screen.getByTestId("account-tile-skeleton")).toBeInTheDocument();
+
+		unmount();
+
+		render(<DashboardPageClient userId={USER_ID} />);
+		const realGrid = screen.getByTestId("dashboard-responsive-grid");
+
+		expect(realGrid.className).toBe(DASHBOARD_GRID_CLASSNAME);
+		expect(orderedGridCellClassNames(realGrid)).toEqual([...DASHBOARD_GRID_CELL_CLASSNAMES]);
+		expect(screen.getByText(/monthly view/i)).toBeInTheDocument();
 	});
 });
 

@@ -18,6 +18,10 @@ import {
 	getIntervalLabel,
 } from "@/components/dashboard/AnalyticsIntervalChooser";
 import {
+	DASHBOARD_GRID_CELL_CLASSNAMES,
+	DASHBOARD_GRID_CLASSNAME,
+} from "@/components/dashboard/dashboardGrid";
+import {
 	clampDashboardMonth,
 	isCurrentDashboardMonth,
 	shiftDashboardMonth,
@@ -58,21 +62,25 @@ import type {
 const CategoryBreakdownChart = dynamic(
 	() => import("@/components/charts/CategoryDonutChart").then((mod) => mod.CategoryBreakdownChart),
 	{
-		loading: () => <SkeletonChart height={280} />,
+		loading: () => <SkeletonChart className="md:h-full md:w-full" chartClassName="h-32 md:h-36" />,
 	}
 );
 
 const CashFlowTrendChart = dynamic(
 	() => import("@/components/charts/DashboardDesktopCharts").then((mod) => mod.CashFlowTrendChart),
 	{
-		loading: () => <SkeletonChart height={320} />,
+		loading: () => (
+			<SkeletonChart className="md:h-full md:w-full md:p-5" chartClassName="h-56 md:h-72" />
+		),
 	}
 );
 
 const SpendingTrendChart = dynamic(
 	() => import("@/components/charts/DashboardDesktopCharts").then((mod) => mod.SpendingTrendChart),
 	{
-		loading: () => <SkeletonChart height={260} />,
+		loading: () => (
+			<SkeletonChart className="md:h-full md:w-full md:p-5" chartClassName="h-40 md:h-48" />
+		),
 	}
 );
 
@@ -82,7 +90,9 @@ const AccountDistributionChart = dynamic(
 			(mod) => mod.AccountDistributionChart
 		),
 	{
-		loading: () => <SkeletonChart height={260} />,
+		loading: () => (
+			<SkeletonChart className="md:h-full md:w-full md:p-5" chartClassName="h-36 md:h-44" />
+		),
 	}
 );
 
@@ -576,10 +586,12 @@ function BudgetProgressPanel({
 }) {
 	if (isLoading) {
 		return (
-			<section className={cn(CARD_SURFACE, "p-4 md:h-full md:w-full md:p-5")} aria-busy="true">
+			<section
+				className={cn(CARD_SURFACE, "overflow-hidden p-4 md:h-full md:w-full md:p-5")}
+				aria-busy="true">
 				<div className="shimmer mb-4 h-4 w-32 rounded-full bg-muted/70" />
 				<div className="space-y-4">
-					{Array.from({ length: 3 }).map((_, index) => (
+					{Array.from({ length: 4 }).map((_, index) => (
 						<div key={index}>
 							<div className="mb-2 flex justify-between gap-4">
 								<div className="shimmer h-3 w-28 rounded-full bg-muted/70" />
@@ -818,9 +830,9 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 				data-swipe-navigation-ignore
 				aria-label="Swipe dashboard month summary"
 				data-testid="dashboard-responsive-grid"
-				className="touch-pan-y space-y-4 md:grid md:grid-cols-12 md:items-stretch md:gap-5 md:space-y-0 xl:gap-6"
+				className={DASHBOARD_GRID_CLASSNAME}
 				style={{ touchAction: "pan-y" }}>
-				<div className="md:col-span-5 md:flex xl:col-span-4" data-testid="dashboard-top-card-cell">
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[0]} data-testid="dashboard-top-card-cell">
 					<WhatYouHaveCard
 						analytics={accountAnalytics}
 						onAddAccount={handleAddAccount}
@@ -828,7 +840,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					/>
 				</div>
 
-				<div className="md:col-span-7 md:flex xl:col-span-4" data-testid="dashboard-top-card-cell">
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[1]} data-testid="dashboard-top-card-cell">
 					<SummarySplitCard
 						analytics={periodAnalytics}
 						currency={currency}
@@ -837,7 +849,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					/>
 				</div>
 
-				<div className="md:col-span-12 md:flex xl:col-span-4" data-testid="dashboard-top-card-cell">
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[2]} data-testid="dashboard-top-card-cell">
 					<AccountDistributionChart
 						analytics={accountAnalytics}
 						isLoading={accountAnalytics === undefined}
@@ -845,7 +857,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					/>
 				</div>
 
-				<div className="md:col-span-12 md:block">
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[3]}>
 					<DesktopMetricStrip
 						analytics={periodAnalytics}
 						accountAnalytics={accountAnalytics}
@@ -853,7 +865,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					/>
 				</div>
 
-				<div className="md:col-span-12 md:flex lg:col-span-7">
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[4]}>
 					<CashFlowTrendChart
 						summaries={trendSummaries}
 						currency={currency}
@@ -862,7 +874,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					/>
 				</div>
 
-				<div className="md:col-span-6 md:flex lg:col-span-5">
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[5]}>
 					<SpendingTrendChart
 						summaries={trendSummaries}
 						currency={currency}
@@ -871,7 +883,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					/>
 				</div>
 
-				<div className="md:col-span-6 md:flex lg:col-span-5">
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[6]}>
 					<CategoryBreakdownChart
 						userId={userId}
 						breakdown={periodAnalytics?.expenseBreakdown}
@@ -891,7 +903,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					/>
 				</div>
 
-				<div className="md:col-span-6 md:flex lg:col-span-7">
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[7]}>
 					<BudgetProgressPanel
 						rows={budgetProgress?.rows ?? []}
 						isLoading={budgetProgress === undefined}

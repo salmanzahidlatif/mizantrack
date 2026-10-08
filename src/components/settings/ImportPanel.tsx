@@ -271,7 +271,7 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 			/>
 
 			<Dialog open={!!pendingSqlitePlan} onOpenChange={() => setPendingSqlitePlan(null)}>
-				<DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+				<DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto md:max-w-3/4">
 					<DialogHeader>
 						<DialogTitle>Resolve transfer counterparties</DialogTitle>
 						<DialogDescription>

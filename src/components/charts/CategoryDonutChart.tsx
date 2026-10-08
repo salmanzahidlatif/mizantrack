@@ -145,7 +145,7 @@ export function CategoryBreakdownChart({
 	const chartData = analyticsChartData ?? statsChartData;
 
 	if (isLoading || (!breakdown && !stats)) {
-		return <SkeletonChart height={280} />;
+		return <SkeletonChart className={cn("md:h-full", className)} chartClassName="h-32 md:h-36" />;
 	}
 
 	const visibleChartData = (chartData ?? []).filter((item) => item.value > 0);

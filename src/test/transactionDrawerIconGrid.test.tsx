@@ -238,6 +238,10 @@ describe("TransactionDrawer icon grid pickers", () => {
 		fireEvent.change(screen.getByLabelText(/Amount/i), { target: { value: "25" } });
 		fireEvent.click(screen.getByRole("button", { name: "Record" }));
 
+		expect(screen.getByRole("radio", { name: "Destination PKR (PKR)" })).toHaveAttribute(
+			"aria-checked",
+			"true"
+		);
 		await waitFor(() => expect(mocks.createTransaction).toHaveBeenCalledTimes(1));
 		expect(mocks.createTransaction).toHaveBeenCalledWith(
 			"user-1",
@@ -280,11 +284,19 @@ describe("TransactionDrawer icon grid pickers", () => {
 		const pickerScrollers = Array.from(
 			container.querySelectorAll("[data-slot='icon-grid-picker-scroll']")
 		);
+		const firstPickerScroller = pickerScrollers[0];
 
 		expect(formBody).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
 		expect(footer).toHaveClass("shrink-0");
 		expect(recordButton).toHaveAttribute("form", "transaction-drawer-form");
 		expect(pickerScrollers.length).toBeGreaterThan(0);
-		expect(pickerScrollers[0]).toHaveClass("max-h-72", "sm:max-h-80");
+		if (!firstPickerScroller) throw new Error("Expected at least one icon picker scroller");
+		expect(firstPickerScroller).toHaveAttribute("data-orientation", "horizontal");
+		expect(firstPickerScroller).toHaveClass("no-scrollbar", "overflow-x-auto", "overflow-y-hidden");
+		expect(firstPickerScroller).not.toHaveClass("max-h-72", "sm:max-h-80", "overflow-y-auto");
+		expect(firstPickerScroller.querySelector("[role='radiogroup']")).toHaveClass(
+			"flex",
+			"flex-nowrap"
+		);
 	});
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,18 +23,15 @@ export interface IconGridPickerProps {
 	onChange: (id: string) => void;
 	label?: string;
 	emptyMessage?: string;
-	columns?: number;
 	className?: string;
 	id?: string;
 	searchPlaceholder?: string;
 	searchThreshold?: number;
 	disabled?: boolean;
-	maxHeightClassName?: string;
 	"aria-invalid"?: boolean;
 }
 
 const DEFAULT_SEARCH_THRESHOLD = 12;
-const DEFAULT_MAX_HEIGHT_CLASS = "max-h-72 sm:max-h-80";
 
 function getItemLabel(item: IconGridPickerItem): string {
 	return item.badge ? `${item.title} (${item.badge})` : item.title;
@@ -55,13 +52,11 @@ export function IconGridPicker({
 	onChange,
 	label,
 	emptyMessage = "No items available.",
-	columns,
 	className,
 	id,
 	searchPlaceholder,
 	searchThreshold = DEFAULT_SEARCH_THRESHOLD,
 	disabled = false,
-	maxHeightClassName = DEFAULT_MAX_HEIGHT_CLASS,
 	"aria-invalid": ariaInvalid,
 }: IconGridPickerProps) {
 	const generatedId = useId();
@@ -69,7 +64,10 @@ export function IconGridPicker({
 	const labelId = `${pickerId}-label`;
 	const searchId = `${pickerId}-search`;
 	const [query, setQuery] = useState("");
+	const scrollerRef = useRef<HTMLDivElement | null>(null);
 	const radioRefs = useRef<Array<HTMLButtonElement | null>>([]);
+	const scrollResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const isUserScrollingRef = useRef(false);
 	const haptics = useHaptics();
 	const shouldShowSearch = items.length > searchThreshold;
 	const visibleItems = useMemo(
@@ -78,9 +76,32 @@ export function IconGridPicker({
 	);
 	const selectedVisibleIndex = visibleItems.findIndex((item) => item.id === value);
 	const firstFocusableIndex = selectedVisibleIndex >= 0 ? selectedVisibleIndex : 0;
-	const gridStyle = columns
-		? ({ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` } as const)
-		: undefined;
+
+	useEffect(() => {
+		radioRefs.current.length = visibleItems.length;
+	}, [visibleItems.length]);
+
+	useEffect(() => {
+		if (selectedVisibleIndex < 0 || isUserScrollingRef.current) return;
+
+		const scroller = scrollerRef.current;
+		const selectedRadio = radioRefs.current[selectedVisibleIndex];
+		if (!scroller || !selectedRadio || scroller.scrollWidth <= scroller.clientWidth) return;
+
+		selectedRadio.scrollIntoView({
+			block: "nearest",
+			inline: "nearest",
+		});
+	}, [selectedVisibleIndex, value]);
+
+	useEffect(
+		() => () => {
+			if (scrollResetTimerRef.current) {
+				clearTimeout(scrollResetTimerRef.current);
+			}
+		},
+		[]
+	);
 
 	function chooseItem(idToSelect: string) {
 		if (disabled) return;
@@ -120,6 +141,16 @@ export function IconGridPicker({
 		chooseItem(nextItem.id);
 	}
 
+	function handleScroll() {
+		isUserScrollingRef.current = true;
+		if (scrollResetTimerRef.current) {
+			clearTimeout(scrollResetTimerRef.current);
+		}
+		scrollResetTimerRef.current = setTimeout(() => {
+			isUserScrollingRef.current = false;
+		}, 150);
+	}
+
 	return (
 		<div className={cn("space-y-2", className)}>
 			{label && (
@@ -150,11 +181,13 @@ export function IconGridPicker({
 			)}
 
 			<div
+				ref={scrollerRef}
 				data-slot="icon-grid-picker-scroll"
+				data-orientation="horizontal"
 				className={cn(
-					"overflow-x-hidden [overflow-y:auto] overscroll-contain rounded-2xl border border-border/60 bg-background/45 p-2 [-webkit-overflow-scrolling:touch]",
-					maxHeightClassName
-				)}>
+					"no-scrollbar overflow-x-auto overflow-y-hidden overscroll-x-contain rounded-2xl border border-border/60 bg-background/45 p-2 [-webkit-overflow-scrolling:touch]"
+				)}
+				onScroll={handleScroll}>
 				{items.length === 0 ? (
 					<p className="px-3 py-4 text-sm text-muted-foreground">{emptyMessage}</p>
 				) : visibleItems.length === 0 ? (
@@ -165,11 +198,7 @@ export function IconGridPicker({
 						aria-labelledby={label ? labelId : undefined}
 						aria-label={label ? undefined : "Choose an item"}
 						aria-invalid={ariaInvalid ? true : undefined}
-						className={cn(
-							"grid gap-2",
-							columns ? undefined : "grid-cols-4 sm:grid-cols-5 md:grid-cols-6"
-						)}
-						style={gridStyle}>
+						className="flex w-max min-w-full flex-nowrap gap-2">
 						{visibleItems.map((item, index) => {
 							const selected = item.id === value;
 							const itemLabel = getItemLabel(item);
@@ -191,7 +220,7 @@ export function IconGridPicker({
 									onClick={() => chooseItem(item.id)}
 									onKeyDown={(event) => handleKeyDown(event, index)}
 									className={cn(
-										"group flex min-h-24 flex-col items-center rounded-2xl border px-1.5 py-2 text-center transition-[background-color,border-color,box-shadow,transform] duration-[var(--dur-fast)] ease-[var(--ease-spring)] outline-none focus-visible:ring-3 focus-visible:ring-ring/35 disabled:pointer-events-none disabled:opacity-45",
+										"group flex min-h-20 w-20 flex-none flex-col items-center rounded-2xl border px-1.5 py-2 text-center transition-[background-color,border-color,box-shadow,transform] duration-[var(--dur-fast)] ease-[var(--ease-spring)] outline-none focus-visible:ring-3 focus-visible:ring-ring/35 disabled:pointer-events-none disabled:opacity-45",
 										selected
 											? "border-primary bg-primary/10 shadow-sm ring-2 ring-primary/35"
 											: "border-transparent hover:border-border hover:bg-muted/45",
@@ -201,7 +230,7 @@ export function IconGridPicker({
 									<span
 										aria-hidden="true"
 										className={cn(
-											"mb-1.5 flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-2xl ring-1 transition-[background-color,color,box-shadow,transform] duration-[var(--dur-fast)] ease-[var(--ease-spring)] group-active:scale-95",
+											"mb-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl ring-1 transition-[background-color,color,box-shadow,transform] duration-[var(--dur-fast)] ease-[var(--ease-spring)] group-active:scale-95",
 											selected
 												? "bg-primary text-primary-foreground shadow-sm ring-primary/45"
 												: "bg-muted/70 ring-border/70"
@@ -213,11 +242,11 @@ export function IconGridPicker({
 										}>
 										{item.icon}
 									</span>
-									<span className="line-clamp-2 min-h-8 text-[11px] leading-4 font-medium text-foreground">
+									<span className="line-clamp-2 min-h-7 text-[10px] leading-[0.875rem] font-medium text-foreground">
 										{item.title}
 									</span>
 									{item.badge && (
-										<span className="mt-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-3 font-semibold tracking-wide text-muted-foreground uppercase">
+										<span className="mt-0.5 max-w-full truncate rounded-full bg-muted px-1.5 py-0.5 text-[9px] leading-3 font-semibold tracking-wide text-muted-foreground uppercase">
 											{item.badge}
 										</span>
 									)}
