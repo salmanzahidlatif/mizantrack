@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { TransactionFilters } from "@/components/transactions/TransactionFilters";
 import { TransactionList } from "@/components/transactions/TransactionList";
 import { TransactionMonthStrip } from "@/components/transactions/TransactionMonthStrip";
-import { useActiveAccounts } from "@/hooks/useAccounts";
+import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
@@ -22,7 +22,7 @@ export function TransactionsPageClient({
 	userId: providedUserId,
 }: TransactionsPageClientProps = {}) {
 	const userId = useRequiredUserId(providedUserId);
-	const accounts = useActiveAccounts(userId);
+	const accounts = useAccounts(userId, { showArchived: true });
 	const config = useDbConfig(userId);
 
 	const {
@@ -97,7 +97,7 @@ export function TransactionsPageClient({
 				}}
 			/>
 
-			<TransactionFilters accounts={currencyAccounts} userId={userId} />
+			<TransactionFilters accounts={accountList} userId={userId} />
 
 			<TransactionList
 				transactions={transactions}

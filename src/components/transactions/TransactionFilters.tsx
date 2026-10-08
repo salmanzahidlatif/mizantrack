@@ -4,6 +4,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { ArchivedAccountIndicator } from "@/components/transactions/TransactionRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -211,7 +212,8 @@ export function TransactionFilters({ accounts, userId: explicitUserId }: Transac
 						</SelectItem>
 						{accountOptions.map((a) => (
 							<SelectItem key={a.id} value={a.id} className="text-xs">
-								{a.title}
+								<span className="min-w-0 truncate">{a.title}</span>
+								{a.isArchived && <ArchivedAccountIndicator label={`${a.title} is archived`} />}
 							</SelectItem>
 						))}
 					</SelectContent>

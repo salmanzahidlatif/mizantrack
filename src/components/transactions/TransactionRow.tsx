@@ -36,6 +36,29 @@ function formatAccountLabel(account: Account | undefined, showCurrency: boolean)
 	return showCurrency && account?.currency ? `${title} (${account.currency})` : title;
 }
 
+function getArchivedAccountDescription(account: Account | undefined): string | null {
+	return account?.isArchived ? `${account.title} is archived` : null;
+}
+
+function getArchivedDescription(account: Account | undefined, toAccount: Account | undefined) {
+	const descriptions = [
+		getArchivedAccountDescription(account),
+		getArchivedAccountDescription(toAccount),
+	].filter((description): description is string => Boolean(description));
+
+	if (descriptions.length === 0) return null;
+	return descriptions.join("; ");
+}
+
+export function ArchivedAccountIndicator({ label = "Archived account" }: { label?: string }) {
+	return (
+		<span className="shrink-0 rounded-full border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] leading-3 font-medium text-muted-foreground">
+			<span aria-hidden="true">Archived</span>
+			<span className="sr-only">{label}</span>
+		</span>
+	);
+}
+
 export function TransactionRow({ transaction, accounts, categories }: TransactionRowProps) {
 	const openEditTransaction = useUIStore((s) => s.openEditTransaction);
 	const haptics = useHaptics();
@@ -65,6 +88,7 @@ export function TransactionRow({ transaction, accounts, categories }: Transactio
 					isCrossCurrencyTransfer
 				)}`
 			: formatAccountLabel(account, false);
+	const archivedDescription = getArchivedDescription(account, toAccount);
 	const categoryCurrency = category?.currency ? getCurrencyByCode(category.currency) : undefined;
 	const signedAmount = transaction.type === "Expense" ? -transaction.amount : transaction.amount;
 
@@ -94,6 +118,7 @@ export function TransactionRow({ transaction, accounts, categories }: Transactio
 				<p className="truncate text-[15px] leading-5 font-semibold tracking-tight">{label}</p>
 				<div className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground">
 					<span className="truncate">{accountLabel}</span>
+					{archivedDescription && <ArchivedAccountIndicator label={archivedDescription} />}
 					{category && (
 						<>
 							<span className="shrink-0 text-muted-foreground/60">·</span>

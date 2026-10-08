@@ -1,10 +1,14 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { TransactionRow } from "@/components/transactions/TransactionRow";
 
 import type { Account, Transaction } from "@/types";
+
+afterEach(() => {
+	cleanup();
+});
 
 describe("transaction currency display", () => {
 	it("renders the AED Dirham glyph before the numerals in DOM order", () => {
@@ -77,5 +81,109 @@ describe("transaction currency display", () => {
 		expect(screen.getByText("Imported legacy income")).toBeInTheDocument();
 		expect(screen.getByText("Unknown account")).toBeInTheDocument();
 		expect(screen.getByText("XXX 50,000.00")).toBeInTheDocument();
+	});
+
+	it("resolves archived account labels and currencies instead of falling back to unknowns", () => {
+		const accounts: Account[] = [
+			{
+				id: "archived-pkr-wallet",
+				userId: "transaction-currency-display-user",
+				title: "Archived PKR Wallet",
+				openingBalance: 0,
+				currency: "PKR",
+				isArchived: true,
+				updatedAt: Date.now(),
+			},
+		];
+		const transaction: Transaction = {
+			id: "archived-account-transaction",
+			userId: "transaction-currency-display-user",
+			type: "Expense",
+			date: Date.now(),
+			amount: 4000,
+			accountId: "archived-pkr-wallet",
+			description: "Archived account spending",
+			updatedAt: Date.now(),
+		};
+
+		render(<TransactionRow transaction={transaction} accounts={accounts} categories={[]} />);
+
+		expect(screen.getByText("Archived PKR Wallet")).toBeInTheDocument();
+		expect(screen.queryByText("Unknown account")).not.toBeInTheDocument();
+		expect(screen.getByText("₨ -4,000.00")).toBeInTheDocument();
+		expect(screen.queryByText("XXX -4,000.00")).not.toBeInTheDocument();
+		expect(screen.getByText("Archived")).toBeInTheDocument();
+		expect(screen.getByText("Archived PKR Wallet is archived")).toHaveClass("sr-only");
+	});
+
+	it("does not show the archived indicator for active accounts", () => {
+		const accounts: Account[] = [
+			{
+				id: "active-pkr-wallet",
+				userId: "transaction-currency-display-user",
+				title: "Active PKR Wallet",
+				openingBalance: 0,
+				currency: "PKR",
+				isArchived: false,
+				updatedAt: Date.now(),
+			},
+		];
+		const transaction: Transaction = {
+			id: "active-account-transaction",
+			userId: "transaction-currency-display-user",
+			type: "Income",
+			date: Date.now(),
+			amount: 4000,
+			accountId: "active-pkr-wallet",
+			description: "Active account income",
+			updatedAt: Date.now(),
+		};
+
+		render(<TransactionRow transaction={transaction} accounts={accounts} categories={[]} />);
+
+		expect(screen.getByText("Active PKR Wallet")).toBeInTheDocument();
+		expect(screen.queryByText("Archived")).not.toBeInTheDocument();
+	});
+
+	it("resolves transfer account titles when one leg is archived", () => {
+		const accounts: Account[] = [
+			{
+				id: "archived-transfer-source",
+				userId: "transaction-currency-display-user",
+				title: "Archived Transfer Source",
+				openingBalance: 0,
+				currency: "PKR",
+				isArchived: true,
+				updatedAt: Date.now(),
+			},
+			{
+				id: "active-transfer-destination",
+				userId: "transaction-currency-display-user",
+				title: "Active Transfer Destination",
+				openingBalance: 0,
+				currency: "PKR",
+				isArchived: false,
+				updatedAt: Date.now(),
+			},
+		];
+		const transaction: Transaction = {
+			id: "archived-transfer",
+			userId: "transaction-currency-display-user",
+			type: "Transfer",
+			date: Date.now(),
+			amount: 4000,
+			accountId: "archived-transfer-source",
+			toAccountId: "active-transfer-destination",
+			description: "Move from archived account",
+			updatedAt: Date.now(),
+		};
+
+		render(<TransactionRow transaction={transaction} accounts={accounts} categories={[]} />);
+
+		expect(
+			screen.getByText("Archived Transfer Source → Active Transfer Destination")
+		).toBeInTheDocument();
+		expect(screen.queryByText("Unknown account")).not.toBeInTheDocument();
+		expect(screen.getByText("Archived")).toBeInTheDocument();
 	});
 });
