@@ -4,7 +4,6 @@ import { Check, Copy, ExternalLink } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Sheet,
 	SheetContent,
@@ -60,7 +59,7 @@ export function GoogleSheetsSetupGuide({ open, onOpenChange }: GoogleSheetsSetup
 					</SheetDescription>
 				</SheetHeader>
 
-				<ScrollArea className="w-full min-w-0 flex-1 px-6">
+				<div className="min-h-0 w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-6 [-webkit-overflow-scrolling:touch]">
 					<section
 						aria-labelledby="google-sheets-setup-heading"
 						className="min-w-0 space-y-4 py-3 pb-10 text-sm leading-relaxed [overflow-wrap:anywhere] break-words text-muted-foreground">
@@ -155,7 +154,7 @@ export function GoogleSheetsSetupGuide({ open, onOpenChange }: GoogleSheetsSetup
 							</li>
 						</ol>
 					</section>
-				</ScrollArea>
+				</div>
 			</SheetContent>
 		</Sheet>
 	);
