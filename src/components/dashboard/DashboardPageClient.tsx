@@ -26,8 +26,10 @@ import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
 import { SkeletonChart } from "@/components/shared/SkeletonChart";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { useAccountsAnalytics } from "@/hooks/useAccountsAnalytics";
 import { useAnalyticsMonthSummaries } from "@/hooks/useAnalyticsMonthSummaries";
+import { useBudgets, type BudgetProgressRow } from "@/hooks/useBudgets";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePeriodAnalytics } from "@/hooks/usePeriodAnalytics";
@@ -60,6 +62,30 @@ const CategoryBreakdownChart = dynamic(
 	}
 );
 
+const CashFlowTrendChart = dynamic(
+	() => import("@/components/charts/DashboardDesktopCharts").then((mod) => mod.CashFlowTrendChart),
+	{
+		loading: () => <SkeletonChart height={320} />,
+	}
+);
+
+const SpendingTrendChart = dynamic(
+	() => import("@/components/charts/DashboardDesktopCharts").then((mod) => mod.SpendingTrendChart),
+	{
+		loading: () => <SkeletonChart height={260} />,
+	}
+);
+
+const AccountDistributionChart = dynamic(
+	() =>
+		import("@/components/charts/DashboardDesktopCharts").then(
+			(mod) => mod.AccountDistributionChart
+		),
+	{
+		loading: () => <SkeletonChart height={260} />,
+	}
+);
+
 interface DashboardPageClientProps {
 	userId?: string;
 }
@@ -84,6 +110,38 @@ interface SummarySplitCardProps {
 interface WhatYouHaveCardProps {
 	analytics?: AccountsAnalytics;
 	onAddAccount: () => void;
+}
+
+function useDesktopDashboardEnabled() {
+	const [enabled, setEnabled] = useState(() => {
+		if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+		return window.matchMedia("(min-width: 768px)").matches;
+	});
+
+	useEffect(() => {
+		if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+
+		const query = window.matchMedia("(min-width: 768px)");
+		const handleChange = (event: MediaQueryListEvent) => {
+			setEnabled(event.matches);
+		};
+		setEnabled(query.matches);
+		if (typeof query.addEventListener === "function") {
+			query.addEventListener("change", handleChange);
+		} else {
+			query.addListener(handleChange);
+		}
+
+		return () => {
+			if (typeof query.removeEventListener === "function") {
+				query.removeEventListener("change", handleChange);
+			} else {
+				query.removeListener(handleChange);
+			}
+		};
+	}, []);
+
+	return enabled;
 }
 
 function sortDashboardAccounts(accounts: AccountsAnalytics["accounts"]) {
@@ -441,6 +499,195 @@ function SummarySplitCard({ analytics, currency, periodLabel }: SummarySplitCard
 	);
 }
 
+function DesktopMetricStrip({
+	analytics,
+	accountAnalytics,
+	currency,
+}: {
+	analytics?: PeriodAnalytics;
+	accountAnalytics?: AccountsAnalytics;
+	currency: string;
+}) {
+	if (!analytics || !accountAnalytics) {
+		return (
+			<section className="grid grid-cols-4 gap-3" aria-busy="true">
+				{Array.from({ length: 4 }).map((_, index) => (
+					<SkeletonCard key={index} className="h-28" />
+				))}
+			</section>
+		);
+	}
+
+	const savingsRate = analytics.income > 0 ? (analytics.net / analytics.income) * 100 : 0;
+	const metrics = [
+		{
+			label: "Net cash flow",
+			value: (
+				<CurrencyAmount
+					amount={analytics.net}
+					currency={currency}
+					colorized
+					showNegativeSign
+					className="text-xl leading-7 tabular-nums"
+				/>
+			),
+			helper: analytics.period.label,
+		},
+		{
+			label: "Savings rate",
+			value: (
+				<span
+					className={cn(
+						"text-xl leading-7 font-semibold tabular-nums",
+						savingsRate >= 0
+							? "text-emerald-600 dark:text-emerald-400"
+							: "text-red-600 dark:text-red-400"
+					)}>
+					{Math.round(savingsRate)}%
+				</span>
+			),
+			helper: "Net ÷ income",
+		},
+		{
+			label: "Period movement",
+			value: (
+				<CurrencyAmount
+					amount={accountAnalytics.netFlow}
+					currency={accountAnalytics.currency}
+					colorized
+					showNegativeSign
+					className="text-xl leading-7 tabular-nums"
+				/>
+			),
+			helper: "Account inflow less outflow",
+		},
+		{
+			label: "Transactions",
+			value: (
+				<span className="text-xl leading-7 font-semibold tabular-nums">
+					{analytics.transactionCount}
+				</span>
+			),
+			helper: "Income and expenses",
+		},
+	];
+
+	return (
+		<section className="grid grid-cols-4 gap-3" aria-label="Desktop financial overview">
+			{metrics.map((metric) => (
+				<div key={metric.label} className={cn(CARD_SURFACE, "min-h-28 p-4")}>
+					<p className="text-xs font-medium text-muted-foreground">{metric.label}</p>
+					<div className="mt-2">{metric.value}</div>
+					<p className="mt-2 text-[11px] leading-4 text-muted-foreground">{metric.helper}</p>
+				</div>
+			))}
+		</section>
+	);
+}
+
+function BudgetProgressPanel({
+	rows,
+	isLoading,
+	currency,
+	periodLabel,
+}: {
+	rows: BudgetProgressRow[];
+	isLoading: boolean;
+	currency: string;
+	periodLabel: string;
+}) {
+	if (isLoading) {
+		return (
+			<section className={cn(CARD_SURFACE, "p-5")} aria-busy="true">
+				<div className="shimmer mb-4 h-4 w-32 rounded-full bg-muted/70" />
+				<div className="space-y-4">
+					{Array.from({ length: 3 }).map((_, index) => (
+						<div key={index}>
+							<div className="mb-2 flex justify-between gap-4">
+								<div className="shimmer h-3 w-28 rounded-full bg-muted/70" />
+								<div className="shimmer h-3 w-20 rounded-full bg-muted/70" />
+							</div>
+							<div className="shimmer h-2 w-full rounded-full bg-muted/70" />
+						</div>
+					))}
+				</div>
+			</section>
+		);
+	}
+
+	const visibleRows = rows.slice(0, 4);
+
+	return (
+		<section
+			className={cn(CARD_SURFACE, "overflow-hidden p-5")}
+			aria-labelledby="budget-progress-title">
+			<div className="mb-4 flex items-start justify-between gap-3">
+				<div>
+					<h2 id="budget-progress-title" className="text-sm font-semibold">
+						Budget progress
+					</h2>
+					<p className="mt-1 text-xs text-muted-foreground">{periodLabel}</p>
+				</div>
+				<Button asChild variant="link" size="sm" className="h-auto px-0 text-xs font-bold">
+					<Link href="/budgets">VIEW BUDGETS</Link>
+				</Button>
+			</div>
+
+			{visibleRows.length === 0 ? (
+				<div className="flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 p-5 text-center">
+					<p className="text-sm font-semibold">No budgets for this month</p>
+					<p className="mt-2 max-w-64 text-xs leading-5 text-muted-foreground">
+						Create category budgets to compare planned spending with actual expenses.
+					</p>
+				</div>
+			) : (
+				<div className="space-y-4">
+					{visibleRows.map((row) => (
+						<div key={row.budget.id}>
+							<div className="mb-2 flex items-center justify-between gap-3">
+								<div className="min-w-0">
+									<p className="truncate text-sm font-medium">{row.title}</p>
+									<p className="text-[11px] text-muted-foreground">
+										{row.status === "over"
+											? "Over budget"
+											: row.status === "near"
+												? "Near limit"
+												: "Within budget"}
+									</p>
+								</div>
+								<div className="shrink-0 text-right text-xs">
+									<CurrencyAmount
+										amount={row.spent}
+										currency={row.currency || currency}
+										className="tabular-nums"
+									/>
+									<span className="text-muted-foreground"> / </span>
+									<CurrencyAmount
+										amount={row.budgeted}
+										currency={row.currency || currency}
+										className="tabular-nums"
+									/>
+								</div>
+							</div>
+							<Progress
+								value={row.progressPercent}
+								aria-label={`${row.title} budget progress ${Math.round(row.progressPercent)} percent`}
+								className={cn(
+									row.status === "over"
+										? "[&_[data-slot=progress-indicator]]:bg-red-500"
+										: row.status === "near"
+											? "[&_[data-slot=progress-indicator]]:bg-amber-500"
+											: "[&_[data-slot=progress-indicator]]:bg-emerald-500"
+								)}
+							/>
+						</div>
+					))}
+				</div>
+			)}
+		</section>
+	);
+}
+
 export function DashboardPageClient({ userId: providedUserId }: DashboardPageClientProps = {}) {
 	const userId = useRequiredUserId(providedUserId);
 	const config = useDbConfig(userId);
@@ -455,6 +702,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	const [intervalOpen, setIntervalOpen] = useState(false);
 	const timeZoneOffsetMinutes = useMemo(() => getLocalTimeZoneOffsetMinutes(now), [now]);
 	const canGoNext = !isCurrentDashboardMonth(selectedMonth, now);
+	const desktopDashboardEnabled = useDesktopDashboardEnabled();
 
 	const periodQuery = useMemo<PeriodAnalyticsQuery>(
 		() => ({
@@ -479,6 +727,19 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 		[interval, fiscalYearStartMonth, now, selectedMonth, timeZoneOffsetMinutes]
 	);
 	const periodAnalytics = usePeriodAnalytics(userId, periodQuery);
+	const monthlyBudgetAnalytics = usePeriodAnalytics(
+		userId,
+		desktopDashboardEnabled && interval !== "monthly"
+			? {
+					currency,
+					interval: "monthly",
+					anchorDate: selectedMonth,
+					fiscalYearStartMonth,
+					now,
+					timeZoneOffsetMinutes,
+				}
+			: undefined
+	);
 	const accountAnalytics = useAccountsAnalytics(userId, {
 		currency,
 		enabledCurrencies: config?.enabledCurrencies,
@@ -492,7 +753,39 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 		},
 		timeZoneOffsetMinutes,
 	});
+	const trendSummaries = useAnalyticsMonthSummaries(
+		userId,
+		desktopDashboardEnabled
+			? {
+					currency,
+					months: 8,
+					anchorDate: selectedMonth,
+					mode: "ending",
+					timeZoneOffsetMinutes,
+				}
+			: undefined
+	);
 	const periodLabel = periodAnalytics?.period.label ?? resolvedPeriod.label;
+	const budgetPeriodKey = useMemo(
+		() => getMonthKey(selectedMonth, { timeZoneOffsetMinutes }),
+		[selectedMonth, timeZoneOffsetMinutes]
+	);
+	const budgetMonthLabel = useMemo(
+		() =>
+			resolveAnalyticsPeriod({
+				interval: "monthly",
+				anchorDate: selectedMonth,
+				now,
+				timeZoneOffsetMinutes,
+			}).label,
+		[now, selectedMonth, timeZoneOffsetMinutes]
+	);
+	const budgetProgress = useBudgets(
+		userId,
+		desktopDashboardEnabled ? budgetPeriodKey : "",
+		currency,
+		interval === "monthly" ? periodAnalytics : monthlyBudgetAnalytics
+	);
 
 	const changeMonth = useCallback(
 		(delta: number) => {
@@ -552,32 +845,102 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 				ref={swipeRef}
 				data-swipe-navigation-ignore
 				aria-label="Swipe dashboard month summary"
-				className="touch-pan-y space-y-5"
+				data-testid="dashboard-responsive-grid"
+				className="touch-pan-y space-y-5 md:grid md:grid-cols-12 md:items-start md:gap-5 md:space-y-0 xl:gap-6"
 				style={{ touchAction: "pan-y" }}>
-				<WhatYouHaveCard analytics={accountAnalytics} onAddAccount={handleAddAccount} />
+				<div className="md:col-span-5 xl:col-span-4">
+					<WhatYouHaveCard analytics={accountAnalytics} onAddAccount={handleAddAccount} />
+				</div>
 
-				<SummarySplitCard
-					analytics={periodAnalytics}
-					currency={currency}
-					periodLabel={periodLabel}
-				/>
+				<div className="md:col-span-7 xl:col-span-4">
+					<SummarySplitCard
+						analytics={periodAnalytics}
+						currency={currency}
+						periodLabel={periodLabel}
+					/>
+				</div>
 
-				<CategoryBreakdownChart
-					userId={userId}
-					breakdown={periodAnalytics?.expenseBreakdown}
-					total={periodAnalytics?.expense}
-					currency={currency}
-					isLoading={periodAnalytics === undefined}
-					title={interval === "monthly" ? "Your Monthly Expense" : "Your Expense"}
-					periodLabel={periodLabel}
-					emptyTitle="No expenses in this period"
-					emptyDescription="Expense categories will appear here when you record spending."
-					action={
-						<Button asChild variant="link" size="sm" className="h-auto px-0 text-xs font-bold">
-							<Link href="/reports">VIEW MORE</Link>
-						</Button>
-					}
-				/>
+				<div className="hidden xl:col-span-4 xl:block">
+					{desktopDashboardEnabled ? (
+						<AccountDistributionChart
+							analytics={accountAnalytics}
+							isLoading={accountAnalytics === undefined}
+						/>
+					) : null}
+				</div>
+
+				<div className="hidden md:col-span-12 md:block">
+					{desktopDashboardEnabled ? (
+						<DesktopMetricStrip
+							analytics={periodAnalytics}
+							accountAnalytics={accountAnalytics}
+							currency={currency}
+						/>
+					) : null}
+				</div>
+
+				<div className="hidden md:col-span-12 md:block lg:col-span-7">
+					{desktopDashboardEnabled ? (
+						<CashFlowTrendChart
+							summaries={trendSummaries}
+							currency={currency}
+							isLoading={trendSummaries === undefined}
+						/>
+					) : (
+						<SkeletonChart height={320} />
+					)}
+				</div>
+
+				<div className="hidden md:col-span-6 md:block lg:col-span-5 xl:hidden">
+					{desktopDashboardEnabled ? (
+						<AccountDistributionChart
+							analytics={accountAnalytics}
+							isLoading={accountAnalytics === undefined}
+						/>
+					) : null}
+				</div>
+
+				<div className="hidden md:col-span-6 md:block lg:col-span-5">
+					{desktopDashboardEnabled ? (
+						<SpendingTrendChart
+							summaries={trendSummaries}
+							currency={currency}
+							isLoading={trendSummaries === undefined}
+						/>
+					) : (
+						<SkeletonChart height={260} />
+					)}
+				</div>
+
+				<div className="md:col-span-6 lg:col-span-5">
+					<CategoryBreakdownChart
+						userId={userId}
+						breakdown={periodAnalytics?.expenseBreakdown}
+						total={periodAnalytics?.expense}
+						currency={currency}
+						isLoading={periodAnalytics === undefined}
+						title={interval === "monthly" ? "Your Monthly Expense" : "Your Expense"}
+						periodLabel={periodLabel}
+						emptyTitle="No expenses in this period"
+						emptyDescription="Expense categories will appear here when you record spending."
+						action={
+							<Button asChild variant="link" size="sm" className="h-auto px-0 text-xs font-bold">
+								<Link href="/reports">VIEW MORE</Link>
+							</Button>
+						}
+					/>
+				</div>
+
+				<div className="hidden md:col-span-6 md:block lg:col-span-7">
+					{desktopDashboardEnabled ? (
+						<BudgetProgressPanel
+							rows={budgetProgress?.rows ?? []}
+							isLoading={budgetProgress === undefined}
+							currency={currency}
+							periodLabel={budgetMonthLabel}
+						/>
+					) : null}
+				</div>
 			</div>
 		</div>
 	);

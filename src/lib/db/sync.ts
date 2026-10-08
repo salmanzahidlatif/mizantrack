@@ -4,10 +4,13 @@ import {
 	getDocs,
 	getDoc,
 	getCountFromServer,
+	limit as firestoreLimit,
 	orderBy,
 	query,
 	serverTimestamp,
 	setDoc,
+	startAfter,
+	type QueryDocumentSnapshot,
 	type Firestore,
 	writeBatch,
 	where,
@@ -74,7 +77,15 @@ type NonClearingOptionalSyncFieldsByTable = {
 
 export const FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT = 20_000;
 export const FIRESTORE_FREE_TIER_DAILY_READ_LIMIT = 50_000;
+/**
+ * Guards against a sync hanging forever when Firebase is unreachable.
+ */
 export const FIRESTORE_SYNC_TIMEOUT_MS = 15_000;
+export const FIRESTORE_BULK_SYNC_TIMEOUT_MS = 120_000;
+// 500 keeps each mobile pull bounded while matching Firestore's write-batch ceiling.
+// Existing push chunks are 499 writes, so serverTimestamp ties from one push batch
+// stay in one pull page instead of being split across durable cursor updates.
+const FIRESTORE_PULL_PAGE_SIZE = 500;
 export const CORE_SYNC_TABLES = [
 	"accounts",
 	"categories",
@@ -182,6 +193,8 @@ export type SyncProgressCallback = (progress: {
 	totalPushed: number;
 	totalPulled: number;
 }) => void;
+
+type SyncCollectionProgressCallback = (pushed: number, pulled: number) => void;
 
 const OPTIONAL_SYNC_FIELDS = {
 	accounts: ["color", "icon", "accountType", "deletedAt"],
@@ -425,24 +438,26 @@ export async function syncAll(
 	let stoppedForQuota = false;
 
 	for (const table of CORE_SYNC_TABLES) {
+		let tablePushed = 0;
+		let tablePulled = 0;
+		const emitProgress = (pushed: number, pulled: number) => {
+			totalPushed += pushed - tablePushed;
+			totalPulled += pulled - tablePulled;
+			tablePushed = pushed;
+			tablePulled = pulled;
+			onProgress?.({ table, pushed, pulled, totalPushed, totalPulled });
+		};
+
 		try {
-			const result = await syncCollection(userId, table, firestore);
+			const result = await syncCollection(userId, table, firestore, emitProgress);
 			tables[table] = result;
 			completedScopes++;
-			totalPushed += result.pushed;
-			totalPulled += result.pulled;
 			if (result.pulled > 0) pulledCoreChanges = true;
-			onProgress?.({ table, ...result, totalPushed, totalPulled });
+			emitProgress(result.pushed, result.pulled);
 		} catch (error) {
 			const phase = error instanceof SyncPhaseError ? error.phase : "pull";
 			errors.push(normalizeSyncError(table, phase, error));
-			onProgress?.({
-				table,
-				pushed: 0,
-				pulled: 0,
-				totalPushed,
-				totalPulled,
-			});
+			onProgress?.({ table, pushed: tablePushed, pulled: tablePulled, totalPushed, totalPulled });
 			if (isQuotaError(error) || errors[errors.length - 1]?.quotaExceeded) {
 				stoppedForQuota = true;
 				break;
@@ -515,7 +530,8 @@ class SyncPhaseError extends Error {
 async function syncCollection(
 	userId: string,
 	tableName: SyncableTable,
-	firestore: Firestore
+	firestore: Firestore,
+	onProgress?: SyncCollectionProgressCallback
 ): Promise<SyncTableResult> {
 	const table = getLocalSyncTable(tableName);
 	let pushed = 0;
@@ -526,6 +542,7 @@ async function syncCollection(
 		const migration = await migrateTableToServerCursor(userId, tableName, firestore);
 		migrated = migration.migrated;
 		pushed += migration.pushed;
+		onProgress?.(pushed, pulled);
 	} catch (error) {
 		throw new SyncPhaseError("migration", error);
 	}
@@ -538,14 +555,17 @@ async function syncCollection(
 			.toArray();
 
 		pushed += await pushLocalRecords(userId, tableName, firestore, localChanged);
+		onProgress?.(pushed, pulled);
 	} catch (error) {
 		throw new SyncPhaseError("push", error);
 	}
 
 	let cursor: number;
 	try {
-		const result = await pullRemoteRecords(userId, tableName, firestore);
-		pulled += result.pulled;
+		const result = await pullRemoteRecords(userId, tableName, firestore, (pagePulled) => {
+			pulled += pagePulled;
+			onProgress?.(pushed, pulled);
+		});
 		cursor = result.cursor;
 	} catch (error) {
 		throw new SyncPhaseError("pull", error);
@@ -579,49 +599,91 @@ async function pushLocalRecords(
 async function pullRemoteRecords(
 	userId: string,
 	tableName: SyncableTable,
-	firestore: Firestore
+	firestore: Firestore,
+	onPagePulled?: (pulled: number) => void
 ): Promise<{ pulled: number; cursor: number }> {
 	const table = getLocalSyncTable(tableName);
 	const cursor = await getTableSyncCursor(tableName);
-	const remoteSnap = await withFirestoreTimeout(
-		getDocs(
-			query(
-				collection(firestore, `users/${userId}/${tableName}`),
-				where("syncedAt", ">", cursor),
-				orderBy("syncedAt")
-			)
-		),
-		`pulling ${tableName}`
-	);
 
 	let pulled = 0;
-	let maxSyncedAt = cursor;
+	let persistedCursor = cursor;
+	let durableCursor = cursor;
+	let trailingSyncedAt: number | null = cursor > 0 ? cursor : null;
+	let lastDocSnap: QueryDocumentSnapshot | null = null;
 	let invalidatedAnalytics = false;
-	for (const docSnap of remoteSnap.docs) {
-		const rawRemote = docSnap.data() as SyncableRecord & { syncedAt?: unknown };
-		const remoteSyncedAt = getSyncedAtMillis(rawRemote.syncedAt);
-		if (remoteSyncedAt === null) continue;
-		maxSyncedAt = Math.max(maxSyncedAt, remoteSyncedAt);
 
-		const remote = fromFirestoreSyncRecord(tableName, rawRemote, docSnap.id);
-		const local = (await table.get(remote.id)) as SyncableRecord | undefined;
-		if (!local || remote.updatedAt > local.updatedAt) {
-			if (!invalidatedAnalytics) {
-				await invalidateAnalyticsCache(userId);
-				invalidatedAnalytics = true;
+	while (true) {
+		const baseCollection = collection(firestore, `users/${userId}/${tableName}`);
+		const remoteQuery = lastDocSnap
+			? query(
+					baseCollection,
+					where("syncedAt", ">", cursor),
+					orderBy("syncedAt"),
+					startAfter(lastDocSnap),
+					firestoreLimit(FIRESTORE_PULL_PAGE_SIZE)
+				)
+			: query(
+					baseCollection,
+					where("syncedAt", ">", cursor),
+					orderBy("syncedAt"),
+					firestoreLimit(FIRESTORE_PULL_PAGE_SIZE)
+				);
+		const remoteSnap = await withFirestoreTimeout(
+			getDocs(remoteQuery),
+			`pulling ${tableName} page`
+		);
+
+		if (remoteSnap.docs.length === 0) {
+			if (trailingSyncedAt !== null && trailingSyncedAt > persistedCursor) {
+				await setTableSyncCursor(tableName, trailingSyncedAt);
+				persistedCursor = trailingSyncedAt;
 			}
-			await putLocalRecord(tableName, remote);
-			pulled++;
-		} else if (local.updatedAt > remote.updatedAt && local.pendingSync !== true) {
-			await markLocalRecordPending(tableName, local.id);
+			break;
 		}
+
+		let pagePulled = 0;
+		for (const docSnap of remoteSnap.docs) {
+			const rawRemote = docSnap.data() as SyncableRecord & { syncedAt?: unknown };
+			const remoteSyncedAt = getSyncedAtMillis(rawRemote.syncedAt);
+			if (remoteSyncedAt === null) continue;
+
+			if (trailingSyncedAt === null) {
+				trailingSyncedAt = remoteSyncedAt;
+			} else if (remoteSyncedAt > trailingSyncedAt) {
+				durableCursor = Math.max(durableCursor, trailingSyncedAt);
+				trailingSyncedAt = remoteSyncedAt;
+			}
+
+			const remote = fromFirestoreSyncRecord(tableName, rawRemote, docSnap.id);
+			const local = (await table.get(remote.id)) as SyncableRecord | undefined;
+			if (!local || remote.updatedAt > local.updatedAt) {
+				if (!invalidatedAnalytics) {
+					await invalidateAnalyticsCache(userId);
+					invalidatedAnalytics = true;
+				}
+				await putLocalRecord(tableName, remote);
+				pagePulled++;
+			} else if (local.updatedAt > remote.updatedAt && local.pendingSync !== true) {
+				await markLocalRecordPending(tableName, local.id);
+			}
+		}
+
+		pulled += pagePulled;
+		lastDocSnap = remoteSnap.docs[remoteSnap.docs.length - 1] ?? null;
+
+		if (remoteSnap.docs.length < FIRESTORE_PULL_PAGE_SIZE && trailingSyncedAt !== null) {
+			durableCursor = Math.max(durableCursor, trailingSyncedAt);
+		}
+		if (durableCursor > persistedCursor) {
+			await setTableSyncCursor(tableName, durableCursor);
+			persistedCursor = durableCursor;
+		}
+		onPagePulled?.(pagePulled);
+
+		if (remoteSnap.docs.length < FIRESTORE_PULL_PAGE_SIZE) break;
 	}
 
-	if (maxSyncedAt > cursor) {
-		await setTableSyncCursor(tableName, maxSyncedAt);
-	}
-
-	return { pulled, cursor: maxSyncedAt };
+	return { pulled, cursor: persistedCursor };
 }
 
 async function migrateTableToServerCursor(
@@ -636,7 +698,8 @@ async function migrateTableToServerCursor(
 	const table = getLocalSyncTable(tableName);
 	const remoteSnap = await withFirestoreTimeout(
 		getDocs(collection(firestore, `users/${userId}/${tableName}`)),
-		`backfilling ${tableName}`
+		`backfilling ${tableName}`,
+		FIRESTORE_BULK_SYNC_TIMEOUT_MS
 	);
 	const remoteIds = new Set<string>();
 	const fullPushes: SyncableRecord[] = [];

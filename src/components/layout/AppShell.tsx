@@ -391,7 +391,9 @@ export function AppShell({ user, children }: AppShellProps) {
 					{/* Main content */}
 					<main ref={mainRef} className="pb-safe-nav flex-1 overflow-auto md:pb-0">
 						{pullToRefresh.indicator}
-						<div className="mx-auto max-w-4xl p-4" style={swipeNavigation.style}>
+						<div
+							className="mx-auto max-w-4xl p-4 md:max-w-none md:p-6 xl:max-w-[1600px] xl:p-8"
+							style={swipeNavigation.style}>
 							{isOffline && (
 								<div className="mb-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
 									You&apos;re offline. Local changes are saved on this device and will sync when

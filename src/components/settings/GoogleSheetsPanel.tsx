@@ -6,6 +6,7 @@ import { AlertCircle, CheckCircle2, ExternalLink, Loader2, RefreshCw } from "luc
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { GoogleSheetsSetupGuide } from "@/components/settings/GoogleSheetsSetupGuide";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -32,6 +33,7 @@ export function GoogleSheetsPanel({ userId }: GoogleSheetsPanelProps) {
 	const [status, setStatus] = useState<GoogleSheetsBackupStatus | null>(null);
 	const [loadingStatus, setLoadingStatus] = useState(true);
 	const [backingUp, setBackingUp] = useState(false);
+	const [guideOpen, setGuideOpen] = useState(false);
 	const [progress, setProgress] = useState<GoogleSheetsBackupProgress | null>(null);
 	const [isPending, startTransition] = useTransition();
 	const states = useLiveQuery(() => listSheetsCurrencyStates(), [], []);
@@ -116,7 +118,10 @@ export function GoogleSheetsPanel({ userId }: GoogleSheetsPanelProps) {
 						One-way backup to one spreadsheet per currency in your Google Drive.
 					</p>
 				</div>
-				<div className="flex gap-2">
+				<div className="flex flex-wrap gap-2">
+					<Button variant="outline" size="sm" onClick={() => setGuideOpen(true)}>
+						Setup Guide
+					</Button>
 					{connected && (
 						<Button variant="outline" size="sm" onClick={() => void handleDisconnect()}>
 							Disconnect
@@ -218,6 +223,7 @@ export function GoogleSheetsPanel({ userId }: GoogleSheetsPanelProps) {
 					<span className="text-sm text-muted-foreground">Connect Google Sheets first.</span>
 				)}
 			</div>
+			<GoogleSheetsSetupGuide open={guideOpen} onOpenChange={setGuideOpen} />
 		</div>
 	);
 }
