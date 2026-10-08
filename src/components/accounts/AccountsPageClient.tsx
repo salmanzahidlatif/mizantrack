@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { AccountDrawer } from "@/components/accounts/AccountDrawer";
 import { AccountList } from "@/components/accounts/AccountList";
 import { accountSortOptions, type AccountSort } from "@/components/accounts/accountSort";
+import { DuplicateAccountMergePanel } from "@/components/accounts/DuplicateAccountMergePanel";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { Button } from "@/components/ui/button";
 import {
@@ -211,6 +212,11 @@ export function AccountsPageClient({ userId: providedUserId }: AccountsPageClien
 			</div>
 
 			<AccountsSummaryCard analytics={analytics} currency={resolvedCurrency} />
+
+			<DuplicateAccountMergePanel
+				userId={userId}
+				currency={analytics?.currency ?? resolvedCurrency}
+			/>
 
 			<AccountList
 				accounts={accounts}
