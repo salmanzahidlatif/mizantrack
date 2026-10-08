@@ -8,6 +8,7 @@ import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { Button } from "@/components/ui/button";
 import { deleteBudget, type BudgetProgressRow } from "@/hooks/useBudgets";
 import { useHaptics } from "@/hooks/useHaptics";
+import { getCategoryIcon } from "@/lib/categoryIcons";
 import { CARD_SURFACE, LIST_ROW, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -88,6 +89,7 @@ function BudgetCard({
 	const haptics = useHaptics();
 	const status = STATUS_COPY[row.status];
 	const StatusIcon = status.icon;
+	const categoryIcon = getCategoryIcon({ title: row.title, icon: row.icon });
 	const remainingLabel = row.status === "over" ? Math.abs(row.remaining) : row.remaining;
 
 	async function handleDelete() {
@@ -123,7 +125,7 @@ function BudgetCard({
 					<div
 						className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-background text-xl shadow-sm"
 						style={row.color ? { color: row.color } : undefined}>
-						{row.icon ?? "🏷️"}
+						{categoryIcon}
 					</div>
 					<div className="min-w-0 space-y-1">
 						<h2 className="truncate text-base font-semibold">{row.title}</h2>

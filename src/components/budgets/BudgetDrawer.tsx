@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createBudget, updateBudget, type BudgetFormValues } from "@/hooks/useBudgets";
 import { scrollFocusedFieldIntoView } from "@/hooks/useKeyboardInset";
+import { getCategoryIcon } from "@/lib/categoryIcons";
 import { cn } from "@/lib/utils";
 
 import type { Budget, Category } from "@/types";
@@ -207,8 +208,7 @@ export function BudgetDrawer({
 								</option>
 								{categories.map((category) => (
 									<option key={category.id} value={category.id}>
-										{category.icon ? `${category.icon} ` : ""}
-										{category.title}
+										{getCategoryIcon(category)} {category.title}
 									</option>
 								))}
 							</select>

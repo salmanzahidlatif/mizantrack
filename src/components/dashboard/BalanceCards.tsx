@@ -8,6 +8,7 @@ import { SkeletonBalance } from "@/components/shared/SkeletonBalance";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
+import { getAccountIcon } from "@/lib/accountIcons";
 import { resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { CARD_SURFACE, LIST_ROW, PRESS_SCALE, TAPPABLE, staggerDelay } from "@/lib/motion";
@@ -24,7 +25,7 @@ interface BalanceCardProps {
 
 function BalanceCard({ account, balance }: BalanceCardProps) {
 	const currency = getCurrencyByCode(account.currency);
-	const icon = account.icon ?? "💼";
+	const icon = getAccountIcon(account);
 
 	return (
 		<div

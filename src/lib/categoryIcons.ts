@@ -8,8 +8,12 @@ interface CategoryIconRule {
 }
 
 const CATEGORY_ICON_RULES: CategoryIconRule[] = [
+	{ icon: "📦", keywords: ["all"] },
+	{ icon: "💵", keywords: ["allowance", "pocket money", "deposit"] },
+	{ icon: "🎉", keywords: ["bonus"] },
+	{ icon: "📈", keywords: ["profit"] },
 	{ icon: "🛒", keywords: ["grocery", "groceries", "supermarket", "market"] },
-	{ icon: "🍽️", keywords: ["food", "drink", "dining", "restaurant", "cafe", "coffee"] },
+	{ icon: "🍽️", keywords: ["food", "drink", "dining", "eating", "restaurant", "cafe", "coffee"] },
 	{ icon: "⛽", keywords: ["fuel", "petrol", "gas", "maintenance", "garage", "mechanic"] },
 	{ icon: "🚗", keywords: ["transport", "car", "taxi", "uber", "parking", "metro", "bus"] },
 	{
@@ -24,14 +28,20 @@ const CATEGORY_ICON_RULES: CategoryIconRule[] = [
 	{ icon: "✈️", keywords: ["travel", "flight", "hotel", "holiday", "vacation", "trip"] },
 	{ icon: "🎬", keywords: ["entertainment", "movie", "cinema", "games", "music", "fun"] },
 	{ icon: "💅", keywords: ["personal", "care", "salon", "beauty", "grooming"] },
-	{ icon: "💼", keywords: ["salary", "payroll", "wage", "income", "bonus"] },
-	{ icon: "💻", keywords: ["freelance", "contract", "client"] },
-	{ icon: "🏢", keywords: ["business", "office", "company"] },
+	{ icon: "💼", keywords: ["salary", "payroll", "wage", "income", "bonus", "pension"] },
+	{ icon: "💻", keywords: ["freelance", "freelancing", "contract", "client"] },
+	{ icon: "🏢", keywords: ["business", "office", "company", "commission"] },
 	{ icon: "🎁", keywords: ["gift", "gifts", "present"] },
 	{ icon: "🤲", keywords: ["charity", "zakat", "sadaqah", "donation", "masjid"] },
 	{ icon: "💰", keywords: ["saving", "savings", "deposit"] },
 	{ icon: "📈", keywords: ["investment", "investments", "stock", "stocks", "fund"] },
-	{ icon: "👪", keywords: ["family", "children", "kids", "parent"] },
+	{ icon: "👥", keywords: ["committee"] },
+	{ icon: "👪", keywords: ["family", "children", "kids", "parent", "mother", "papa", "amna"] },
+	{ icon: "🛡️", keywords: ["insurance"] },
+	{ icon: "💳", keywords: ["installment", "installments"] },
+	{ icon: "🤝", keywords: ["loan", "loans"] },
+	{ icon: "🧹", keywords: ["household"] },
+	{ icon: "💍", keywords: ["wedding"] },
 	{ icon: "🐾", keywords: ["pet", "pets", "cat", "dog"] },
 	{ icon: "📦", keywords: ["other", "others", "misc", "miscellaneous", "expense", "expenses"] },
 ];

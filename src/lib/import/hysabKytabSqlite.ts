@@ -3,6 +3,11 @@ import { v5 as uuidv5 } from "uuid";
 import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
 
+import {
+	normalizeHysabKytabColor,
+	resolveHysabKytabAccountIcon,
+	resolveHysabKytabCategoryIcon,
+} from "./hysabKytabIcons";
 import { buildHysabKytabSourceId, parseSourceId } from "./sourceId";
 
 import type { Account, Budget, Category, Transaction } from "@/types";
@@ -208,6 +213,10 @@ function text(value: SqlValue | undefined): string {
 function nullableText(value: SqlValue | undefined): string | undefined {
 	const output = text(value);
 	return output.length > 0 ? output : undefined;
+}
+
+function hasText(value: string | undefined): boolean {
+	return value !== undefined && value.trim().length > 0;
 }
 
 function numberValue(value: SqlValue | undefined): number {
@@ -864,6 +873,13 @@ export async function prepareHysabKytabSqliteImport(
 			);
 			claimedAccountIds.add(id);
 			const existing = existingAccountsById.get(id);
+			const importedIcon = resolveHysabKytabAccountIcon(title, {
+				boxIcon: nullableText(row.BOXICON),
+				accountType: nullableText(row.ACCTYPE),
+				bankName: nullableText(row.BANKNAME),
+				currency,
+			});
+			const importedColor = normalizeHysabKytabColor(nullableText(row.BOXCOLOR));
 			const account: AccountDraft = {
 				...(existing ?? {}),
 				id,
@@ -871,6 +887,8 @@ export async function prepareHysabKytabSqliteImport(
 				title,
 				openingBalance: numberValue(row.OPENINGBALANCE),
 				currency,
+				...(hasText(existing?.icon) ? {} : { icon: importedIcon }),
+				...(hasText(existing?.color) || !importedColor ? {} : { color: importedColor }),
 				isArchived: numberValue(row.ACTIVE) !== 1,
 				sourceId,
 				updatedAt: existing?.updatedAt ?? Date.now(),
@@ -905,6 +923,8 @@ export async function prepareHysabKytabSqliteImport(
 			claimedCategoryIds.add(id);
 			const existing = existingCategoriesById.get(id);
 			const active = numberValue(row.ACTIVE) === 1;
+			const importedIcon = resolveHysabKytabCategoryIcon(title, nullableText(row.BOXICON));
+			const importedColor = normalizeHysabKytabColor(nullableText(row.BOXCOLOR));
 			const category: CategoryDraft = {
 				...(existing ?? {}),
 				id,
@@ -912,6 +932,8 @@ export async function prepareHysabKytabSqliteImport(
 				title,
 				type,
 				currency,
+				...(hasText(existing?.icon) ? {} : { icon: importedIcon }),
+				...(hasText(existing?.color) || !importedColor ? {} : { color: importedColor }),
 				sourceId,
 				updatedAt: existing?.updatedAt ?? Date.now(),
 				...(active ? { deletedAt: undefined } : { deletedAt: existing?.deletedAt ?? Date.now() }),

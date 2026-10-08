@@ -15,6 +15,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useHaptics } from "@/hooks/useHaptics";
+import { getAccountIcon } from "@/lib/accountIcons";
 import { deleteAccount, setAccountArchived } from "@/lib/actions/accounts";
 import { CARD_SURFACE, LIST_ROW, PRESS_SCALE, TAPPABLE, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -56,7 +57,7 @@ interface AccountRowProps {
 function AccountRow({ account, balance, onEdit, onSelect, className, style }: AccountRowProps) {
 	const [confirming, setConfirming] = useState(false);
 	const haptics = useHaptics();
-	const icon = account.icon ?? "💼";
+	const icon = getAccountIcon(account);
 
 	function handleSelect() {
 		haptics.selection();
