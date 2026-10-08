@@ -159,6 +159,8 @@ const DASHBOARD_STATS_COLUMNS = [
 	"dataVersion",
 	"cacheStatus",
 	"cacheUpdatedAt",
+	"cacheError",
+	"cacheFailedAt",
 	"analyticsCache",
 	"balances",
 	"perCurrency",

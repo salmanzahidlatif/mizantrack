@@ -22,7 +22,7 @@ import { useAccountsAnalytics } from "@/hooks/useAccountsAnalytics";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
-import { resolveCurrencyCode } from "@/lib/analytics/balanceMath";
+import { normalizeCurrencyCode, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { CARD_SURFACE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
@@ -129,6 +129,40 @@ function getAccountsByAnalyticsIds(
 		.filter((account): account is Account => account !== undefined);
 }
 
+function getAccountsByCurrencyFallback(
+	allAccounts: Account[] | undefined,
+	currency: string,
+	enabledCurrencies: string[] | undefined
+) {
+	if (!allAccounts) return undefined;
+
+	const normalizedCurrency = normalizeCurrencyCode(currency);
+	const enabledCurrencySet = new Set(
+		(enabledCurrencies ?? []).map(normalizeCurrencyCode).filter(Boolean)
+	);
+	const scopedAccounts: Account[] = [];
+	const unscopedAccounts: Account[] = [];
+
+	for (const account of allAccounts) {
+		const accountCurrency = normalizeCurrencyCode(account.currency);
+		if (accountCurrency === normalizedCurrency) {
+			scopedAccounts.push(account);
+			continue;
+		}
+		if (
+			!accountCurrency ||
+			(enabledCurrencySet.size > 0 && !enabledCurrencySet.has(accountCurrency))
+		) {
+			unscopedAccounts.push(account);
+		}
+	}
+
+	return {
+		accounts: scopedAccounts,
+		unscopedAccounts,
+	};
+}
+
 export function AccountsPageClient({ userId: providedUserId }: AccountsPageClientProps = {}) {
 	const userId = useRequiredUserId(providedUserId);
 	const router = useRouter();
@@ -167,8 +201,18 @@ export function AccountsPageClient({ userId: providedUserId }: AccountsPageClien
 	const allAccounts = useAccounts(userId, {
 		showArchived: true,
 	});
-	const accounts = getAccountsByAnalyticsIds(allAccounts, analytics?.accounts);
-	const unscopedAccounts = getAccountsByAnalyticsIds(allAccounts, analytics?.unscopedAccounts);
+	const fallbackAccounts = useMemo(
+		() => getAccountsByCurrencyFallback(allAccounts, resolvedCurrency, config?.enabledCurrencies),
+		[allAccounts, config?.enabledCurrencies, resolvedCurrency]
+	);
+	const accounts =
+		analytics !== undefined
+			? getAccountsByAnalyticsIds(allAccounts, analytics.accounts)
+			: fallbackAccounts?.accounts;
+	const unscopedAccounts =
+		analytics !== undefined
+			? getAccountsByAnalyticsIds(allAccounts, analytics.unscopedAccounts)
+			: fallbackAccounts?.unscopedAccounts;
 	const hasArchived = allAccounts?.some((a) => a.isArchived) ?? false;
 
 	return (

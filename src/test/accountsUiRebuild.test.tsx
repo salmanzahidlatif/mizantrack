@@ -235,4 +235,36 @@ describe("accounts UI rebuild", () => {
 
 		expect(negativeAmount).toHaveClass("text-red-600");
 	});
+
+	it("shows accounts but not stale money while analytics balances are pending", () => {
+		const staleOpeningBalanceAccount = {
+			...activeAccount,
+			openingBalance: 199993.43,
+		};
+		render(
+			<AccountList
+				accounts={[staleOpeningBalanceAccount, negativeAccount]}
+				analytics={undefined}
+				showArchived
+				sortBy="balance-desc"
+				userId={userId}
+				onSelectAccount={vi.fn()}
+			/>
+		);
+
+		expect(screen.getByText("FAB Current")).toBeInTheDocument();
+		expect(screen.getByText("Credit Card")).toBeInTheDocument();
+		expect(screen.queryByText("199,993.43")).not.toBeInTheDocument();
+		expect(screen.queryByText("-1,497.10")).not.toBeInTheDocument();
+	});
+
+	it("keeps account rows reachable when the analytics cache is missing or rebuilding", () => {
+		mocks.useAccountsAnalytics.mockReturnValue(undefined);
+
+		render(<AccountsPageClient userId={userId} />);
+
+		expect(screen.getByText("FAB Current")).toBeInTheDocument();
+		expect(screen.getByText("Credit Card")).toBeInTheDocument();
+		expect(screen.getByRole("region", { name: /accounts summary/i })).toBeInTheDocument();
+	});
 });

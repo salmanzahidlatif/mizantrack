@@ -100,8 +100,10 @@ export interface DashboardStats {
 	updatedAt: number; // Unix ms
 	logicVersion?: number;
 	dataVersion?: string;
-	cacheStatus?: "valid" | "recomputing";
+	cacheStatus?: "valid" | "recomputing" | "failed";
 	cacheUpdatedAt?: number;
+	cacheError?: string;
+	cacheFailedAt?: number;
 	analyticsCache?: {
 		accounts?: Record<
 			string,

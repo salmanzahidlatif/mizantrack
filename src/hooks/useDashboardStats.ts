@@ -1,11 +1,11 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { useAnalyticsMonthSummaries } from "@/hooks/useAnalyticsMonthSummaries";
 import { usePeriodAnalytics } from "@/hooks/usePeriodAnalytics";
-import { getValidDashboardStats } from "@/lib/analytics/cache";
+import { getDashboardStatsReadState } from "@/lib/analytics/cache";
 import { DEFAULT_TREND_MONTHS } from "@/lib/analytics/computeDashboardStats";
-import { recomputeAnalyticsNow } from "@/lib/analytics/scheduleRecompute";
+import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 
 import type { PeriodAnalytics } from "@/lib/analytics/periodAnalytics";
 import type { DashboardStats } from "@/types";
@@ -47,11 +47,12 @@ export function useDashboardStats(
 	userId: string,
 	query?: DashboardStatsQuery
 ): DashboardStats | undefined {
-	const [writeError, setWriteError] = useState<unknown>();
-	const stats = useLiveQuery(async () => {
+	const requestedUserIdsRef = useRef(new Set<string>());
+	const statsState = useLiveQuery(async () => {
 		if (!userId) return undefined;
-		return getValidDashboardStats(userId);
+		return getDashboardStatsReadState(userId);
 	}, [userId]);
+	const stats = statsState?.value;
 	const analytics = usePeriodAnalytics(
 		userId,
 		query?.currency
@@ -75,24 +76,20 @@ export function useDashboardStats(
 	);
 
 	useEffect(() => {
-		if (!userId || stats !== undefined) return;
+		requestedUserIdsRef.current.clear();
+	}, [userId]);
 
-		let cancelled = false;
-		void recomputeAnalyticsNow(userId)
-			.then(() => {
-				if (!cancelled) setWriteError(undefined);
-			})
-			.catch((error) => {
-				console.error("Dashboard analytics recompute failed:", error);
-				if (!cancelled) setWriteError(error);
-			});
+	useEffect(() => {
+		if (!userId || !statsState) return;
+		if (statsState.value !== undefined) {
+			requestedUserIdsRef.current.delete(userId);
+			return;
+		}
+		if (requestedUserIdsRef.current.has(userId)) return;
+		requestedUserIdsRef.current.add(userId);
+		scheduleAnalyticsRecompute(userId);
+	}, [userId, statsState]);
 
-		return () => {
-			cancelled = true;
-		};
-	}, [userId, stats]);
-
-	if (writeError) throw writeError;
 	if (!stats || !query?.currency || !analytics || !trend) return stats;
 
 	const existingBucket = stats.perCurrency[query.currency];

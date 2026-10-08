@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createAccount, updateAccount } from "@/lib/actions/accounts";
 import { createCategory, updateCategory } from "@/lib/actions/categories";
 import { createTransaction, updateTransaction } from "@/lib/actions/transactions";
+import { computeAccountBalances } from "@/lib/analytics/balanceMath";
 import {
 	getAccountsAnalyticsCacheKey,
 	getCachedAnalyticsReadState,
@@ -367,6 +368,113 @@ describe("analytics cache", () => {
 		expect(await getCachedAnalyticsReadState(USER_ID, "accounts", cacheKey)).toMatchObject({
 			value: undefined,
 			cacheStatus: "invalid",
+		});
+	});
+
+	it("heals a recomputing dashboard row without serving stale account balances", async () => {
+		await db.accounts.bulkPut([
+			account({ id: "misc", title: "misc", openingBalance: 0 }),
+			account({ id: "noon-mashreq", title: "noon-mashreq", openingBalance: 0 }),
+		]);
+		await db.categories.put(category());
+		await db.transactions.bulkPut([
+			transaction({
+				id: "txn-misc-income",
+				type: "Income",
+				accountId: "misc",
+				amount: 12145.23,
+				updatedAt: 10,
+			}),
+			transaction({
+				id: "txn-noon-expense",
+				type: "Expense",
+				accountId: "noon-mashreq",
+				amount: 1214.82,
+				updatedAt: 11,
+			}),
+		]);
+		const source = await getAnalyticsSourceData(USER_ID);
+		const dataVersion = buildAnalyticsDataVersion(source);
+		const cacheKey = getAccountsAnalyticsCacheKey(accountsQuery());
+		const staleAnalytics = aggregateAccountsAnalytics(
+			USER_ID,
+			source.accounts,
+			source.transactions,
+			accountsQuery()
+		);
+		await db.dashboardStats.put({
+			id: USER_ID,
+			updatedAt: 1,
+			logicVersion: ANALYTICS_CACHE_LOGIC_VERSION,
+			dataVersion,
+			cacheStatus: "recomputing",
+			cacheUpdatedAt: 1,
+			balances: { misc: 199993.43, "noon-mashreq": 607.39 },
+			perCurrency: {},
+			recent: [],
+			analyticsCache: {
+				accounts: {
+					[cacheKey]: {
+						logicVersion: ANALYTICS_CACHE_LOGIC_VERSION,
+						dataVersion,
+						key: cacheKey,
+						updatedAt: 1,
+						value: {
+							...staleAnalytics,
+							netWorth: 200600.82,
+							accounts: [
+								{ ...staleAnalytics.accounts[0], accountId: "misc", balance: 199993.43 },
+								{
+									...staleAnalytics.accounts[0],
+									accountId: "noon-mashreq",
+									balance: 607.39,
+								},
+							],
+							allAccounts: [],
+							unscopedAccounts: [],
+						},
+					},
+				},
+			},
+		});
+
+		const readState = await getCachedAnalyticsReadState(USER_ID, "accounts", cacheKey);
+		expect(readState).toMatchObject({
+			value: undefined,
+			cacheStatus: "recomputing",
+		});
+
+		const healed = await getOrComputeCachedAnalyticsValue(
+			USER_ID,
+			"accounts",
+			cacheKey,
+			(sourceData) =>
+				aggregateAccountsAnalytics(
+					USER_ID,
+					sourceData.accounts,
+					sourceData.transactions,
+					accountsQuery()
+				)
+		);
+		const rawBalances = computeAccountBalances(
+			USER_ID,
+			source.accounts,
+			source.transactions
+		).balances;
+		const stored = await db.dashboardStats.get(USER_ID);
+
+		expect(healed.accounts.find((entry) => entry.accountId === "misc")?.balance).toBe(
+			rawBalances.get("misc")
+		);
+		expect(healed.accounts.find((entry) => entry.accountId === "noon-mashreq")?.balance).toBe(
+			rawBalances.get("noon-mashreq")
+		);
+		expect(stored).toMatchObject({
+			cacheStatus: "valid",
+			balances: {
+				misc: rawBalances.get("misc"),
+				"noon-mashreq": rawBalances.get("noon-mashreq"),
+			},
 		});
 	});
 

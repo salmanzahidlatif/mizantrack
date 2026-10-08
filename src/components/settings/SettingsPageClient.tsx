@@ -7,6 +7,7 @@ import { FirebaseSyncPanel } from "@/components/settings/FirebaseSyncPanel";
 import { GoogleSheetsPanel } from "@/components/settings/GoogleSheetsPanel";
 import { ImportPanel } from "@/components/settings/ImportPanel";
 import { PreferencesForm } from "@/components/settings/PreferencesForm";
+import { RebuildAnalyticsPanel } from "@/components/settings/RebuildAnalyticsPanel";
 import { ResetLocalDataPanel } from "@/components/settings/ResetLocalDataPanel";
 import { TransferIntegrityPanel } from "@/components/settings/TransferIntegrityPanel";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
@@ -45,6 +46,8 @@ export function SettingsPageClient({
 			<GoogleSheetsPanel userId={userId} />
 
 			<TransferIntegrityPanel userId={userId} />
+
+			<RebuildAnalyticsPanel userId={userId} />
 
 			<ResetLocalDataPanel userId={userId} />
 		</div>

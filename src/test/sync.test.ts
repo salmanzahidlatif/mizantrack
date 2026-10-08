@@ -8,6 +8,7 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { flushAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 import { db, withoutSyncDirtyTracking } from "@/lib/db/local";
 import {
 	CORE_SYNC_TABLES,
@@ -1539,8 +1540,8 @@ describe("syncAll — dashboard stats sync", () => {
 		);
 	});
 
-	it("syncAll_RemoteDashboardStatsNewerThanLocal_PullsStatsWithoutRepushing", async () => {
-		await db.dashboardStats.put({
+	it("syncAll_RemoteDashboardStatsNewerThanLocal_KeepsLocalDerivedStats", async () => {
+		const localStats = {
 			id: USER_ID,
 			updatedAt: 5_000,
 			balances: { "acc-1": 10 },
@@ -1552,7 +1553,8 @@ describe("syncAll — dashboard stats sync", () => {
 				},
 			},
 			recent: [],
-		});
+		};
+		await db.dashboardStats.put(localStats);
 
 		const remoteStats = {
 			id: USER_ID,
@@ -1585,8 +1587,41 @@ describe("syncAll — dashboard stats sync", () => {
 
 		await syncAll(USER_ID);
 
-		expect(await db.dashboardStats.get(USER_ID)).toEqual(remoteStats);
-		expect(setDocSpy).not.toHaveBeenCalled();
+		expect(await db.dashboardStats.get(USER_ID)).toEqual(localStats);
+		expect(setDocSpy).toHaveBeenCalledWith(
+			expect.objectContaining({ path: `users/${USER_ID}/analytics/dashboard` }),
+			localStats
+		);
+	});
+
+	it("syncAll_FailedDashboardStats_SchedulesRetryWithoutPushingStaleSnapshot", async () => {
+		const failedStats = {
+			id: USER_ID,
+			updatedAt: 5_000,
+			cacheStatus: "failed" as const,
+			cacheError: "previous write failed",
+			balances: { "acc-1": 999 },
+			perCurrency: {
+				PKR: {
+					monthIncome: 200,
+					monthExpense: 100,
+					trend: [],
+				},
+			},
+			recent: [],
+		};
+		await db.dashboardStats.put(failedStats);
+
+		const { firestore } = await configureEmptySyncMocks();
+		const setDocSpy = vi.mocked(firestore.setDoc).mockResolvedValue(undefined);
+
+		await syncAll(USER_ID);
+		await flushAnalyticsRecompute(USER_ID);
+
+		expect(setDocSpy).not.toHaveBeenCalledWith(
+			expect.objectContaining({ path: `users/${USER_ID}/analytics/dashboard` }),
+			expect.objectContaining({ balances: { "acc-1": 999 } })
+		);
 	});
 });
 

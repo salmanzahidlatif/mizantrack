@@ -843,9 +843,9 @@ async function syncDashboardStats(userId: string, firestore: Firestore): Promise
 		return;
 	}
 
-	// Never publish a snapshot that is known to be mid-recompute; it would hand other
-	// devices the same stale figures this guard exists to prevent.
-	if (local.cacheStatus === "recomputing") {
+	// Never publish a snapshot that is known to be mid-recompute or failed; it
+	// would hand other devices the same stale figures this guard exists to prevent.
+	if (local.cacheStatus === "recomputing" || local.cacheStatus === "failed") {
 		scheduleAnalyticsRecompute(userId);
 		return;
 	}

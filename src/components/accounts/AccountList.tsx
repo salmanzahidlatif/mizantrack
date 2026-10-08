@@ -274,6 +274,10 @@ export function AccountList({
 
 	function sortAccounts(items: Account[]) {
 		return [...items].sort((a, b) => {
+			if (!hasCurrentBalances && (sortBy === "balance-asc" || sortBy === "balance-desc")) {
+				return a.title.localeCompare(b.title);
+			}
+
 			const balanceA = getBalance(a, balanceByAccountId);
 			const balanceB = getBalance(b, balanceByAccountId);
 

@@ -54,4 +54,46 @@ describe("scheduleAnalyticsRecompute", () => {
 			balances: { "acc-1": 42 },
 		});
 	});
+
+	it("records recompute failures and allows a later app start to retry", async () => {
+		await db.dashboardStats.put({
+			id: "debounce-user",
+			updatedAt: 1,
+			cacheStatus: "valid",
+			balances: { "acc-1": 999 },
+			perCurrency: {},
+			recent: [],
+		});
+		vi.mocked(computeDashboardStats)
+			.mockRejectedValueOnce(new Error("indexeddb write failed"))
+			.mockResolvedValueOnce({
+				id: "debounce-user",
+				updatedAt: 456,
+				balances: { "acc-1": 42 },
+				perCurrency: {
+					"": { monthIncome: 1, monthExpense: 2, trend: [] },
+				},
+				recent: [],
+			});
+
+		scheduleAnalyticsRecompute("debounce-user");
+		await expect(flushAnalyticsRecompute("debounce-user")).rejects.toThrow(
+			"indexeddb write failed"
+		);
+		expect(await db.dashboardStats.get("debounce-user")).toMatchObject({
+			cacheStatus: "failed",
+			cacheError: "indexeddb write failed",
+			balances: { "acc-1": 999 },
+		});
+
+		scheduleAnalyticsRecompute("debounce-user");
+		await flushAnalyticsRecompute("debounce-user");
+
+		expect(computeDashboardStats).toHaveBeenCalledTimes(2);
+		const healed = await db.dashboardStats.get("debounce-user");
+		expect(healed).toMatchObject({
+			balances: { "acc-1": 42 },
+		});
+		expect(healed?.cacheStatus).not.toBe("failed");
+	});
 });

@@ -37,6 +37,15 @@ export type CachedAnalyticsReadState<TNamespace extends AnalyticsCacheNamespace>
 	token: string;
 };
 
+export type DashboardStatsReadState = {
+	value: DashboardStats | undefined;
+	cacheStatus: DashboardStats["cacheStatus"] | "missing" | "invalid";
+	cacheUpdatedAt?: number;
+	cacheFailedAt?: number;
+	dataVersion?: string;
+	token: string;
+};
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const activeAnalyticsComputations = new Map<string, Promise<unknown>>();
 
@@ -175,6 +184,39 @@ export async function getValidDashboardStats(userId: string): Promise<DashboardS
 		return existing;
 	}
 	return undefined;
+}
+
+export async function getDashboardStatsReadState(userId: string): Promise<DashboardStatsReadState> {
+	const [existing, dataVersion] = await Promise.all([
+		db.dashboardStats.get(userId),
+		getAnalyticsDataVersion(userId),
+	]);
+	const isValid =
+		isStoredDashboardStatsCacheValid(existing) && existing.dataVersion === dataVersion;
+	let status: DashboardStatsReadState["cacheStatus"];
+	if (!existing) {
+		status = "missing";
+	} else if (isStoredDashboardStatsCacheValid(existing)) {
+		status = existing.dataVersion === dataVersion ? "valid" : "invalid";
+	} else {
+		status = existing.cacheStatus ?? "invalid";
+	}
+
+	return {
+		value: isValid ? existing : undefined,
+		cacheStatus: status,
+		cacheUpdatedAt: existing?.cacheUpdatedAt,
+		cacheFailedAt: existing?.cacheFailedAt,
+		dataVersion: existing?.dataVersion,
+		token: stableStringify({
+			status,
+			statsLogicVersion: existing?.logicVersion,
+			dataVersion: existing?.dataVersion,
+			currentDataVersion: dataVersion,
+			cacheUpdatedAt: existing?.cacheUpdatedAt,
+			cacheFailedAt: existing?.cacheFailedAt,
+		}),
+	};
 }
 
 function getActiveComputationKey(
@@ -332,9 +374,10 @@ export async function invalidateAnalyticsCache(userId: string): Promise<void> {
 
 	const existing = await db.dashboardStats.get(userId);
 	if (!existing) return;
+	const { cacheError: _cacheError, cacheFailedAt: _cacheFailedAt, ...rest } = existing;
 
 	await db.dashboardStats.put({
-		...existing,
+		...rest,
 		logicVersion: ANALYTICS_CACHE_LOGIC_VERSION,
 		cacheStatus: "recomputing",
 		cacheUpdatedAt: Date.now(),
