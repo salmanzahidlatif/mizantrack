@@ -794,6 +794,8 @@ async function syncDashboardStats(userId: string, firestore: Firestore): Promise
 export interface SyncBackupTableCount {
 	table: SyncableTable;
 	local: number;
+	localActive: number;
+	localDeleted: number;
 	remote: number;
 	pending: number;
 }
@@ -1114,13 +1116,14 @@ async function getLocalBackupCurrencyBreakdown(
 }
 
 /**
- * Compares local (non-deleted) record counts against remote Firestore document
- * counts per table, so the UI can show "X of Y backed up" / "Z left to sync".
- * Remote count uses aggregate getCountFromServer reads; pending is local-only
- * and comes from the dirty flag used by sync pushes, so it does not require
- * reading every remote document. Per-currency breakdowns are intentionally
- * local/pending only because Firestore aggregate counts cannot be split by
- * currency without reading every remote document.
+ * Compares local total record counts, including soft-deleted tombstones, against
+ * remote Firestore document totals. Remote count uses aggregate
+ * getCountFromServer reads; deleted and pending splits are local-only because
+ * Firestore aggregate counts cannot split by field without extra reads. Pending
+ * comes from the dirty flag used by sync pushes, so it does not require reading
+ * every remote document. Per-currency breakdowns are intentionally local/pending
+ * only because remote aggregate counts cannot be split by currency without
+ * reading every remote document.
  */
 export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCounts | null> {
 	try {
@@ -1134,16 +1137,17 @@ export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCou
 		const [tables, currencyBreakdown] = await Promise.all([
 			Promise.all(
 				CORE_SYNC_TABLES.map(async (table): Promise<SyncBackupTableCount> => {
-					const [localCount, pendingCount, remoteSnap] = await Promise.all([
+					const [localCount, localDeletedCount, pendingCount, remoteSnap] = await Promise.all([
+						getLocalSyncTable(table).where("userId").equals(userId).count(),
 						getLocalSyncTable(table)
 							.where("userId")
 							.equals(userId)
-							.and((r: SyncableRecord) => !r.deletedAt)
+							.and((r: SyncableRecord) => Boolean(r.deletedAt))
 							.count(),
 						getLocalSyncTable(table)
 							.where("userId")
 							.equals(userId)
-							.and((r: SyncableRecord) => !r.deletedAt && r.pendingSync === true)
+							.and((r: SyncableRecord) => r.pendingSync === true)
 							.count(),
 						withFirestoreTimeout(
 							getCountFromServer(collection(firestore, `users/${userId}/${table}`)),
@@ -1154,6 +1158,8 @@ export async function getSyncBackupCounts(userId: string): Promise<SyncBackupCou
 					return {
 						table,
 						local: localCount,
+						localActive: Math.max(0, localCount - localDeletedCount),
+						localDeleted: localDeletedCount,
 						remote: remoteCount,
 						pending: pendingCount,
 					};

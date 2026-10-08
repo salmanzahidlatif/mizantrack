@@ -44,8 +44,84 @@ const backupTableLabels: Record<string, string> = {
 	zakatPayments: "Zakat payments",
 };
 
+const backupCountFormatter = new Intl.NumberFormat();
+
 function getBackupTableLabel(table: string): string {
 	return backupTableLabels[table] ?? table;
+}
+
+function formatBackupCount(value: number): string {
+	return backupCountFormatter.format(value);
+}
+
+function getBackupTableStatus(count: SyncBackupCounts["tables"][number]): {
+	label: string;
+	summary: string;
+	detail: string;
+	tone: "good" | "pending" | "review";
+} {
+	const pendingExplainsGap = count.pending > 0 && count.remote + count.pending === count.local;
+
+	if (count.remote === count.local && count.pending === 0) {
+		return {
+			label: "Nothing missing",
+			summary: `Firebase ${formatBackupCount(count.remote)} total · Local ${formatBackupCount(
+				count.local
+			)} total`,
+			detail:
+				count.localDeleted > 0
+					? "Deleted markers keep merges/deletes synced; they are counted in the total."
+					: "Firebase and local totals match.",
+			tone: "good",
+		};
+	}
+
+	if (pendingExplainsGap) {
+		return {
+			label: "Nothing missing",
+			summary: `Firebase ${formatBackupCount(count.remote)} backed up · ${formatBackupCount(
+				count.pending
+			)} waiting · Local ${formatBackupCount(count.local)} total`,
+			detail:
+				count.pending === count.local
+					? `All ${formatBackupCount(count.pending)} local rows are waiting to upload.`
+					: `${formatBackupCount(
+							count.pending
+						)} local rows are waiting to upload; that explains the count difference.`,
+			tone: "good",
+		};
+	}
+
+	if (count.pending > 0) {
+		return {
+			label: "Pending changes",
+			summary: `Firebase ${formatBackupCount(count.remote)} total · Local ${formatBackupCount(
+				count.local
+			)} total · ${formatBackupCount(count.pending)} pending`,
+			detail: "Some local rows have unsynced changes; totals may differ until sync completes.",
+			tone: "pending",
+		};
+	}
+
+	return {
+		label: "Review counts",
+		summary: `Firebase ${formatBackupCount(count.remote)} total · Local ${formatBackupCount(
+			count.local
+		)} total`,
+		detail:
+			"Counts still differ after including deleted markers. Run sync again when Firebase is available.",
+		tone: "review",
+	};
+}
+
+function getBackupStatusBadgeClass(tone: ReturnType<typeof getBackupTableStatus>["tone"]): string {
+	if (tone === "pending") {
+		return "shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400";
+	}
+	if (tone === "review") {
+		return "shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive";
+	}
+	return "shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400";
 }
 
 export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
@@ -68,6 +144,8 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 		percentUsed: string;
 	} | null>(null);
 	const [backupCounts, setBackupCounts] = useState<SyncBackupCounts | null>(null);
+	const currencyPendingTotal =
+		backupCounts?.currencyBreakdown.reduce((sum, currency) => sum + currency.pending, 0) ?? 0;
 
 	// Sync local state with DB config
 	useEffect(() => {
@@ -268,40 +346,55 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 						<div className="space-y-1">
 							<p className="text-xs font-medium text-muted-foreground">Backed up to Firebase</p>
 							<p className="text-[11px] leading-snug text-muted-foreground">
-								Firebase counts are remote totals only. Per-currency figures below are local records
-								and pending dirty flags, so no remote per-currency number is shown.
+								Table totals include active rows plus deleted sync markers, so Firebase and local
+								are compared like-for-like. Remote counts are aggregate totals only; per-currency
+								figures below stay active-local only because Firebase cannot split them cheaply.
 							</p>
 						</div>
 
-						<div className="space-y-1.5">
-							{backupCounts.tables.map((t) => (
-								<div key={t.table} className="flex items-center justify-between gap-3 text-xs">
-									<span className="text-muted-foreground">{getBackupTableLabel(t.table)}</span>
-									<span className="text-right">
-										Firebase {t.remote} · Local {t.local}
-										{t.pending > 0 ? (
-											<span className="ml-1 text-amber-600 dark:text-amber-500">
-												({t.pending} pending)
-											</span>
-										) : null}
-									</span>
-								</div>
-							))}
+						<div className="space-y-2">
+							{backupCounts.tables.map((t) => {
+								const status = getBackupTableStatus(t);
+
+								return (
+									<div
+										key={t.table}
+										aria-label={`${getBackupTableLabel(t.table)} backup status`}
+										className="space-y-1 rounded-md border border-border/50 bg-background/70 p-2 text-xs">
+										<div className="flex items-start justify-between gap-2">
+											<span className="font-medium">{getBackupTableLabel(t.table)}</span>
+											<span className={getBackupStatusBadgeClass(status.tone)}>{status.label}</span>
+										</div>
+										<p>{status.summary}</p>
+										<p className="text-muted-foreground">
+											{formatBackupCount(t.localActive)} active
+											{t.localDeleted > 0
+												? ` · ${formatBackupCount(t.localDeleted)} deleted`
+												: " · 0 deleted"}
+											{" · "}
+											{formatBackupCount(t.local)} total
+										</p>
+										<p className="text-[11px] leading-snug text-muted-foreground">
+											{status.detail}
+										</p>
+									</div>
+								);
+							})}
 						</div>
 
 						<div className="space-y-2 border-t border-border/60 pt-2">
 							<div className="flex items-center justify-between gap-2 text-xs">
 								<span className="font-medium text-muted-foreground">Pending by currency</span>
 								<span className="text-muted-foreground">
-									{backupCounts.totalPending > 0
-										? `${backupCounts.totalPending} pending total`
+									{currencyPendingTotal > 0
+										? `${currencyPendingTotal} active pending`
 										: "All backed up"}
 								</span>
 							</div>
 							<div className="space-y-2">
 								{backupCounts.currencyBreakdown.length === 0 ? (
 									<p className="rounded-md border border-border/50 bg-background/70 p-2 text-xs text-emerald-700 dark:text-emerald-400">
-										All backed up — no local pending records.
+										All active rows backed up — no local pending records by currency.
 									</p>
 								) : (
 									backupCounts.currencyBreakdown.map((currency) => {

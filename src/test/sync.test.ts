@@ -153,6 +153,58 @@ describe("getSyncBackupCounts — currency breakdown", () => {
 		await db.dbConfig.delete(USER_ID);
 	});
 
+	it("getSyncBackupCounts_CountsLocalTombstonesSoCategoryTotalsMatchFirebaseTotals", async () => {
+		const { getFirestoreForUser } = await import("@/lib/db/firebase");
+		const firestore = await import("firebase/firestore");
+
+		vi.mocked(getFirestoreForUser).mockResolvedValue(
+			{} as Awaited<ReturnType<typeof getFirestoreForUser>>
+		);
+		vi.mocked(firestore.getCountFromServer).mockImplementation(
+			async (ref) =>
+				({
+					data: () => ({
+						count: (ref as { path?: string }).path?.endsWith("/categories") ? 73 : 0,
+					}),
+				}) as unknown as Awaited<ReturnType<typeof firestore.getCountFromServer>>
+		);
+
+		await withoutSyncDirtyTracking(async () => {
+			await db.categories.bulkPut([
+				...Array.from({ length: 58 }, (_, index) => ({
+					id: `cat-live-${index}`,
+					userId: USER_ID,
+					title: `Live Category ${index}`,
+					type: "Expense" as const,
+					currency: "PKR",
+					updatedAt: 1_000 + index,
+				})),
+				...Array.from({ length: 15 }, (_, index) => ({
+					id: `cat-deleted-${index}`,
+					userId: USER_ID,
+					title: `Merged Category ${index}`,
+					type: "Expense" as const,
+					currency: "PKR",
+					deletedAt: 2_000 + index,
+					updatedAt: 2_000 + index,
+				})),
+			]);
+		});
+
+		const result = await getSyncBackupCounts(USER_ID);
+		const categories = result?.tables.find((table) => table.table === "categories");
+
+		expect(categories).toMatchObject({
+			local: 73,
+			localActive: 58,
+			localDeleted: 15,
+			remote: 73,
+			pending: 0,
+		});
+		expect(firestore.getCountFromServer).toHaveBeenCalledTimes(CORE_SYNC_TABLES.length);
+		expect(firestore.getDocs).not.toHaveBeenCalled();
+	});
+
 	it("getSyncBackupCounts_GroupsLocalAndPendingRecordsByCurrencyWithoutExtraFirestoreReads", async () => {
 		const { getFirestoreForUser } = await import("@/lib/db/firebase");
 		const firestore = await import("firebase/firestore");
