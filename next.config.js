@@ -15,6 +15,8 @@ const appShellRoutes = [
 	"/settings",
 	"/zakat",
 	"/login",
+	"/privacy",
+	"/terms-of-service",
 	"/offline",
 ];
 

@@ -1,14 +1,16 @@
-"use client";
+import { MarketingLandingPage } from "@/components/marketing/MarketingLandingPage";
 
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+	title: "MizanTrack | Private Personal Finance and Zakat Tracker",
+	description:
+		"Offline-first personal finance and zakat tracking for accounts, budgets, analytics, imports, and optional user-owned Firebase or Google Sheets backup.",
+	alternates: {
+		canonical: "/",
+	},
+};
 
 export default function RootPage() {
-	const router = useRouter();
-
-	useEffect(() => {
-		router.replace("/dashboard");
-	}, [router]);
-
-	return null;
+	return <MarketingLandingPage />;
 }
