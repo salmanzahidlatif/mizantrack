@@ -30,7 +30,6 @@ import type {
 	Account,
 	Budget,
 	Category,
-	DashboardStats,
 	DbConfig,
 	GoldItem,
 	Transaction,
@@ -832,28 +831,29 @@ async function syncSettingsPrefs(userId: string, firestore: Firestore): Promise<
 async function syncDashboardStats(userId: string, firestore: Firestore): Promise<void> {
 	const analyticsRef = doc(firestore, `users/${userId}/analytics`, "dashboard");
 	const local = await localDb.dashboardStats.get(userId);
-	const remoteSnap = await withFirestoreTimeout(
-		getDoc(analyticsRef),
-		"pulling dashboard analytics"
+
+	// Dashboard analytics are DERIVED from accounts, categories and transactions, which
+	// already sync as source data. Pulling the remote copy let one device's stale snapshot
+	// overwrite another's freshly computed figures, and because a cleared cache reports
+	// updatedAt = 0 the stale remote copy always won - so wrong balances kept coming back
+	// on every device and could not be cleared locally. Recompute from local source data
+	// instead, and only ever publish what this device computed.
+	if (!local) {
+		scheduleAnalyticsRecompute(userId);
+		return;
+	}
+
+	// Never publish a snapshot that is known to be mid-recompute; it would hand other
+	// devices the same stale figures this guard exists to prevent.
+	if (local.cacheStatus === "recomputing") {
+		scheduleAnalyticsRecompute(userId);
+		return;
+	}
+
+	await withFirestoreTimeout(
+		setDoc(analyticsRef, sanitizeDashboardStats(local)),
+		"pushing dashboard analytics"
 	);
-
-	if (remoteSnap.exists()) {
-		const remote = remoteSnap.data() as DashboardStats;
-		const localUpdatedAt = local?.updatedAt ?? 0;
-		const remoteUpdatedAt = remote.updatedAt ?? 0;
-
-		if (remoteUpdatedAt > localUpdatedAt) {
-			await localDb.dashboardStats.put(sanitizeDashboardStats({ ...remote, id: userId }));
-			return;
-		}
-	}
-
-	if (local) {
-		await withFirestoreTimeout(
-			setDoc(analyticsRef, sanitizeDashboardStats(local)),
-			"pushing dashboard analytics"
-		);
-	}
 }
 
 export interface SyncBackupTableCount {
