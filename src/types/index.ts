@@ -188,6 +188,48 @@ export interface SyncStatus {
 	error: string | null;
 }
 
+export type GoogleSheetsErrorCode =
+	| "Offline"
+	| "Unauthorized"
+	| "NotConnected"
+	| "RequiresReconnect"
+	| "SheetMissing"
+	| "SheetForeign"
+	| "ConcurrentBackup"
+	| "QuotaExceeded"
+	| "PayloadTooLarge"
+	| "PartialWrite"
+	| "GoogleServerError"
+	| "GoogleApiError"
+	| "SheetTooLarge";
+
+export interface GoogleSheetsCurrencyBackupState {
+	currency: string;
+	selected: boolean;
+	spreadsheetId?: string;
+	spreadsheetUrl?: string;
+	spreadsheetName?: string;
+	lastBackupAt?: number;
+	lastBackupStartedAt?: number;
+	lastBackupCompletedAt?: number;
+	lastStatus?: "idle" | "in_progress" | "success" | "failed";
+	lastError?: string;
+	rowCounts?: Record<string, number>;
+}
+
+export interface GoogleSheetsBackupProgress {
+	currency: string;
+	tab: string;
+	rowsWritten: number;
+	totalRows: number;
+}
+
+export interface GoogleSheetsBackupStatus {
+	connected: boolean;
+	needsReconnect: boolean;
+	states: GoogleSheetsCurrencyBackupState[];
+}
+
 // ============================================================================
 // ZAKAT TYPES
 // ============================================================================

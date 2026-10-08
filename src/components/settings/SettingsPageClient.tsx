@@ -4,6 +4,7 @@ import { useCurrentUser } from "@/components/auth/OfflineAuthProvider";
 import { AppLockSettings } from "@/components/settings/AppLockSettings";
 import { ExportPanel } from "@/components/settings/ExportPanel";
 import { FirebaseSyncPanel } from "@/components/settings/FirebaseSyncPanel";
+import { GoogleSheetsPanel } from "@/components/settings/GoogleSheetsPanel";
 import { ImportPanel } from "@/components/settings/ImportPanel";
 import { PreferencesForm } from "@/components/settings/PreferencesForm";
 import { ResetLocalDataPanel } from "@/components/settings/ResetLocalDataPanel";
@@ -40,6 +41,8 @@ export function SettingsPageClient({
 			</div>
 
 			<FirebaseSyncPanel userId={userId} />
+
+			<GoogleSheetsPanel userId={userId} />
 
 			<TransferIntegrityPanel userId={userId} />
 
