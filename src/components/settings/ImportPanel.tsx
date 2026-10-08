@@ -247,7 +247,7 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 			<input
 				ref={fileRef}
 				type="file"
-				accept=".db,.sqlite,.sqlite3,.xlsx,.xls"
+				accept=".db,.sqlite,.sqlite3,.xlsx,.xls,application/x-sqlite3,application/vnd.sqlite3,application/octet-stream"
 				className="hidden"
 				onChange={(e) => {
 					void handleFile(e);
