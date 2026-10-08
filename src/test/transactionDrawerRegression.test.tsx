@@ -291,7 +291,7 @@ function descriptionInput() {
 }
 
 async function chooseAccount() {
-	fireEvent.click(await screen.findByRole("option", { name: /Cash \(PKR\)/i }));
+	fireEvent.click(await screen.findByRole("radio", { name: /Cash \(PKR\)/i }));
 }
 
 beforeEach(async () => {

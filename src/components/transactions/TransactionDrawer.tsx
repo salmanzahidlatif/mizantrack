@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useForm, type FieldErrors, type Resolver, type SubmitErrorHandler } from "react-hook-form";
 import { toast } from "sonner";
 
+import { IconGridPicker } from "@/components/shared/IconGridPicker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -22,17 +23,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { useActiveAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { scrollFocusedFieldIntoView } from "@/hooks/useKeyboardInset";
+import { getAccountIcon } from "@/lib/accountIcons";
 import {
 	createTransaction,
 	deleteTransaction,
@@ -68,6 +63,7 @@ const TYPE_COLOR: Record<TransactionType, string> = {
 
 const TYPE_INACTIVE = "border-border hover:border-primary";
 const TRANSACTION_FORM_ID = "transaction-drawer-form";
+const UNCATEGORIZED_CATEGORY_ID = "__uncategorized__";
 const FORM_DRAWER_CONTENT_CLASS =
 	"overflow-hidden pb-0 data-[vaul-drawer-direction=bottom]:h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_1rem)] data-[vaul-drawer-direction=bottom]:max-h-[95dvh] data-[vaul-drawer-direction=bottom]:pb-0";
 const FORM_DRAWER_CLOSE_THRESHOLD = 0.55;
@@ -329,6 +325,47 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 			),
 		[allCategories, editCategory, watchedCategory, watchedType, usageRanking.categoryUsage]
 	);
+	const accountPickerItems = useMemo(
+		() =>
+			accountOptions.map((account) => ({
+				badge: account.currency,
+				color: account.color,
+				icon: getAccountIcon(account),
+				id: account.id,
+				title: account.title,
+			})),
+		[accountOptions]
+	);
+	const destinationPickerItems = useMemo(
+		() =>
+			destAccounts.map((account) => ({
+				badge: account.currency,
+				color: account.color,
+				icon: getAccountIcon(account),
+				id: account.id,
+				title: account.title,
+			})),
+		[destAccounts]
+	);
+	const categoryPickerItems = useMemo(
+		() => [
+			{
+				icon: "🏷️",
+				id: UNCATEGORIZED_CATEGORY_ID,
+				title: "Uncategorized",
+			},
+			...categories.map((category) => ({
+				color: category.color,
+				icon: getCategoryIcon(category),
+				id: category.id,
+				title: category.title,
+			})),
+		],
+		[categories]
+	);
+	const transferDestinationEmptyMessage = selectedAccount
+		? `Add another active ${selectedAccount.currency} account before recording a transfer.`
+		: "Select a source account before choosing a destination.";
 
 	useEffect(() => {
 		function handleBlocked() {
@@ -603,10 +640,13 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 
 						{/* From Account */}
 						<div className="space-y-1.5">
-							<Label>{watchedType === "Transfer" ? "From Account *" : "Account *"}</Label>
-							<Select
-								value={watchedAccount ?? ""}
-								onValueChange={(v) => {
+							<IconGridPicker
+								label={watchedType === "Transfer" ? "From Account *" : "Account *"}
+								items={accountPickerItems}
+								value={watchedAccount}
+								emptyMessage="Add an active account before recording a transaction."
+								aria-invalid={Boolean(errors.accountId)}
+								onChange={(v) => {
 									setValue("accountId", v, { shouldValidate: true });
 									if (!editTransactionId && watchedToAccount) {
 										const nextSource = baseAccounts.find((account) => account.id === v);
@@ -622,18 +662,8 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 											setValue("toAccountId", undefined, { shouldValidate: true });
 										}
 									}
-								}}>
-								<SelectTrigger>
-									<SelectValue placeholder="Select account" />
-								</SelectTrigger>
-								<SelectContent>
-									{accountOptions.map((a) => (
-										<SelectItem key={a.id} value={a.id}>
-											{a.icon} {a.title} ({a.currency})
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
+								}}
+							/>
 							{errors.accountId && (
 								<p className="text-xs text-destructive">{errors.accountId.message}</p>
 							)}
@@ -642,30 +672,16 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 						{/* To Account (Transfer) */}
 						{watchedType === "Transfer" && (
 							<div className="space-y-1.5">
-								<Label>To Account *</Label>
-								<Select
-									value={watchedToAccount ?? ""}
-									onValueChange={(v) => setValue("toAccountId", v, { shouldValidate: true })}>
-									<SelectTrigger>
-										<SelectValue placeholder="Select destination" />
-									</SelectTrigger>
-									<SelectContent>
-										{destAccounts.map((a) => (
-											<SelectItem key={a.id} value={a.id}>
-												{a.icon} {a.title} ({a.currency})
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
+								<IconGridPicker
+									label="To Account *"
+									items={destinationPickerItems}
+									value={watchedToAccount}
+									emptyMessage={transferDestinationEmptyMessage}
+									aria-invalid={Boolean(errors.toAccountId)}
+									onChange={(v) => setValue("toAccountId", v, { shouldValidate: true })}
+								/>
 								{errors.toAccountId && (
 									<p className="text-xs text-destructive">{errors.toAccountId.message}</p>
-								)}
-								{destAccounts.length === 0 && (
-									<p className="text-xs text-muted-foreground">
-										{selectedAccount
-											? `Add another active ${selectedAccount.currency} account before recording a transfer.`
-											: "Select a source account before choosing a destination."}
-									</p>
 								)}
 								{crossCurrencyTransferWarning && (
 									<p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
@@ -678,27 +694,17 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 						{/* Category (Expense / Income only) */}
 						{watchedType !== "Transfer" && (
 							<div className="space-y-1.5">
-								<Label>Category</Label>
-								<Select
-									value={watchedCategory ?? "none"}
-									onValueChange={(v) =>
-										setValue("categoryId", v === "none" ? undefined : v, {
+								<IconGridPicker
+									label="Category"
+									items={categoryPickerItems}
+									value={watchedCategory ?? UNCATEGORIZED_CATEGORY_ID}
+									aria-invalid={Boolean(errors.categoryId)}
+									onChange={(v) =>
+										setValue("categoryId", v === UNCATEGORIZED_CATEGORY_ID ? undefined : v, {
 											shouldValidate: true,
 										})
-									}>
-									<SelectTrigger>
-										<SelectValue placeholder="Select category" />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="none">Uncategorized</SelectItem>
-										{categories.map((c) => (
-											<SelectItem key={c.id} value={c.id}>
-												<span aria-hidden="true">{getCategoryIcon(c)}</span>
-												<span>{c.title}</span>
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
+									}
+								/>
 								{errors.categoryId && (
 									<p className="text-xs text-destructive">{errors.categoryId.message}</p>
 								)}
