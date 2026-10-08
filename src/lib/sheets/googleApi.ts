@@ -12,6 +12,10 @@ interface GoogleErrorPayload {
 		code?: number;
 		message?: string;
 		status?: string;
+		details?: Array<{
+			reason?: string;
+			metadata?: Record<string, string>;
+		}>;
 	};
 }
 
@@ -49,33 +53,62 @@ function isRetryableStatus(status: number): boolean {
 	return status === 429 || status >= 500;
 }
 
+function getGoogleErrorReasons(payload: GoogleErrorPayload): string[] {
+	return (
+		payload.error?.details
+			?.map((detail) => detail.reason)
+			.filter((reason): reason is string => Boolean(reason)) ?? []
+	);
+}
+
 async function parseGoogleError(response: Response): Promise<GoogleSheetsBackupError> {
 	const payload = (await response.json().catch(() => ({}))) as GoogleErrorPayload;
 	const status = payload.error?.status;
 	const message = payload.error?.message ?? `Google API request failed with ${response.status}.`;
+	const lowerMessage = message.toLowerCase();
+	const reasons = getGoogleErrorReasons(payload);
 	if (response.status === 401) {
-		return new GoogleSheetsBackupError(
-			"RequiresReconnect",
-			"Google requires reconnecting Sheets.",
-			401
-		);
+		return new GoogleSheetsBackupError("RequiresReconnect", undefined, 401);
 	}
 	if (response.status === 403) {
-		return new GoogleSheetsBackupError("NotConnected", message, 403);
+		if (
+			status === "PERMISSION_DENIED" &&
+			(lowerMessage.includes("insufficient authentication scopes") ||
+				lowerMessage.includes("access_token_scope_insufficient"))
+		) {
+			return new GoogleSheetsBackupError(
+				"NotConnected",
+				"Google Drive file permission was not granted. Reconnect Google Sheets and approve https://www.googleapis.com/auth/drive.file only.",
+				403
+			);
+		}
+		if (
+			reasons.includes("SERVICE_DISABLED") ||
+			lowerMessage.includes("has not been used") ||
+			lowerMessage.includes("is disabled") ||
+			lowerMessage.includes("api has not been")
+		) {
+			return new GoogleSheetsBackupError(
+				"GoogleApiError",
+				"Google Sheets or Google Drive API is not enabled for this OAuth project. In Google Cloud Console → APIs & Services → Library, enable both APIs, then try again.",
+				403
+			);
+		}
+		return new GoogleSheetsBackupError(
+			"GoogleApiError",
+			`${message} Check that both Google Sheets API and Google Drive API are enabled for the OAuth project.`,
+			403
+		);
 	}
 	if (response.status === 404) {
-		return new GoogleSheetsBackupError("SheetMissing", "Backup spreadsheet was not found.", 404);
+		return new GoogleSheetsBackupError("SheetMissing", undefined, 404);
 	}
 	if (response.status === 429 || status === "RESOURCE_EXHAUSTED") {
-		return new GoogleSheetsBackupError(
-			"QuotaExceeded",
-			"Google is rate-limiting this backup.",
-			429
-		);
+		return new GoogleSheetsBackupError("QuotaExceeded", undefined, 429);
 	}
 	return new GoogleSheetsBackupError(
 		response.status >= 500 ? "GoogleServerError" : "GoogleApiError",
-		message,
+		response.status >= 500 ? undefined : message,
 		response.status
 	);
 }
@@ -228,11 +261,17 @@ export async function updateValues(
 	rows: string[][]
 ): Promise<void> {
 	const range = encodeRange(sheetName, `A${startRow}`);
-	await googleApiFetch(
+	const result = await googleApiFetch<{ updatedRows?: number }>(
 		accessToken,
 		`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${range}?valueInputOption=RAW`,
 		{ method: "PUT", body: JSON.stringify({ values: rows }) }
 	);
+	if (typeof result.updatedRows === "number" && result.updatedRows < rows.length) {
+		throw new GoogleSheetsBackupError(
+			"PartialWrite",
+			`Google wrote ${result.updatedRows} of ${rows.length} requested row(s) to ${sheetName}. Run Back up now again.`
+		);
+	}
 }
 
 export async function clearValuesAfterRow(

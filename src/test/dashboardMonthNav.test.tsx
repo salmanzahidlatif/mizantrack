@@ -4,14 +4,28 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CategoryBreakdownChart } from "@/components/charts/CategoryDonutChart";
+import {
+	AccountDistributionChart,
+	CashFlowTrendChart,
+	SpendingTrendChart,
+} from "@/components/charts/DashboardDesktopCharts";
 import { DashboardPageClient } from "@/components/dashboard/DashboardPageClient";
 import { ReportsPageClient } from "@/components/reports/ReportsPageClient";
 
-import type { AccountsAnalytics, PeriodAnalytics } from "@/lib/analytics/periodAnalytics";
+import type {
+	AccountsAnalytics,
+	AnalyticsMonthSummaryItem,
+	PeriodAnalytics,
+} from "@/lib/analytics/periodAnalytics";
 import type { ReactNode } from "react";
 
 const USER_ID = "dashboard-ui-rebuild-user";
 const NOW = new Date("2026-09-29T12:00:00.000Z");
+
+const mocks = vi.hoisted(() => ({
+	useAnalyticsMonthSummaries: vi.fn(),
+	useBudgets: vi.fn(),
+}));
 
 vi.mock("next/link", () => ({
 	default: ({ href, children, ...props }: { href: string; children?: ReactNode }) => (
@@ -53,6 +67,12 @@ vi.mock("recharts", () => {
 		Tooltip: () => <div data-testid="tooltip" />,
 		Legend: () => <div data-testid="legend" />,
 		Bar: ({ children }: { children?: ReactNode }) => <div data-testid="bar">{children}</div>,
+		AreaChart: ({ data, children }: { data?: unknown; children?: ReactNode }) => (
+			<ChartContainer data={data} testId="area-chart">
+				{children}
+			</ChartContainer>
+		),
+		Area: () => <div data-testid="area" />,
 		PieChart: ({ children }: { children?: ReactNode }) => (
 			<div data-testid="pie-chart-root">{children}</div>
 		),
@@ -70,7 +90,11 @@ vi.mock("@/hooks/useAccountsAnalytics", () => ({
 }));
 
 vi.mock("@/hooks/useAnalyticsMonthSummaries", () => ({
-	useAnalyticsMonthSummaries: () => undefined,
+	useAnalyticsMonthSummaries: mocks.useAnalyticsMonthSummaries,
+}));
+
+vi.mock("@/hooks/useBudgets", () => ({
+	useBudgets: mocks.useBudgets,
 }));
 
 vi.mock("@/hooks/useCategories", () => ({
@@ -189,6 +213,34 @@ function buildAccountsAnalytics(netWorth = 97218.91): AccountsAnalytics {
 	};
 }
 
+function trendSummaries(empty = false): AnalyticsMonthSummaryItem[] {
+	const values = [
+		["Feb", "2026-02", 1200, 700],
+		["Mar", "2026-03", 1500, 0],
+		["Apr", "2026-04", 1600, 900],
+		["May", "2026-05", 1400, 800],
+		["Jun", "2026-06", 2000, 1100],
+		["Jul", "2026-07", 1800, 1200],
+		["Aug", "2026-08", 2200, 1300],
+		["Sep", "2026-09", 2400, 1500],
+	] as const;
+
+	return values.map(([month, key, income, expense]) => ({
+		month,
+		key,
+		label: `${month} 2026`,
+		from: new Date(`${key}-01T00:00:00.000Z`),
+		to: new Date(`${key}-28T23:59:59.999Z`),
+		fromMs: new Date(`${key}-01T00:00:00.000Z`).getTime(),
+		toMs: new Date(`${key}-28T23:59:59.999Z`).getTime(),
+		income: empty ? 0 : income,
+		expense: empty ? 0 : expense,
+		net: empty ? 0 : income - expense,
+		hasData: !empty && (income > 0 || expense > 0),
+		currency: "AED",
+	}));
+}
+
 async function mockHooks(empty = false) {
 	const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
 	const { usePeriodAnalytics } = await import("@/hooks/usePeriodAnalytics");
@@ -198,6 +250,21 @@ async function mockHooks(empty = false) {
 		if (!query?.currency) return undefined;
 		return buildAnalytics(query.interval === "quarterly" ? "quarterly" : "monthly", empty);
 	});
+	mocks.useAnalyticsMonthSummaries.mockReturnValue(trendSummaries(empty));
+	mocks.useBudgets.mockReturnValue({ budgets: [], categories: [], rows: [] });
+}
+
+function mockMatchMedia(matches: boolean) {
+	window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+		matches,
+		media: query,
+		onchange: null,
+		addEventListener: vi.fn(),
+		removeEventListener: vi.fn(),
+		addListener: vi.fn(),
+		removeListener: vi.fn(),
+		dispatchEvent: vi.fn(),
+	}));
 }
 
 describe("dashboard UI rebuild", () => {
@@ -205,17 +272,7 @@ describe("dashboard UI rebuild", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(NOW);
 		await mockHooks();
-
-		window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-			matches: false,
-			media: query,
-			onchange: null,
-			addEventListener: vi.fn(),
-			removeEventListener: vi.fn(),
-			addListener: vi.fn(),
-			removeListener: vi.fn(),
-			dispatchEvent: vi.fn(),
-		}));
+		mockMatchMedia(false);
 	});
 
 	afterEach(() => {
@@ -286,6 +343,110 @@ describe("dashboard UI rebuild", () => {
 		expect(screen.getByText("Uncategorized")).toBeInTheDocument();
 	});
 
+	it("keeps the mobile stack spacing while enabling a desktop grid at wider breakpoints", () => {
+		mockMatchMedia(true);
+
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		const grid = screen.getByTestId("dashboard-responsive-grid");
+		expect(grid).toHaveClass("space-y-5");
+		expect(grid).toHaveClass("md:grid");
+		expect(grid).toHaveClass("md:grid-cols-12");
+		expect(screen.getByLabelText("Swipe dashboard month summary")).toHaveAttribute(
+			"data-swipe-navigation-ignore"
+		);
+		expect(screen.getByLabelText("Desktop financial overview")).toBeInTheDocument();
+	});
+
+	it("requests desktop chart data from the shared cached analytics hook", async () => {
+		mockMatchMedia(true);
+		const { useAnalyticsMonthSummaries } = await import("@/hooks/useAnalyticsMonthSummaries");
+
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		expect(vi.mocked(useAnalyticsMonthSummaries)).toHaveBeenCalledWith(
+			USER_ID,
+			expect.objectContaining({
+				currency: "AED",
+				months: 8,
+				mode: "ending",
+			})
+		);
+	});
+
+	it("renders new trend charts from analytics month summaries", () => {
+		const summaries = trendSummaries();
+		const { rerender } = render(<CashFlowTrendChart summaries={summaries} currency="AED" />);
+
+		expect(screen.getByTestId("bar-chart")).toHaveAttribute(
+			"data-chart",
+			JSON.stringify(
+				summaries.map((item) => ({
+					month: item.month,
+					income: item.income,
+					expense: item.expense,
+					net: item.net,
+					currency: item.currency,
+				}))
+			)
+		);
+
+		rerender(<SpendingTrendChart summaries={summaries} currency="AED" />);
+		expect(screen.getByTestId("area-chart")).toHaveAttribute(
+			"data-chart",
+			JSON.stringify(
+				summaries.map((item) => ({
+					month: item.month,
+					expense: item.expense,
+					currency: item.currency,
+				}))
+			)
+		);
+	});
+
+	it("keeps account distribution scoped to the active currency analytics", () => {
+		const analytics = buildAccountsAnalytics(1500);
+		analytics.accounts = [
+			{
+				accountId: "aed-wallet",
+				title: "AED Wallet",
+				currency: "AED",
+				balance: 1000,
+				isArchived: false,
+				accountType: "asset",
+			},
+			{
+				accountId: "aed-cash",
+				title: "AED Cash",
+				currency: "AED",
+				balance: 500,
+				isArchived: false,
+				accountType: "asset",
+			},
+		];
+		analytics.allAccounts = [
+			...analytics.accounts,
+			{
+				accountId: "pkr-wallet",
+				title: "PKR Wallet",
+				currency: "PKR",
+				balance: 200000,
+				isArchived: false,
+				accountType: "asset",
+			},
+		];
+
+		render(<AccountDistributionChart analytics={analytics} />);
+
+		expect(screen.getByText("AED Wallet")).toBeInTheDocument();
+		expect(screen.getByText("AED Cash")).toBeInTheDocument();
+		expect(screen.queryByText("PKR Wallet")).not.toBeInTheDocument();
+		const displayedTotal = screen
+			.getAllByTestId("account-distribution-amount")
+			.reduce((sum, item) => sum + Number(item.getAttribute("data-amount")), 0);
+		expect(displayedTotal).toBe(1500);
+	});
+
 	it("renders empty period states instead of broken charts", async () => {
 		await mockHooks(true);
 
@@ -294,5 +455,20 @@ describe("dashboard UI rebuild", () => {
 		expect(screen.getByText("No Income in this period")).toBeInTheDocument();
 		expect(screen.getByText("No expenses in this period")).toBeInTheDocument();
 		expect(within(screen.getByText("No Income in this period").closest("section")!)).toBeTruthy();
+	});
+
+	it("renders intentional empty states for new desktop charts", () => {
+		const emptySummaries = trendSummaries(true);
+		const emptyAccounts = buildAccountsAnalytics(0);
+		emptyAccounts.accounts = [];
+
+		const { rerender } = render(<CashFlowTrendChart summaries={emptySummaries} currency="AED" />);
+		expect(screen.getByText("No cash-flow trend yet")).toBeInTheDocument();
+
+		rerender(<SpendingTrendChart summaries={emptySummaries} currency="AED" />);
+		expect(screen.getByText("No spending trend yet")).toBeInTheDocument();
+
+		rerender(<AccountDistributionChart analytics={emptyAccounts} />);
+		expect(screen.getByText("No positive account balances")).toBeInTheDocument();
 	});
 });

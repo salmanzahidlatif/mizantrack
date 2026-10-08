@@ -30,7 +30,9 @@ vi.mock("firebase/firestore", () => ({
 	doc: vi.fn((_db: unknown, ...segments: string[]) => ({ path: segments.join("/") })),
 	getDocs: vi.fn(),
 	getDoc: vi.fn(),
+	limit: vi.fn((count: number) => ({ type: "limit", count })),
 	setDoc: vi.fn(),
+	startAfter: vi.fn((docSnap: unknown) => ({ type: "startAfter", docSnap })),
 	query: vi.fn(),
 	where: vi.fn(),
 	orderBy: vi.fn(),
@@ -1088,6 +1090,112 @@ describe("syncAll — server syncedAt cursors", () => {
 		);
 	}
 
+	function remoteTransactionDoc(index: number, userId = USER_ID, prefix = "txn-remote") {
+		return {
+			id: `${prefix}-${index}`,
+			data: () => ({
+				id: `${prefix}-${index}`,
+				userId,
+				type: "Expense" as const,
+				date: 10_000 + index,
+				amount: index,
+				accountId: "acc-1",
+				updatedAt: 20_000 + index,
+				syncedAt: firestoreTimestamp(index),
+			}),
+		};
+	}
+
+	async function configurePaginatedPull(
+		tableName: (typeof CORE_SYNC_TABLES)[number],
+		docs: ReturnType<typeof remoteTransactionDoc>[],
+		options: { failOnPage?: number; userId?: string } = {}
+	) {
+		const { firestore, mockSet } = await configureEmptySyncMocks();
+		const syncUserId = options.userId ?? USER_ID;
+		let documentReads = 0;
+		const pageCalls: string[][] = [];
+		const tableCalls: Record<string, number> = {};
+
+		vi.mocked(firestore.where).mockImplementation(
+			((field: string, operator: string, value: unknown) => ({
+				type: "where",
+				field,
+				operator,
+				value,
+			})) as typeof firestore.where
+		);
+		vi.mocked(firestore.orderBy).mockImplementation(
+			((field: string) => ({ type: "orderBy", field })) as typeof firestore.orderBy
+		);
+		vi.mocked(firestore.limit).mockImplementation(
+			((count: number) => ({ type: "limit", count })) as typeof firestore.limit
+		);
+		vi.mocked(firestore.startAfter).mockImplementation(
+			((docSnap: unknown) => ({ type: "startAfter", docSnap })) as typeof firestore.startAfter
+		);
+		vi.mocked(firestore.query).mockImplementation(
+			((ref: { path?: string }, ...constraints: unknown[]) => ({
+				path: ref.path,
+				constraints,
+			})) as typeof firestore.query
+		);
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const queryRef = ref as { path?: string; constraints?: unknown[] };
+			const path = queryRef.path;
+			if (path !== `users/${syncUserId}/${tableName}`) {
+				return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			tableCalls[tableName] = (tableCalls[tableName] ?? 0) + 1;
+			if (options.failOnPage === tableCalls[tableName]) {
+				throw new Error(`Injected ${tableName} page failure`);
+			}
+
+			const constraints = queryRef.constraints ?? [];
+			const whereConstraint = constraints.find(
+				(constraint): constraint is { value: number } =>
+					typeof constraint === "object" &&
+					constraint !== null &&
+					(constraint as { type?: unknown }).type === "where"
+			);
+			const limitConstraint = constraints.find(
+				(constraint): constraint is { count: number } =>
+					typeof constraint === "object" &&
+					constraint !== null &&
+					(constraint as { type?: unknown }).type === "limit"
+			);
+			const startAfterConstraint = constraints.find(
+				(constraint): constraint is { docSnap: ReturnType<typeof remoteTransactionDoc> } =>
+					typeof constraint === "object" &&
+					constraint !== null &&
+					(constraint as { type?: unknown }).type === "startAfter"
+			);
+			const cursor = whereConstraint?.value ?? 0;
+			const pageSize = limitConstraint?.count ?? docs.length;
+			const startAfterDoc = startAfterConstraint?.docSnap;
+			const startAfterIndex = startAfterDoc ? docs.indexOf(startAfterDoc) + 1 : 0;
+			const pageDocs = docs
+				.slice(startAfterIndex)
+				.filter((docSnap) => {
+					const syncedAt = (docSnap.data().syncedAt as { toMillis: () => number }).toMillis();
+					return syncedAt > cursor;
+				})
+				.slice(0, pageSize);
+
+			documentReads += pageDocs.length;
+			pageCalls.push(pageDocs.map((docSnap) => docSnap.id));
+			return { docs: pageDocs } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+
+		return {
+			firestore,
+			mockSet,
+			getDocumentReads: () => documentReads,
+			getPageCalls: () => pageCalls,
+		};
+	}
+
 	it("syncAll_RemoteUpdatedAtBehindLocalCursor_PullsByServerSyncedAt", async () => {
 		await markMigrationDone();
 		await db.syncMeta.put({ id: "lastSync:accounts", timestamp: 1_000 });
@@ -1169,6 +1277,99 @@ describe("syncAll — server syncedAt cursors", () => {
 			amount: 75,
 			pendingSync: false,
 		});
+	});
+
+	it("syncAll_LargeTransactionPull_PaginatesToCompletionWithoutExtraDocumentReads", async () => {
+		await markMigrationDone();
+		const largeUserId = `${USER_ID}-large`;
+		const remoteDocs = Array.from({ length: 7_673 }, (_, index) =>
+			remoteTransactionDoc(index + 1, largeUserId, "txn-large")
+		);
+		const progress: { table: string; totalPulled: number; pulled: number }[] = [];
+		const { getDocumentReads, getPageCalls } = await configurePaginatedPull(
+			"transactions",
+			remoteDocs,
+			{ userId: largeUserId }
+		);
+
+		try {
+			const result = await syncAll(largeUserId, ({ table, totalPulled, pulled }) => {
+				if (table === "transactions") progress.push({ table, totalPulled, pulled });
+			});
+
+			expect(result.status).toBe("success");
+			expect(result.tables?.transactions).toMatchObject({ pulled: 7_673, cursor: 7_673 });
+			expect(await db.transactions.where("userId").equals(largeUserId).count()).toBe(7_673);
+			expect((await db.syncMeta.get("lastSync:transactions"))?.timestamp).toBe(7_673);
+			expect(getPageCalls().filter((page) => page.length > 0).length).toBeGreaterThan(1);
+			expect(getDocumentReads()).toBe(remoteDocs.length);
+			expect(progress.some((entry) => entry.totalPulled > 0 && entry.totalPulled < 7_673)).toBe(
+				true
+			);
+		} finally {
+			await db.syncMeta.delete("lastSync:transactions");
+		}
+	}, 20_000);
+
+	it("syncAll_MidPullFailure_PersistsPageProgressAndRetryResumes", async () => {
+		await markMigrationDone();
+		const remoteDocs = Array.from({ length: 1_200 }, (_, index) =>
+			remoteTransactionDoc(index + 1)
+		);
+		const firstAttempt = await configurePaginatedPull("transactions", remoteDocs, {
+			failOnPage: 3,
+		});
+
+		const firstResult = await syncAll(USER_ID);
+
+		expect(firstResult.status).toBe("partial");
+		expect(firstResult.errors).toEqual([
+			expect.objectContaining({
+				scope: "transactions",
+				phase: "pull",
+				message: "Injected transactions page failure",
+			}),
+		]);
+		expect(await db.transactions.where("userId").equals(USER_ID).count()).toBe(1_000);
+		expect((await db.syncMeta.get("lastSync:transactions"))?.timestamp).toBe(999);
+		expect(firstAttempt.getPageCalls()[0]?.[0]).toBe("txn-remote-1");
+
+		const secondAttempt = await configurePaginatedPull("transactions", remoteDocs);
+		const secondResult = await syncAll(USER_ID);
+
+		expect(secondResult.status).toBe("success");
+		expect(await db.transactions.where("userId").equals(USER_ID).count()).toBe(1_200);
+		expect((await db.syncMeta.get("lastSync:transactions"))?.timestamp).toBe(1_200);
+		expect(secondAttempt.getPageCalls()[0]?.[0]).toBe("txn-remote-1000");
+		expect(secondAttempt.getDocumentReads()).toBe(201);
+	});
+
+	it("syncAll_LocalWriteFailure_DoesNotAdvanceCursorPastUnwrittenDocument", async () => {
+		await markMigrationDone();
+		const remoteDocs = Array.from({ length: 3 }, (_, index) => remoteTransactionDoc(index + 1));
+		await configurePaginatedPull("transactions", remoteDocs);
+		const originalPut = db.transactions.put.bind(db.transactions);
+		const putSpy = vi.spyOn(db.transactions, "put").mockImplementation(async (record) => {
+			if (record.id === "txn-remote-2") {
+				throw new Error("IndexedDB write failed");
+			}
+			return originalPut(record);
+		});
+
+		const result = await syncAll(USER_ID);
+		putSpy.mockRestore();
+
+		expect(result.status).toBe("partial");
+		expect(result.errors).toEqual([
+			expect.objectContaining({
+				scope: "transactions",
+				phase: "pull",
+				message: "IndexedDB write failed",
+			}),
+		]);
+		expect(await db.transactions.get("txn-remote-1")).toBeTruthy();
+		expect(await db.transactions.get("txn-remote-2")).toBeUndefined();
+		expect((await db.syncMeta.get("lastSync:transactions"))?.timestamp).toBeUndefined();
 	});
 
 	it("syncAll_CategoriesPullFailure_DoesNotBlockTransactionsOrAdvanceCategoryCursor", async () => {

@@ -40,7 +40,7 @@ export async function refreshGoogleSheetsAccessToken(
 		if (data.error === "invalid_grant") {
 			throw new GoogleSheetsBackupError(
 				"RequiresReconnect",
-				"Your Google Sheets connection expired. Reconnect Google Sheets.",
+				"Your Google Sheets refresh token expired or was revoked. Reconnect Google Sheets. If this happened after about 7 days, set OAuth consent / Google Auth Platform → Audience → Publishing status to In production.",
 				response.status
 			);
 		}
