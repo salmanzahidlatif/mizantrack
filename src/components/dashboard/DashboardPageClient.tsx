@@ -105,11 +105,13 @@ interface SummarySplitCardProps {
 	analytics?: PeriodAnalytics;
 	currency: string;
 	periodLabel: string;
+	className?: string;
 }
 
 interface WhatYouHaveCardProps {
 	analytics?: AccountsAnalytics;
 	onAddAccount: () => void;
+	className?: string;
 }
 
 function useDesktopDashboardEnabled() {
@@ -342,10 +344,10 @@ function MonthStrip({
 	);
 }
 
-function WhatYouHaveSkeleton() {
+function WhatYouHaveSkeleton({ className }: { className?: string }) {
 	return (
 		<section
-			className={cn(CARD_SURFACE, "overflow-hidden p-4")}
+			className={cn(CARD_SURFACE, "overflow-hidden p-4 md:flex md:h-full md:flex-col", className)}
 			aria-busy="true"
 			data-testid="what-you-have-skeleton">
 			<p className="sr-only" role="status">
@@ -363,7 +365,10 @@ function WhatYouHaveSkeleton() {
 					{Array.from({ length: 5 }).map((_, index) => (
 						<div
 							key={index}
-							className="min-h-[72px] rounded-2xl border border-border/60 bg-muted/35 p-3">
+							className={cn(
+								"min-h-[72px] rounded-2xl border border-border/60 bg-muted/35 p-3",
+								index >= 3 && "xl:hidden"
+							)}>
 							<div className="shimmer h-3 w-20 rounded-full bg-muted/70" />
 							<div className="shimmer mt-2 h-5 w-24 rounded-full bg-muted/70" />
 						</div>
@@ -378,15 +383,18 @@ function WhatYouHaveSkeleton() {
 	);
 }
 
-function WhatYouHaveCard({ analytics, onAddAccount }: WhatYouHaveCardProps) {
+function WhatYouHaveCard({ analytics, onAddAccount, className }: WhatYouHaveCardProps) {
 	if (!analytics) {
-		return <WhatYouHaveSkeleton />;
+		return <WhatYouHaveSkeleton className={className} />;
 	}
 
 	const accounts = sortDashboardAccounts(analytics.accounts).slice(0, 5);
 
 	return (
-		<section className={cn(CARD_SURFACE, "overflow-hidden p-4")} aria-labelledby="what-you-have">
+		<section
+			className={cn(CARD_SURFACE, "overflow-hidden p-4 md:flex md:h-full md:flex-col", className)}
+			aria-labelledby="what-you-have"
+			data-testid="what-you-have-card">
 			<div className="mb-4 flex items-start justify-between gap-3">
 				<div>
 					<p id="what-you-have" className="text-sm font-semibold">
@@ -411,8 +419,10 @@ function WhatYouHaveCard({ analytics, onAddAccount }: WhatYouHaveCardProps) {
 						data-testid="dashboard-account-tile"
 						data-account-id={account.accountId}
 						data-balance={account.balance}
+						data-dashboard-extra-account={index >= 3 ? "true" : undefined}
 						className={cn(
 							"press min-h-[72px] rounded-2xl border border-border/60 bg-muted/35 p-3 text-left",
+							index >= 3 && "xl:hidden",
 							LIST_ROW
 						)}
 						style={staggerDelay(index, 30)}>
@@ -447,9 +457,9 @@ function WhatYouHaveCard({ analytics, onAddAccount }: WhatYouHaveCardProps) {
 	);
 }
 
-function SummarySplitCard({ analytics, currency, periodLabel }: SummarySplitCardProps) {
+function SummarySplitCard({ analytics, currency, periodLabel, className }: SummarySplitCardProps) {
 	if (!analytics) {
-		return <SkeletonCard className="h-28" />;
+		return <SkeletonCard className={cn("h-28 md:h-full", className)} />;
 	}
 
 	const items = [
@@ -471,24 +481,29 @@ function SummarySplitCard({ analytics, currency, periodLabel }: SummarySplitCard
 
 	return (
 		<section
-			className={cn(CARD_SURFACE, "overflow-hidden")}
+			className={cn(CARD_SURFACE, "overflow-hidden md:flex md:h-full md:flex-col", className)}
 			aria-label={`Income and expense for ${periodLabel}`}>
-			<div className="grid grid-cols-2 divide-x divide-border/60">
+			<div className="grid grid-cols-2 divide-x divide-border/60 md:min-h-0 md:flex-1">
 				{items.map(({ label, amount, variant, icon: Icon, underline }) => (
-					<Link key={label} href="/transactions" className="press relative min-h-28 p-4 text-left">
-						<div className="mb-3 flex items-center justify-between gap-2">
+					<Link
+						key={label}
+						href="/transactions"
+						className="press relative min-h-28 p-4 text-left md:flex md:min-h-full md:flex-col md:justify-between">
+						<div className="mb-3 flex items-center justify-between gap-2 md:mb-0">
 							<span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground">
 								<Icon className="h-4 w-4" aria-hidden="true" />
 							</span>
 							<ChevronRight className="h-4 w-4 text-muted-foreground/60" aria-hidden="true" />
 						</div>
-						<CurrencyAmount
-							amount={amount}
-							currency={currency}
-							variant={variant}
-							className="block text-lg leading-6"
-						/>
-						<p className="mt-1 text-xs font-medium text-muted-foreground">{label}</p>
+						<div className="md:pt-4">
+							<CurrencyAmount
+								amount={amount}
+								currency={currency}
+								variant={variant}
+								className="block text-lg leading-6 tabular-nums"
+							/>
+							<p className="mt-1 text-xs font-medium text-muted-foreground">{label}</p>
+						</div>
 						<span
 							className={cn("absolute right-4 bottom-0 left-4 h-1 rounded-t-full", underline)}
 						/>
@@ -598,7 +613,7 @@ function BudgetProgressPanel({
 }) {
 	if (isLoading) {
 		return (
-			<section className={cn(CARD_SURFACE, "p-5")} aria-busy="true">
+			<section className={cn(CARD_SURFACE, "p-5 md:h-full md:w-full")} aria-busy="true">
 				<div className="shimmer mb-4 h-4 w-32 rounded-full bg-muted/70" />
 				<div className="space-y-4">
 					{Array.from({ length: 3 }).map((_, index) => (
@@ -619,7 +634,7 @@ function BudgetProgressPanel({
 
 	return (
 		<section
-			className={cn(CARD_SURFACE, "overflow-hidden p-5")}
+			className={cn(CARD_SURFACE, "overflow-hidden p-5 md:h-full md:w-full")}
 			aria-labelledby="budget-progress-title">
 			<div className="mb-4 flex items-start justify-between gap-3">
 				<div>
@@ -846,25 +861,37 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 				data-swipe-navigation-ignore
 				aria-label="Swipe dashboard month summary"
 				data-testid="dashboard-responsive-grid"
-				className="touch-pan-y space-y-5 md:grid md:grid-cols-12 md:items-start md:gap-5 md:space-y-0 xl:gap-6"
+				className="touch-pan-y space-y-5 md:grid md:grid-cols-12 md:items-stretch md:gap-5 md:space-y-0 xl:gap-6"
 				style={{ touchAction: "pan-y" }}>
-				<div className="md:col-span-5 xl:col-span-4">
-					<WhatYouHaveCard analytics={accountAnalytics} onAddAccount={handleAddAccount} />
+				<div
+					className="md:col-span-5 md:flex xl:col-span-4"
+					data-testid="dashboard-top-card-cell">
+					<WhatYouHaveCard
+						analytics={accountAnalytics}
+						onAddAccount={handleAddAccount}
+						className="md:w-full"
+					/>
 				</div>
 
-				<div className="md:col-span-7 xl:col-span-4">
+				<div
+					className="md:col-span-7 md:flex xl:col-span-4"
+					data-testid="dashboard-top-card-cell">
 					<SummarySplitCard
 						analytics={periodAnalytics}
 						currency={currency}
 						periodLabel={periodLabel}
+						className="md:w-full"
 					/>
 				</div>
 
-				<div className="hidden xl:col-span-4 xl:block">
+				<div
+					className="hidden xl:col-span-4 xl:flex"
+					data-testid="dashboard-top-card-cell">
 					{desktopDashboardEnabled ? (
 						<AccountDistributionChart
 							analytics={accountAnalytics}
 							isLoading={accountAnalytics === undefined}
+							className="xl:w-full"
 						/>
 					) : null}
 				</div>
@@ -879,40 +906,43 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					) : null}
 				</div>
 
-				<div className="hidden md:col-span-12 md:block lg:col-span-7">
+				<div className="hidden md:col-span-12 md:flex lg:col-span-7">
 					{desktopDashboardEnabled ? (
 						<CashFlowTrendChart
 							summaries={trendSummaries}
 							currency={currency}
 							isLoading={trendSummaries === undefined}
+							className="md:w-full"
 						/>
 					) : (
 						<SkeletonChart height={320} />
 					)}
 				</div>
 
-				<div className="hidden md:col-span-6 md:block lg:col-span-5 xl:hidden">
+				<div className="hidden md:col-span-6 md:flex lg:col-span-5 xl:hidden">
 					{desktopDashboardEnabled ? (
 						<AccountDistributionChart
 							analytics={accountAnalytics}
 							isLoading={accountAnalytics === undefined}
+							className="md:w-full"
 						/>
 					) : null}
 				</div>
 
-				<div className="hidden md:col-span-6 md:block lg:col-span-5">
+				<div className="hidden md:col-span-6 md:flex lg:col-span-5">
 					{desktopDashboardEnabled ? (
 						<SpendingTrendChart
 							summaries={trendSummaries}
 							currency={currency}
 							isLoading={trendSummaries === undefined}
+							className="md:w-full"
 						/>
 					) : (
 						<SkeletonChart height={260} />
 					)}
 				</div>
 
-				<div className="md:col-span-6 lg:col-span-5">
+				<div className="md:col-span-6 md:flex lg:col-span-5">
 					<CategoryBreakdownChart
 						userId={userId}
 						breakdown={periodAnalytics?.expenseBreakdown}
@@ -923,6 +953,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 						periodLabel={periodLabel}
 						emptyTitle="No expenses in this period"
 						emptyDescription="Expense categories will appear here when you record spending."
+						className="md:w-full"
 						action={
 							<Button asChild variant="link" size="sm" className="h-auto px-0 text-xs font-bold">
 								<Link href="/reports">VIEW MORE</Link>
@@ -931,7 +962,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					/>
 				</div>
 
-				<div className="hidden md:col-span-6 md:block lg:col-span-7">
+				<div className="hidden md:col-span-6 md:flex lg:col-span-7">
 					{desktopDashboardEnabled ? (
 						<BudgetProgressPanel
 							rows={budgetProgress?.rows ?? []}

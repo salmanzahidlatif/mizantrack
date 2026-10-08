@@ -85,7 +85,7 @@ function ChartEmptyState({
 		<section
 			className={cn(
 				CARD_SURFACE,
-				"flex min-h-[320px] flex-col items-center justify-center border-dashed p-6 text-center",
+				"flex min-h-[320px] flex-col items-center justify-center border-dashed p-6 text-center md:h-full",
 				className
 			)}>
 			<h2 className="text-sm font-semibold">{title}</h2>
@@ -168,7 +168,7 @@ export function CashFlowTrendChart({ summaries, currency, isLoading, className }
 
 	return (
 		<section
-			className={cn(CARD_SURFACE, "overflow-hidden p-5", className)}
+			className={cn(CARD_SURFACE, "overflow-hidden p-5 md:h-full", className)}
 			aria-labelledby="cash-flow-trend-title">
 			<div className="mb-4 flex flex-wrap items-start justify-between gap-4">
 				<div>
@@ -218,7 +218,7 @@ export function CashFlowTrendChart({ summaries, currency, isLoading, className }
 				role="img"
 				aria-labelledby="cash-flow-trend-title"
 				aria-describedby="cash-flow-trend-legend">
-				<ResponsiveContainer width="100%" height="100%">
+				<ResponsiveContainer width="100%" height="100%" debounce={80}>
 					<BarChart data={data} margin={{ top: 12, right: 8, left: 8, bottom: 0 }}>
 						<CartesianGrid strokeDasharray="3 3" className="stroke-border" />
 						<XAxis dataKey="month" tick={{ fontSize: 11 }} />
@@ -289,7 +289,7 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 
 	return (
 		<section
-			className={cn(CARD_SURFACE, "overflow-hidden p-5", className)}
+			className={cn(CARD_SURFACE, "overflow-hidden p-5 md:h-full", className)}
 			aria-labelledby="spending-trend-title">
 			<div className="mb-4">
 				<h2 id="spending-trend-title" className="text-sm font-semibold">
@@ -304,7 +304,7 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 				role="img"
 				aria-labelledby="spending-trend-title"
 				aria-describedby="spending-trend-legend">
-				<ResponsiveContainer width="100%" height="100%">
+				<ResponsiveContainer width="100%" height="100%" debounce={80}>
 					<AreaChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
 						<CartesianGrid strokeDasharray="3 3" className="stroke-border" />
 						<XAxis dataKey="month" tick={{ fontSize: 11 }} />
@@ -322,8 +322,10 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 					</AreaChart>
 				</ResponsiveContainer>
 			</div>
-			<div id="spending-trend-legend" className="mt-4 grid grid-cols-2 gap-3 text-xs">
-				<div className="rounded-2xl bg-muted/45 p-3">
+			<div
+				id="spending-trend-legend"
+				className="mt-4 grid w-full grid-cols-[repeat(2,minmax(0,1fr))] gap-3 text-xs">
+				<div className="min-w-0 rounded-2xl bg-muted/45 p-3">
 					<p className="text-muted-foreground">Highest month</p>
 					<p className="mt-1 font-semibold">{highest?.month}</p>
 					<CurrencyAmount
@@ -333,7 +335,7 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 						className="tabular-nums"
 					/>
 				</div>
-				<div className="rounded-2xl bg-muted/45 p-3">
+				<div className="min-w-0 rounded-2xl bg-muted/45 p-3">
 					<p className="text-muted-foreground">Average active month</p>
 					<CurrencyAmount
 						amount={average}
@@ -379,7 +381,7 @@ export function AccountDistributionChart({
 
 	return (
 		<section
-			className={cn(CARD_SURFACE, "overflow-hidden p-5", className)}
+			className={cn(CARD_SURFACE, "flex flex-col overflow-hidden p-5 md:h-full", className)}
 			aria-labelledby="account-distribution-title"
 			data-testid="account-distribution-chart">
 			<div className="mb-4 flex items-start justify-between gap-3">
@@ -399,13 +401,13 @@ export function AccountDistributionChart({
 					className="text-sm tabular-nums"
 				/>
 			</div>
-			<div className="grid grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-center gap-4">
+			<div className="grid min-h-0 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-center gap-4 md:flex-1">
 				<div
 					className="h-44"
 					role="img"
 					aria-labelledby="account-distribution-title"
 					aria-describedby="account-distribution-legend">
-					<ResponsiveContainer width="100%" height="100%">
+					<ResponsiveContainer width="100%" height="100%" debounce={80}>
 						<PieChart>
 							<Pie
 								data={data}
@@ -426,9 +428,13 @@ export function AccountDistributionChart({
 				</div>
 				<div
 					id="account-distribution-legend"
-					className="no-scrollbar max-h-52 space-y-2 overflow-y-auto pr-1">
+					data-testid="account-distribution-legend"
+					className="no-scrollbar max-h-44 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-1">
 					{data.map((account) => (
-						<div key={account.accountId} className="flex items-center gap-2">
+						<div
+							key={account.accountId}
+							className="flex min-h-9 items-center gap-2"
+							data-testid="account-distribution-row">
 							<span
 								className="h-2.5 w-2.5 shrink-0 rounded-full"
 								style={{ backgroundColor: account.color }}
@@ -437,7 +443,10 @@ export function AccountDistributionChart({
 								<p className="truncate text-xs font-medium">{account.title}</p>
 								<p className="text-[10px] text-muted-foreground">{account.currency}</p>
 							</div>
-							<span data-testid="account-distribution-amount" data-amount={account.balance}>
+							<span
+								className="shrink-0 text-right"
+								data-testid="account-distribution-amount"
+								data-amount={account.balance}>
 								<CurrencyAmount
 									amount={account.balance}
 									currency={account.currency}

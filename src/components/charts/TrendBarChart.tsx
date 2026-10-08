@@ -113,7 +113,7 @@ export function TrendChart({
 			<p className="mb-3 text-sm font-semibold">
 				Income vs Expenses through {selectedMonthRange.label}
 			</p>
-			<ResponsiveContainer width="100%" height={200}>
+			<ResponsiveContainer width="100%" height={200} debounce={80}>
 				<BarChart data={data} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
 					<CartesianGrid strokeDasharray="3 3" className="stroke-border" />
 					<XAxis dataKey="month" tick={{ fontSize: 11 }} />

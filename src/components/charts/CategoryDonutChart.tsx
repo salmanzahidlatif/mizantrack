@@ -157,6 +157,7 @@ export function CategoryBreakdownChart({
 			<div
 				className={cn(
 					"flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-card p-6 text-center shadow-[var(--shadow-card)]",
+					"md:h-full",
 					className
 				)}>
 				<p className="text-sm font-semibold">
@@ -171,7 +172,7 @@ export function CategoryBreakdownChart({
 	}
 
 	return (
-		<div className={cn(CARD_SURFACE, "overflow-hidden p-4", className)}>
+		<div className={cn(CARD_SURFACE, "overflow-hidden p-4 md:h-full", className)}>
 			<div className="mb-3 flex items-start justify-between gap-3">
 				<div>
 					<p id={describedById} className="text-sm font-semibold">
@@ -195,7 +196,7 @@ export function CategoryBreakdownChart({
 					role="img"
 					aria-labelledby={describedById}
 					aria-describedby={`${describedById}-legend`}>
-					<ResponsiveContainer width="100%" height="100%">
+					<ResponsiveContainer width="100%" height="100%" debounce={80}>
 						<PieChart>
 							<Pie
 								data={visibleChartData}

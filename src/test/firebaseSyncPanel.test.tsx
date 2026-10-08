@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FirebaseSyncPanel } from "@/components/settings/FirebaseSyncPanel";
@@ -103,32 +103,40 @@ describe("FirebaseSyncPanel backup counts", () => {
 		render(<FirebaseSyncPanel userId="owner-user" />);
 
 		const categories = await screen.findByLabelText("Categories backup status");
-		expect(within(categories).getByText("Nothing missing")).toBeInTheDocument();
-		expect(within(categories).getByText("Firebase 73 total · Local 73 total")).toBeInTheDocument();
-		expect(within(categories).getByText("58 active · 15 deleted · 73 total")).toBeInTheDocument();
+		expect(categories).not.toHaveAttribute("open");
+		expect(within(categories).getByText("Reconciled")).toBeInTheDocument();
+		expect(
+			within(categories).getByText(/Firebase & local 73 total · 58 active/)
+		).toBeInTheDocument();
+		const categoriesSummary = within(categories).getByText("Categories").closest("summary");
+		expect(categoriesSummary).not.toBeNull();
+		fireEvent.click(categoriesSummary!);
+		expect(categories).toHaveAttribute("open");
 		expect(
 			within(categories).getByText(
-				"Deleted markers keep merges/deletes synced; they are counted in the total."
+				"58 active · 15 deleted · 73 total. Deleted markers keep merges and deletes synced across devices."
 			)
 		).toBeInTheDocument();
 
 		const transactions = screen.getByLabelText("Transactions backup status");
-		expect(within(transactions).getByText("Nothing missing")).toBeInTheDocument();
+		expect(transactions).toHaveAttribute("open");
+		expect(within(transactions).getByText("2,683 pending")).toBeInTheDocument();
 		expect(
-			within(transactions).getByText("Firebase 4,990 backed up · 2,683 waiting · Local 7,673 total")
+			within(transactions).getByText(/4,990 backed up · 2,683 waiting · 7,673 local/)
 		).toBeInTheDocument();
 		expect(
 			within(transactions).getByText(
-				"2,683 local rows are waiting to upload; that explains the count difference."
+				"2,683 local rows are waiting to upload; that explains the count difference. Local: 7,673 active · 0 deleted · 7,673 total."
 			)
 		).toBeInTheDocument();
 
 		const budgets = screen.getByLabelText("Budgets backup status");
+		expect(budgets).toHaveAttribute("open");
+		expect(within(budgets).getByText(/0 backed up · 180 waiting · 180 local/)).toBeInTheDocument();
 		expect(
-			within(budgets).getByText("Firebase 0 backed up · 180 waiting · Local 180 total")
-		).toBeInTheDocument();
-		expect(
-			within(budgets).getByText("All 180 local rows are waiting to upload.")
+			within(budgets).getByText(
+				"All 180 local rows are waiting to upload. Local: 180 active · 0 deleted · 180 total."
+			)
 		).toBeInTheDocument();
 	});
 });

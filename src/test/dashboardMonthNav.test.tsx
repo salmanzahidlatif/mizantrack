@@ -352,10 +352,61 @@ describe("dashboard UI rebuild", () => {
 		expect(grid).toHaveClass("space-y-5");
 		expect(grid).toHaveClass("md:grid");
 		expect(grid).toHaveClass("md:grid-cols-12");
+		expect(grid).toHaveClass("md:items-stretch");
 		expect(screen.getByLabelText("Swipe dashboard month summary")).toHaveAttribute(
 			"data-swipe-navigation-ignore"
 		);
 		expect(screen.getByLabelText("Desktop financial overview")).toBeInTheDocument();
+	});
+
+	it("keeps desktop stretching behind breakpoints so the mobile stack stays unchanged", () => {
+		mockMatchMedia(false);
+
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		const grid = screen.getByTestId("dashboard-responsive-grid");
+		expect(grid).toHaveClass("touch-pan-y");
+		expect(grid).toHaveClass("space-y-5");
+		expect(grid.className.split(/\s+/)).not.toContain("grid");
+		expect(grid).toHaveClass("md:grid");
+		expect(grid).toHaveClass("md:items-stretch");
+	});
+
+	it("stretches desktop row cards to a consistent row height without changing mobile order", async () => {
+		mockMatchMedia(true);
+		const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
+		const analytics = buildAccountsAnalytics();
+		analytics.accounts = [
+			...analytics.accounts,
+			{
+				accountId: "emergency",
+				title: "Emergency Fund",
+				currency: "AED",
+				balance: 1200,
+				isArchived: false,
+				accountType: "asset",
+			},
+			{
+				accountId: "wallet",
+				title: "Wallet",
+				currency: "AED",
+				balance: 800,
+				isArchived: false,
+				accountType: "asset",
+			},
+		];
+		analytics.allAccounts = analytics.accounts;
+		vi.mocked(useAccountsAnalytics).mockReturnValue(analytics);
+
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		const topCells = screen.getAllByTestId("dashboard-top-card-cell");
+		expect(topCells).toHaveLength(3);
+		topCells.forEach((cell) => {
+			expect(cell.className).toMatch(/md:flex|xl:flex/);
+		});
+		expect(screen.getByTestId("what-you-have-card")).toHaveClass("md:h-full");
+		expect(screen.getAllByTestId("dashboard-account-tile")[3]).toHaveClass("xl:hidden");
 	});
 
 	it("requests desktop chart data from the shared cached analytics hook", async () => {
@@ -445,6 +496,69 @@ describe("dashboard UI rebuild", () => {
 			.getAllByTestId("account-distribution-amount")
 			.reduce((sum, item) => sum + Number(item.getAttribute("data-amount")), 0);
 		expect(displayedTotal).toBe(1500);
+	});
+
+	it("keeps every account distribution legend row reachable with its value", () => {
+		const analytics = buildAccountsAnalytics(2925);
+		analytics.accounts = [
+			{
+				accountId: "checking",
+				title: "Checking",
+				currency: "AED",
+				balance: 1000,
+				isArchived: false,
+				accountType: "asset",
+			},
+			{
+				accountId: "savings",
+				title: "Savings",
+				currency: "AED",
+				balance: 900,
+				isArchived: false,
+				accountType: "asset",
+			},
+			{
+				accountId: "wallet",
+				title: "Wallet",
+				currency: "AED",
+				balance: 600,
+				isArchived: false,
+				accountType: "asset",
+			},
+			{
+				accountId: "emergency",
+				title: "Emergency Fund",
+				currency: "AED",
+				balance: 400,
+				isArchived: false,
+				accountType: "asset",
+			},
+			{
+				accountId: "cash",
+				title: "Cash",
+				currency: "AED",
+				balance: 25,
+				isArchived: false,
+				accountType: "asset",
+			},
+		];
+		analytics.allAccounts = analytics.accounts;
+
+		render(<AccountDistributionChart analytics={analytics} />);
+
+		const legend = screen.getByTestId("account-distribution-legend");
+		expect(legend).toHaveClass("overflow-y-auto");
+		expect(legend).toHaveClass("max-h-44");
+
+		const rows = screen.getAllByTestId("account-distribution-row");
+		expect(rows).toHaveLength(5);
+		const cashRow = rows.find((row) => within(row).queryByText("Cash"));
+		expect(cashRow).toBeDefined();
+		expect(within(cashRow!).getByTestId("account-distribution-amount")).toHaveAttribute(
+			"data-amount",
+			"25"
+		);
+		expect(within(cashRow!).getByText((text) => text.includes("25.00"))).toBeInTheDocument();
 	});
 
 	it("renders empty period states instead of broken charts", async () => {

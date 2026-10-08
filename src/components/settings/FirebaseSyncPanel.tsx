@@ -59,36 +59,47 @@ function getBackupTableStatus(count: SyncBackupCounts["tables"][number]): {
 	summary: string;
 	detail: string;
 	tone: "good" | "pending" | "review";
+	needsAttention: boolean;
 } {
 	const pendingExplainsGap = count.pending > 0 && count.remote + count.pending === count.local;
+	const localBreakdown = `${formatBackupCount(count.localActive)} active · ${formatBackupCount(
+		count.localDeleted
+	)} deleted · ${formatBackupCount(count.local)} total`;
 
 	if (count.remote === count.local && count.pending === 0) {
 		return {
-			label: "Nothing missing",
-			summary: `Firebase ${formatBackupCount(count.remote)} total · Local ${formatBackupCount(
-				count.local
-			)} total`,
+			label: "Reconciled",
+			summary:
+				count.localDeleted > 0
+					? `Firebase & local ${formatBackupCount(count.local)} total · ${formatBackupCount(
+							count.localActive
+						)} active`
+					: `Firebase & local ${formatBackupCount(count.local)} total`,
 			detail:
 				count.localDeleted > 0
-					? "Deleted markers keep merges/deletes synced; they are counted in the total."
-					: "Firebase and local totals match.",
+					? `${localBreakdown}. Deleted markers keep merges and deletes synced across devices.`
+					: `Firebase and local totals match. Local: ${localBreakdown}.`,
 			tone: "good",
+			needsAttention: false,
 		};
 	}
 
 	if (pendingExplainsGap) {
 		return {
-			label: "Nothing missing",
-			summary: `Firebase ${formatBackupCount(count.remote)} backed up · ${formatBackupCount(
+			label: `${formatBackupCount(count.pending)} pending`,
+			summary: `${formatBackupCount(count.remote)} backed up · ${formatBackupCount(
 				count.pending
-			)} waiting · Local ${formatBackupCount(count.local)} total`,
+			)} waiting · ${formatBackupCount(count.local)} local`,
 			detail:
 				count.pending === count.local
-					? `All ${formatBackupCount(count.pending)} local rows are waiting to upload.`
+					? `All ${formatBackupCount(
+							count.pending
+						)} local rows are waiting to upload. Local: ${localBreakdown}.`
 					: `${formatBackupCount(
 							count.pending
-						)} local rows are waiting to upload; that explains the count difference.`,
-			tone: "good",
+						)} local rows are waiting to upload; that explains the count difference. Local: ${localBreakdown}.`,
+			tone: "pending",
+			needsAttention: true,
 		};
 	}
 
@@ -100,6 +111,7 @@ function getBackupTableStatus(count: SyncBackupCounts["tables"][number]): {
 			)} total · ${formatBackupCount(count.pending)} pending`,
 			detail: "Some local rows have unsynced changes; totals may differ until sync completes.",
 			tone: "pending",
+			needsAttention: true,
 		};
 	}
 
@@ -111,6 +123,7 @@ function getBackupTableStatus(count: SyncBackupCounts["tables"][number]): {
 		detail:
 			"Counts still differ after including deleted markers. Run sync again when Firebase is available.",
 		tone: "review",
+		needsAttention: true,
 	};
 }
 
@@ -352,32 +365,34 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 							</p>
 						</div>
 
-						<div className="space-y-2">
+						<div className="space-y-1.5">
 							{backupCounts.tables.map((t) => {
 								const status = getBackupTableStatus(t);
 
 								return (
-									<div
+									<details
 										key={t.table}
+										open={status.needsAttention}
 										aria-label={`${getBackupTableLabel(t.table)} backup status`}
-										className="space-y-1 rounded-md border border-border/50 bg-background/70 p-2 text-xs">
-										<div className="flex items-start justify-between gap-2">
-											<span className="font-medium">{getBackupTableLabel(t.table)}</span>
+										className="group rounded-md border border-border/50 bg-background/70 text-xs">
+										<summary className="flex cursor-pointer list-none items-start gap-2 p-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+											<span className="min-w-0 flex-1 leading-snug">
+												<span className="font-medium">{getBackupTableLabel(t.table)}</span>
+												<span className="text-muted-foreground"> · {status.summary}</span>
+											</span>
 											<span className={getBackupStatusBadgeClass(status.tone)}>{status.label}</span>
+											<span className="shrink-0 text-[11px] text-muted-foreground group-open:hidden">
+												Details
+											</span>
+										</summary>
+										<div className="space-y-1 border-t border-border/50 px-2 py-2 text-[11px] leading-snug text-muted-foreground">
+											<p>{status.detail}</p>
+											<p>
+												Firebase total: {formatBackupCount(t.remote)} · Local total:{" "}
+												{formatBackupCount(t.local)}.
+											</p>
 										</div>
-										<p>{status.summary}</p>
-										<p className="text-muted-foreground">
-											{formatBackupCount(t.localActive)} active
-											{t.localDeleted > 0
-												? ` · ${formatBackupCount(t.localDeleted)} deleted`
-												: " · 0 deleted"}
-											{" · "}
-											{formatBackupCount(t.local)} total
-										</p>
-										<p className="text-[11px] leading-snug text-muted-foreground">
-											{status.detail}
-										</p>
-									</div>
+									</details>
 								);
 							})}
 						</div>
