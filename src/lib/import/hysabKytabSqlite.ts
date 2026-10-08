@@ -1177,6 +1177,7 @@ export async function prepareHysabKytabSqliteImport(
 		const choicesById = new Map<string, HysabKytabAccountChoice>();
 		for (const account of [...accountDrafts, ...existingAccounts]) {
 			if (account.deletedAt) continue;
+			if (normalizeCurrency(account.currency) !== currency) continue;
 			choicesById.set(account.id, accountChoice(account));
 		}
 		choicesById.set(fallbackDraft.id, accountChoice(fallbackDraft, true));
