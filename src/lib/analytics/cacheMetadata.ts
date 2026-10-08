@@ -4,7 +4,7 @@ import { db } from "@/lib/db/local";
 
 import type { Account, Category, DashboardStats, Transaction } from "@/types";
 
-export const ANALYTICS_CACHE_LOGIC_VERSION = 4;
+export const ANALYTICS_CACHE_LOGIC_VERSION = 5;
 
 export interface AnalyticsSourceData {
 	accounts: Account[];
