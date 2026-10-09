@@ -15,6 +15,7 @@ import {
 	FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE,
 	getFirestoreUsage,
 	getSyncBackupCounts,
+	repairSyncFromFirestore,
 	syncAll,
 } from "@/lib/db/sync";
 import { useSyncStore } from "@/store/sync-store";
@@ -32,6 +33,7 @@ vi.mock("firebase/firestore", () => ({
 	getDocs: vi.fn(),
 	getDoc: vi.fn(),
 	limit: vi.fn((count: number) => ({ type: "limit", count })),
+	runTransaction: vi.fn(),
 	setDoc: vi.fn(),
 	startAfter: vi.fn((docSnap: unknown) => ({ type: "startAfter", docSnap })),
 	query: vi.fn(),
@@ -89,6 +91,16 @@ async function configureEmptySyncMocks() {
 	vi.mocked(firestore.getDoc).mockResolvedValue({
 		exists: () => false,
 	} as unknown as Awaited<ReturnType<typeof firestore.getDoc>>);
+	vi.mocked(firestore.getCountFromServer).mockRejectedValue(new Error("count unavailable"));
+	vi.mocked(firestore.runTransaction).mockImplementation(async (_db, updateFunction) => {
+		const transaction = {
+			get: vi.fn().mockResolvedValue({
+				exists: () => false,
+			}),
+			set: vi.fn(),
+		} as unknown as Parameters<typeof updateFunction>[0];
+		return updateFunction(transaction) as unknown as ReturnType<typeof firestore.runTransaction>;
+	});
 	vi.mocked(firestore.query).mockImplementation(((ref: unknown) => ref) as typeof firestore.query);
 	vi.mocked(firestore.where).mockReturnValue({} as unknown as ReturnType<typeof firestore.where>);
 	vi.mocked(firestore.collection).mockImplementation(((_db: unknown, path: string) => ({
@@ -1161,7 +1173,7 @@ describe("syncAll — server syncedAt cursors", () => {
 
 			const constraints = queryRef.constraints ?? [];
 			const whereConstraint = constraints.find(
-				(constraint): constraint is { value: number } =>
+				(constraint): constraint is { operator: string; value: number } =>
 					typeof constraint === "object" &&
 					constraint !== null &&
 					(constraint as { type?: unknown }).type === "where"
@@ -1186,7 +1198,7 @@ describe("syncAll — server syncedAt cursors", () => {
 				.slice(startAfterIndex)
 				.filter((docSnap) => {
 					const syncedAt = (docSnap.data().syncedAt as { toMillis: () => number }).toMillis();
-					return syncedAt > cursor;
+					return whereConstraint?.operator === ">=" ? syncedAt >= cursor : syncedAt > cursor;
 				})
 				.slice(0, pageSize);
 
@@ -1242,6 +1254,46 @@ describe("syncAll — server syncedAt cursors", () => {
 			pendingSync: false,
 		});
 		expect((await db.syncMeta.get("lastSync:accounts"))?.timestamp).toBe(1_200);
+	});
+
+	it("syncAll_RemoteTransactionCreatedAfterLocalCursor_PullsOnNextSync", async () => {
+		await markMigrationDone();
+		await db.syncMeta.put({ id: "lastSync:transactions", timestamp: 2_000 });
+		const { firestore } = await configureEmptySyncMocks();
+
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const path = (ref as { path?: string }).path;
+			if (path === `users/${USER_ID}/transactions`) {
+				return {
+					docs: [
+						{
+							id: "txn-created-on-phone",
+							data: () => ({
+								id: "txn-created-on-phone",
+								userId: USER_ID,
+								type: "Expense",
+								date: 10_000,
+								amount: 125,
+								accountId: "acc-phone",
+								updatedAt: 1_900,
+								syncedAt: firestoreTimestamp(2_001),
+							}),
+						},
+					],
+				} as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+
+		const result = await syncAll(USER_ID);
+
+		expect(result.status).toBe("success");
+		expect(await db.transactions.get("txn-created-on-phone")).toMatchObject({
+			amount: 125,
+			pendingSync: false,
+		});
+		expect((await db.syncMeta.get("lastSync:transactions"))?.timestamp).toBe(2_001);
 	});
 
 	it("syncAll_PulledFutureClockRecord_DoesNotRepushOnNextSync", async () => {
@@ -1351,9 +1403,339 @@ describe("syncAll — server syncedAt cursors", () => {
 		expect(secondResult.status).toBe("success");
 		expect(await db.transactions.where("userId").equals(midUserId).count()).toBe(1_200);
 		expect((await db.syncMeta.get("lastSync:transactions"))?.timestamp).toBe(1_200);
-		expect(secondAttempt.getPageCalls()[0]?.[0]).toBe("txn-mid-1000");
-		expect(secondAttempt.getDocumentReads()).toBe(201);
+		expect(secondAttempt.getPageCalls()[0]?.[0]).toBe("txn-mid-999");
+		expect(secondAttempt.getDocumentReads()).toBe(202);
 		await db.syncMeta.delete("lastSync:transactions");
+	});
+
+	it("syncAll_IdenticalSyncedAtAcrossPageBoundary_PullsEveryTransaction", async () => {
+		await markMigrationDone();
+		const tieUserId = `${USER_ID}-tie`;
+		const remoteDocs = Array.from({ length: 501 }, (_, index) => {
+			const id = `txn-tie-${index + 1}`;
+			return {
+				id,
+				data: () => ({
+					id,
+					userId: tieUserId,
+					type: "Expense" as const,
+					date: 30_000 + index,
+					amount: index + 1,
+					accountId: "acc-1",
+					updatedAt: 40_000 + index,
+					syncedAt: firestoreTimestamp(9_000),
+				}),
+			};
+		});
+		const { getPageCalls } = await configurePaginatedPull("transactions", remoteDocs, {
+			userId: tieUserId,
+		});
+
+		const result = await syncAll(tieUserId);
+
+		expect(result.status).toBe("success");
+		expect(result.tables?.transactions).toMatchObject({ pulled: 501, cursor: 9_000 });
+		expect(await db.transactions.where("userId").equals(tieUserId).count()).toBe(501);
+		expect(
+			getPageCalls()
+				.filter((page) => page.length > 0)
+				.map((page) => page.length)
+		).toEqual([500, 1]);
+	});
+
+	it("syncAll_LocalNewerRemoteRecord_DoesNotAdvanceCursorPastUnappliedRecord", async () => {
+		await markMigrationDone();
+		await db.transactions.put({
+			id: "txn-remote-2",
+			userId: USER_ID,
+			type: "Expense",
+			date: 10_002,
+			amount: 999,
+			accountId: "acc-local",
+			updatedAt: 50_000,
+		});
+		const remoteDocs = Array.from({ length: 3 }, (_, index) => remoteTransactionDoc(index + 1));
+		await configurePaginatedPull("transactions", remoteDocs);
+
+		const result = await syncAll(USER_ID);
+		const localIds = (await db.transactions.where("userId").equals(USER_ID).toArray()).map(
+			(txn) => txn.id
+		);
+
+		expect(result.status).toBe("success");
+		expect(result.tables?.transactions?.pulled).toBe(2);
+		expect(await db.transactions.get("txn-remote-2")).toMatchObject({
+			amount: 999,
+			pendingSync: true,
+		});
+		expect((await db.syncMeta.get("lastSync:transactions"))?.timestamp).toBe(1);
+		expect(localIds).toEqual(
+			expect.arrayContaining(["txn-remote-1", "txn-remote-2", "txn-remote-3"])
+		);
+	});
+
+	it("repairSyncFromFirestore_NullOrMissingSyncedAt_PullsAndRestampsOrphans", async () => {
+		await markMigrationDone();
+		const { firestore, mockSet } = await configureEmptySyncMocks();
+
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const path = (ref as { path?: string }).path;
+			if (path === `users/${USER_ID}/transactions`) {
+				return {
+					docs: [
+						{
+							id: "txn-null-synced-at",
+							data: () => ({
+								id: "txn-null-synced-at",
+								userId: USER_ID,
+								type: "Expense",
+								date: 50_000,
+								amount: 10,
+								accountId: "acc-1",
+								updatedAt: 50_000,
+								syncedAt: null,
+							}),
+						},
+						{
+							id: "txn-missing-synced-at",
+							data: () => ({
+								id: "txn-missing-synced-at",
+								userId: USER_ID,
+								type: "Income",
+								date: 50_001,
+								amount: 25,
+								accountId: "acc-1",
+								updatedAt: 50_001,
+							}),
+						},
+					],
+				} as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+
+		const result = await repairSyncFromFirestore(USER_ID, ["transactions"]);
+
+		expect(result).toMatchObject({
+			totalRemoteScanned: 2,
+			totalPulled: 2,
+			totalStamped: 2,
+		});
+		expect(await db.transactions.get("txn-null-synced-at")).toMatchObject({ amount: 10 });
+		expect(await db.transactions.get("txn-missing-synced-at")).toMatchObject({ amount: 25 });
+		expect(mockSet).toHaveBeenCalledWith(
+			expect.objectContaining({ path: `users/${USER_ID}/transactions/txn-null-synced-at` }),
+			expect.objectContaining({ syncedAt: { __type: "serverTimestamp" } }),
+			{ merge: true }
+		);
+		expect(mockSet).toHaveBeenCalledWith(
+			expect.objectContaining({ path: `users/${USER_ID}/transactions/txn-missing-synced-at` }),
+			expect.objectContaining({ syncedAt: { __type: "serverTimestamp" } }),
+			{ merge: true }
+		);
+	});
+
+	it("repairSyncFromFirestore_CountMismatchFullScan_HealsLocalTransactionsToRemoteTotal", async () => {
+		await markMigrationDone();
+		const { firestore } = await configureEmptySyncMocks();
+
+		vi.mocked(firestore.getCountFromServer).mockImplementation(
+			async (ref) =>
+				({
+					data: () => ({
+						count: (ref as { path?: string }).path?.endsWith("/transactions") ? 2 : 0,
+					}),
+				}) as unknown as Awaited<ReturnType<typeof firestore.getCountFromServer>>
+		);
+		vi.mocked(firestore.getDocs).mockImplementation(async (ref: unknown) => {
+			const path = (ref as { path?: string }).path;
+			if (path === `users/${USER_ID}/transactions`) {
+				return {
+					docs: [
+						{
+							id: "txn-repair-existing",
+							data: () => ({
+								id: "txn-repair-existing",
+								userId: USER_ID,
+								type: "Expense",
+								date: 60_000,
+								amount: 15,
+								accountId: "acc-1",
+								updatedAt: 60_000,
+								syncedAt: firestoreTimestamp(60_000),
+							}),
+						},
+						{
+							id: "txn-repair-missing",
+							data: () => ({
+								id: "txn-repair-missing",
+								userId: USER_ID,
+								type: "Expense",
+								date: 60_001,
+								amount: 30,
+								accountId: "acc-1",
+								updatedAt: 60_001,
+								syncedAt: firestoreTimestamp(60_001),
+							}),
+						},
+					],
+				} as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+			}
+
+			return { docs: [] } as unknown as Awaited<ReturnType<typeof firestore.getDocs>>;
+		});
+		await db.transactions.put({
+			id: "txn-repair-existing",
+			userId: USER_ID,
+			type: "Expense",
+			date: 60_000,
+			amount: 15,
+			accountId: "acc-1",
+			updatedAt: 60_000,
+		});
+
+		const before = await getSyncBackupCounts(USER_ID);
+		expect(before?.tables.find((table) => table.table === "transactions")).toMatchObject({
+			local: 1,
+			remote: 2,
+		});
+
+		const repair = await repairSyncFromFirestore(USER_ID, ["transactions"]);
+		const after = await getSyncBackupCounts(USER_ID);
+
+		expect(repair).toMatchObject({ totalRemoteScanned: 2, totalPulled: 1 });
+		expect(after?.tables.find((table) => table.table === "transactions")).toMatchObject({
+			local: 2,
+			remote: 2,
+		});
+	});
+
+	it("syncAll_MissingManifestBackfill_DetectsInvisibleTransactionGap", async () => {
+		await markMigrationDone();
+		await withoutSyncDirtyTracking(async () => {
+			await db.transactions.put({
+				id: "txn-local-only-visible",
+				userId: USER_ID,
+				type: "Expense",
+				date: 70_000,
+				amount: 45,
+				accountId: "acc-1",
+				updatedAt: 70_000,
+			});
+		});
+		const { firestore } = await configureEmptySyncMocks();
+
+		vi.mocked(firestore.getCountFromServer).mockImplementation(
+			async (ref) =>
+				({
+					data: () => ({
+						count: (ref as { path?: string }).path?.endsWith("/transactions") ? 2 : 0,
+					}),
+				}) as unknown as Awaited<ReturnType<typeof firestore.getCountFromServer>>
+		);
+
+		const result = await syncAll(USER_ID);
+
+		expect(result.synced).toBe(false);
+		expect(result.status).toBe("partial");
+		expect(result.manifestMismatches).toEqual([
+			expect.objectContaining({
+				table: "transactions",
+				local: 1,
+				remote: 2,
+			}),
+		]);
+		expect(result.errors).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					scope: "transactions",
+					message: expect.stringContaining("Firebase manifest reports 2 transactions records"),
+				}),
+			])
+		);
+	});
+
+	it("syncAll_StaleManifestCount_RechecksExactCountBeforeReportingMismatch", async () => {
+		await markMigrationDone();
+		await withoutSyncDirtyTracking(async () => {
+			await db.transactions.bulkPut([
+				{
+					id: "txn-local-a",
+					userId: USER_ID,
+					type: "Expense",
+					date: 80_000,
+					amount: 10,
+					accountId: "acc-1",
+					updatedAt: 80_000,
+				},
+				{
+					id: "txn-local-b",
+					userId: USER_ID,
+					type: "Expense",
+					date: 80_001,
+					amount: 20,
+					accountId: "acc-1",
+					updatedAt: 80_001,
+				},
+			]);
+		});
+		const { firestore } = await configureEmptySyncMocks();
+
+		vi.mocked(firestore.getDoc).mockImplementation(async (ref: { path?: string }) => {
+			if (ref.path === `users/${USER_ID}/meta/manifest`) {
+				return {
+					exists: () => true,
+					data: () => ({
+						tables: {
+							transactions: { count: 1, revision: 7 },
+						},
+					}),
+				} as unknown as Awaited<ReturnType<typeof firestore.getDoc>>;
+			}
+
+			return {
+				exists: () => false,
+			} as unknown as Awaited<ReturnType<typeof firestore.getDoc>>;
+		});
+		vi.mocked(firestore.getCountFromServer).mockImplementation(
+			async (ref) =>
+				({
+					data: () => ({
+						count: (ref as { path?: string }).path?.endsWith("/transactions") ? 2 : 0,
+					}),
+				}) as unknown as Awaited<ReturnType<typeof firestore.getCountFromServer>>
+		);
+		const manifestSet = vi.fn();
+		vi.mocked(firestore.runTransaction).mockImplementation(async (_db, updateFunction) => {
+			const transaction = {
+				get: vi.fn().mockResolvedValue({
+					exists: () => true,
+					data: () => ({
+						tables: {
+							transactions: { count: 1, revision: 7 },
+						},
+					}),
+				}),
+				set: manifestSet,
+			} as unknown as Parameters<typeof updateFunction>[0];
+			return updateFunction(transaction) as unknown as ReturnType<typeof firestore.runTransaction>;
+		});
+
+		const result = await syncAll(USER_ID);
+
+		expect(result.status).toBe("success");
+		expect(result.manifestMismatches).toBeUndefined();
+		expect(firestore.getCountFromServer).toHaveBeenCalledTimes(1);
+		expect(manifestSet).toHaveBeenCalledWith(
+			expect.objectContaining({ path: `users/${USER_ID}/meta/manifest` }),
+			expect.objectContaining({
+				tables: expect.objectContaining({
+					transactions: expect.objectContaining({ count: 2, revision: 8 }),
+				}),
+			}),
+			{ merge: true }
+		);
 	});
 
 	it("syncAll_LocalWriteFailure_DoesNotAdvanceCursorPastUnwrittenDocument", async () => {

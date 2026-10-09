@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FirebaseSyncPanel } from "@/components/settings/FirebaseSyncPanel";
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 	clearFirestoreForUser: vi.fn(),
 	getFirestoreUsage: vi.fn(),
 	getSyncBackupCounts: vi.fn(),
+	repairSyncFromFirestore: vi.fn(),
 	resetFirestoreForUser: vi.fn(),
 	triggerSync: vi.fn(),
 	upsertDbConfig: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock("@/lib/db/sync", () => ({
 	clearFirestoreForUser: mocks.clearFirestoreForUser,
 	getFirestoreUsage: mocks.getFirestoreUsage,
 	getSyncBackupCounts: mocks.getSyncBackupCounts,
+	repairSyncFromFirestore: mocks.repairSyncFromFirestore,
 }));
 
 vi.mock("@/store/sync-store", () => ({
@@ -63,6 +65,13 @@ describe("FirebaseSyncPanel backup counts", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mocks.getFirestoreUsage.mockResolvedValue(null);
+		mocks.repairSyncFromFirestore.mockResolvedValue({
+			tables: [],
+			totalRemoteScanned: 0,
+			totalPulled: 0,
+			totalStamped: 0,
+			totalMarkedPending: 0,
+		});
 	});
 
 	it("renders tombstones and pending rows as reconciled instead of missing data", async () => {
@@ -138,5 +147,69 @@ describe("FirebaseSyncPanel backup counts", () => {
 				"All 180 local rows are waiting to upload. Local: 180 active · 0 deleted · 180 total."
 			)
 		).toBeInTheDocument();
+	});
+
+	it("offers an opt-in full-scan repair when Firebase has extra rows", async () => {
+		const mismatchCounts: SyncBackupCounts = {
+			tables: [
+				{
+					table: "transactions",
+					remote: 11433,
+					local: 11431,
+					localActive: 11431,
+					localDeleted: 0,
+					pending: 0,
+				},
+			],
+			currencyBreakdown: [],
+			totalLocal: 11431,
+			totalRemote: 11433,
+			totalPending: 0,
+		};
+		const healedCounts: SyncBackupCounts = {
+			...mismatchCounts,
+			tables: [
+				{
+					table: "transactions",
+					remote: 11433,
+					local: 11433,
+					localActive: 11433,
+					localDeleted: 0,
+					pending: 0,
+				},
+			],
+			totalLocal: 11433,
+		};
+		mocks.getSyncBackupCounts
+			.mockResolvedValueOnce(mismatchCounts)
+			.mockResolvedValueOnce(healedCounts);
+		mocks.repairSyncFromFirestore.mockResolvedValueOnce({
+			tables: [
+				{
+					table: "transactions",
+					remoteScanned: 11433,
+					pulled: 2,
+					stamped: 2,
+					markedPending: 0,
+				},
+			],
+			totalRemoteScanned: 11433,
+			totalPulled: 2,
+			totalStamped: 2,
+			totalMarkedPending: 0,
+		});
+
+		render(<FirebaseSyncPanel userId="owner-user" />);
+
+		const transactions = await screen.findByLabelText("Transactions backup status");
+		expect(within(transactions).getByText("Review counts")).toBeInTheDocument();
+		expect(within(transactions).getByText(/about 11,433 document reads/)).toBeInTheDocument();
+
+		fireEvent.click(within(transactions).getByRole("button", { name: /repair from firebase/i }));
+
+		await waitFor(() => {
+			expect(mocks.repairSyncFromFirestore).toHaveBeenCalledWith("owner-user", ["transactions"]);
+		});
+		expect(await screen.findByText("Reconciled")).toBeInTheDocument();
 	});
 });

@@ -7,6 +7,7 @@ import {
 	limit as firestoreLimit,
 	orderBy,
 	query,
+	runTransaction,
 	serverTimestamp,
 	setDoc,
 	startAfter,
@@ -146,6 +147,10 @@ function getPerTableMigrationKey(table: SyncableTable): string {
 	return `syncedAtMigration:${table}:v1`;
 }
 
+function getSyncManifestRef(firestore: Firestore, userId: string) {
+	return doc(firestore, `users/${userId}/meta`, "manifest");
+}
+
 async function getTableSyncCursor(table: SyncableTable): Promise<number> {
 	const perTableMeta = await localDb.syncMeta.get(getPerTableSyncKey(table));
 	return perTableMeta?.timestamp ?? 0;
@@ -160,6 +165,29 @@ export interface SyncTableResult {
 	pulled: number;
 	migrated: boolean;
 	cursor: number;
+}
+
+export interface SyncManifestMismatch {
+	table: SyncableTable;
+	local: number;
+	remote: number;
+	revision: number;
+}
+
+export interface SyncRepairTableResult {
+	table: SyncableTable;
+	remoteScanned: number;
+	pulled: number;
+	stamped: number;
+	markedPending: number;
+}
+
+export interface SyncRepairResult {
+	tables: SyncRepairTableResult[];
+	totalRemoteScanned: number;
+	totalPulled: number;
+	totalStamped: number;
+	totalMarkedPending: number;
 }
 
 export interface SyncErrorDetail {
@@ -185,6 +213,7 @@ export interface SyncResult {
 	errors: SyncErrorDetail[];
 	totalPushed: number;
 	totalPulled: number;
+	manifestMismatches?: SyncManifestMismatch[];
 }
 
 export type SyncProgressCallback = (progress: {
@@ -196,6 +225,20 @@ export type SyncProgressCallback = (progress: {
 }) => void;
 
 type SyncCollectionProgressCallback = (pushed: number, pulled: number) => void;
+
+type RemoteApplyResult = {
+	appliedLocally: boolean;
+	pulled: boolean;
+	markedPending: boolean;
+	needsStamp: boolean;
+};
+
+type SyncManifestTableState = {
+	count: number;
+	revision: number;
+};
+
+type SyncManifestState = Partial<Record<SyncableTable, SyncManifestTableState>>;
 
 const OPTIONAL_SYNC_FIELDS = {
 	accounts: ["color", "icon", "accountType", "deletedAt"],
@@ -402,6 +445,210 @@ async function markLocalRecordPending(tableName: SyncableTable, id: string): Pro
 	await getLocalSyncTable(tableName).update(id, { pendingSync: true } as Partial<SyncableRecord>);
 }
 
+function readManifestNumber(value: unknown): number | null {
+	return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function parseSyncManifest(data: unknown): SyncManifestState | null {
+	if (typeof data !== "object" || data === null) return null;
+	const tables = (data as { tables?: unknown }).tables;
+	if (typeof tables !== "object" || tables === null) return null;
+
+	const manifest: SyncManifestState = {};
+	for (const table of CORE_SYNC_TABLES) {
+		const rawTable = (tables as Record<string, unknown>)[table];
+		if (typeof rawTable !== "object" || rawTable === null) continue;
+
+		const count = readManifestNumber((rawTable as { count?: unknown }).count);
+		if (count === null) continue;
+
+		manifest[table] = {
+			count,
+			revision: readManifestNumber((rawTable as { revision?: unknown }).revision) ?? 0,
+		};
+	}
+
+	return manifest;
+}
+
+async function readSyncManifest(
+	userId: string,
+	firestore: Firestore
+): Promise<SyncManifestState | null> {
+	try {
+		const manifestSnap = await withFirestoreTimeout(
+			getDoc(getSyncManifestRef(firestore, userId)),
+			"reading sync manifest"
+		);
+		return manifestSnap.exists() ? parseSyncManifest(manifestSnap.data()) : null;
+	} catch {
+		return null;
+	}
+}
+
+async function getRemoteTableCounts(
+	userId: string,
+	firestore: Firestore,
+	tableNames: SyncableTable[]
+): Promise<Partial<Record<SyncableTable, number>> | null> {
+	try {
+		const entries = await Promise.all(
+			tableNames.map(async (table) => {
+				const snap = await withFirestoreTimeout(
+					getCountFromServer(collection(firestore, `users/${userId}/${table}`)),
+					`counting ${table}`
+				);
+				return [table, snap.data().count] as const;
+			})
+		);
+
+		return Object.fromEntries(entries);
+	} catch {
+		return null;
+	}
+}
+
+async function refreshSyncManifestCounts(
+	userId: string,
+	firestore: Firestore,
+	tableNames: SyncableTable[],
+	options: { allowDecrease?: boolean; bumpRevision?: boolean } = {}
+): Promise<SyncManifestState | null> {
+	const uniqueTables = Array.from(new Set(tableNames));
+	if (uniqueTables.length === 0) return readSyncManifest(userId, firestore);
+
+	const remoteCounts = await getRemoteTableCounts(userId, firestore, uniqueTables);
+	if (!remoteCounts) return readSyncManifest(userId, firestore);
+
+	try {
+		return await withFirestoreTimeout(
+			runTransaction(firestore, async (transaction) => {
+				const manifestRef = getSyncManifestRef(firestore, userId);
+				const currentSnap = await transaction.get(manifestRef);
+				const current = currentSnap.exists() ? (parseSyncManifest(currentSnap.data()) ?? {}) : {};
+				const next: SyncManifestState = { ...current };
+				const tablePatch: Record<string, unknown> = {};
+
+				for (const table of uniqueTables) {
+					const exactRemoteCount = remoteCounts[table];
+					if (typeof exactRemoteCount !== "number") continue;
+
+					const currentTable = current[table];
+					const nextCount = options.allowDecrease
+						? exactRemoteCount
+						: Math.max(exactRemoteCount, currentTable?.count ?? exactRemoteCount);
+					const countChanged = currentTable?.count !== nextCount;
+					const nextRevision =
+						(currentTable?.revision ?? 0) + (countChanged || options.bumpRevision ? 1 : 0);
+
+					next[table] = { count: nextCount, revision: nextRevision };
+					tablePatch[table] = {
+						count: nextCount,
+						revision: nextRevision,
+						updatedAt: serverTimestamp(),
+					};
+				}
+
+				transaction.set(
+					manifestRef,
+					{
+						schemaVersion: 1,
+						tables: tablePatch,
+						updatedAt: serverTimestamp(),
+					},
+					{ merge: true }
+				);
+
+				return next;
+			}),
+			"updating sync manifest"
+		);
+	} catch {
+		return readSyncManifest(userId, firestore);
+	}
+}
+
+async function getSyncManifestMismatches(
+	userId: string,
+	manifest: SyncManifestState | null
+): Promise<SyncManifestMismatch[]> {
+	if (!manifest) return [];
+
+	const mismatches: SyncManifestMismatch[] = [];
+	for (const table of CORE_SYNC_TABLES) {
+		const manifestTable = manifest[table];
+		if (!manifestTable) continue;
+
+		const local = await getLocalSyncTable(table).where("userId").equals(userId).count();
+		if (local !== manifestTable.count) {
+			mismatches.push({
+				table,
+				local,
+				remote: manifestTable.count,
+				revision: manifestTable.revision,
+			});
+		}
+	}
+
+	return mismatches;
+}
+
+function syncManifestMismatchError(mismatch: SyncManifestMismatch): SyncErrorDetail {
+	return {
+		scope: mismatch.table,
+		phase: "pull",
+		message: `Sync incomplete: Firebase manifest reports ${mismatch.remote} ${mismatch.table} records, but this device has ${mismatch.local}. Open Backup counts and run Repair from Firebase for ${mismatch.table}.`,
+		quotaExceeded: false,
+	};
+}
+
+async function applyRemoteRecord(
+	tableName: SyncableTable,
+	docSnap: QueryDocumentSnapshot<unknown, DocumentData>,
+	options: { invalidateAnalytics?: () => Promise<void> } = {}
+): Promise<RemoteApplyResult> {
+	const table = getLocalSyncTable(tableName);
+	const rawRemote = docSnap.data() as SyncableRecord & { syncedAt?: unknown };
+	const remote = fromFirestoreSyncRecord(tableName, rawRemote, docSnap.id);
+	const local = (await table.get(remote.id)) as SyncableRecord | undefined;
+
+	if (!local || remote.updatedAt > local.updatedAt) {
+		await options.invalidateAnalytics?.();
+		await putLocalRecord(tableName, remote);
+		return {
+			appliedLocally: true,
+			pulled: true,
+			markedPending: false,
+			needsStamp: getSyncedAtMillis(rawRemote.syncedAt) === null,
+		};
+	}
+
+	if (local.updatedAt > remote.updatedAt) {
+		if (local.pendingSync !== true) {
+			await markLocalRecordPending(tableName, local.id);
+			return {
+				appliedLocally: false,
+				pulled: false,
+				markedPending: true,
+				needsStamp: getSyncedAtMillis(rawRemote.syncedAt) === null,
+			};
+		}
+		return {
+			appliedLocally: false,
+			pulled: false,
+			markedPending: false,
+			needsStamp: getSyncedAtMillis(rawRemote.syncedAt) === null,
+		};
+	}
+
+	return {
+		appliedLocally: true,
+		pulled: false,
+		markedPending: false,
+		needsStamp: getSyncedAtMillis(rawRemote.syncedAt) === null,
+	};
+}
+
 export async function syncAll(
 	userId: string,
 	onProgress?: SyncProgressCallback
@@ -437,6 +684,8 @@ export async function syncAll(
 	let pulledCoreChanges = false;
 	let completedScopes = 0;
 	let stoppedForQuota = false;
+	const pushedTables = new Set<SyncableTable>();
+	const initialManifest = await readSyncManifest(userId, firestore);
 
 	for (const table of CORE_SYNC_TABLES) {
 		let tablePushed = 0;
@@ -453,6 +702,7 @@ export async function syncAll(
 			const result = await syncCollection(userId, table, firestore, emitProgress);
 			tables[table] = result;
 			completedScopes++;
+			if (result.pushed > 0) pushedTables.add(table);
 			if (result.pulled > 0) pulledCoreChanges = true;
 			emitProgress(result.pushed, result.pulled);
 		} catch (error) {
@@ -466,9 +716,40 @@ export async function syncAll(
 		}
 	}
 
-	// Fixed doc-level sync cost after the 3 collection loops:
+	let manifest = initialManifest;
+	let manifestMismatches: SyncManifestMismatch[] = [];
+	if (!stoppedForQuota) {
+		const tablesToRefresh = initialManifest ? Array.from(pushedTables) : [...CORE_SYNC_TABLES];
+		const refreshedTables = new Set(tablesToRefresh);
+		if (tablesToRefresh.length > 0) {
+			manifest =
+				(await refreshSyncManifestCounts(userId, firestore, tablesToRefresh, {
+					allowDecrease: initialManifest === null,
+					bumpRevision: pushedTables.size > 0,
+				})) ?? manifest;
+		}
+
+		manifestMismatches = await getSyncManifestMismatches(userId, manifest);
+		const staleCheckTables = manifestMismatches
+			.map((mismatch) => mismatch.table)
+			.filter((table) => !refreshedTables.has(table));
+		if (staleCheckTables.length > 0) {
+			manifest =
+				(await refreshSyncManifestCounts(userId, firestore, staleCheckTables, {
+					allowDecrease: true,
+				})) ?? manifest;
+			manifestMismatches = await getSyncManifestMismatches(userId, manifest);
+		}
+		if (manifestMismatches.length > 0) {
+			errors.push(...manifestMismatches.map(syncManifestMismatchError));
+		}
+	}
+
+	// Fixed doc-level sync cost after the core table loops:
 	// - settings/prefs: 1 read + up to 1 write
 	// - analytics/dashboard: 1 read + up to 1 write
+	// - meta/manifest: 1 small read per sync; writes only when bootstrapping,
+	//   correcting stale counts, or refreshing tables changed by this sync.
 	// No per-field reads/writes are introduced here.
 	if (!stoppedForQuota) {
 		try {
@@ -509,6 +790,7 @@ export async function syncAll(
 		errors,
 		totalPushed,
 		totalPulled,
+		manifestMismatches: manifestMismatches.length > 0 ? manifestMismatches : undefined,
 	};
 }
 
@@ -603,29 +885,44 @@ async function pullRemoteRecords(
 	firestore: Firestore,
 	onPagePulled?: (pulled: number) => void
 ): Promise<{ pulled: number; cursor: number }> {
-	const table = getLocalSyncTable(tableName);
 	const cursor = await getTableSyncCursor(tableName);
 
 	let pulled = 0;
 	let persistedCursor = cursor;
 	let durableCursor = cursor;
-	let trailingSyncedAt: number | null = cursor > 0 ? cursor : null;
+	let currentSyncedAt: number | null = null;
+	let currentSyncedAtApplied = true;
+	let cursorBlocked = false;
 	let lastDocSnap: QueryDocumentSnapshot<unknown, DocumentData> | null = null;
 	let invalidatedAnalytics = false;
+	const ensureAnalyticsInvalidated = async () => {
+		if (!invalidatedAnalytics) {
+			await invalidateAnalyticsCache(userId);
+			invalidatedAnalytics = true;
+		}
+	};
+	const finalizeSyncedAtGroup = () => {
+		if (currentSyncedAt === null) return;
+		if (!cursorBlocked && currentSyncedAtApplied) {
+			durableCursor = Math.max(durableCursor, currentSyncedAt);
+			return;
+		}
+		cursorBlocked = true;
+	};
 
 	while (true) {
 		const baseCollection = collection(firestore, `users/${userId}/${tableName}`);
 		const remoteQuery: Query<DocumentData, DocumentData> = lastDocSnap
 			? query(
 					baseCollection,
-					where("syncedAt", ">", cursor),
+					where("syncedAt", ">=", cursor),
 					orderBy("syncedAt"),
 					startAfter(lastDocSnap),
 					firestoreLimit(FIRESTORE_PULL_PAGE_SIZE)
 				)
 			: query(
 					baseCollection,
-					where("syncedAt", ">", cursor),
+					where("syncedAt", ">=", cursor),
 					orderBy("syncedAt"),
 					firestoreLimit(FIRESTORE_PULL_PAGE_SIZE)
 				);
@@ -635,9 +932,10 @@ async function pullRemoteRecords(
 		);
 
 		if (remoteSnap.docs.length === 0) {
-			if (trailingSyncedAt !== null && trailingSyncedAt > persistedCursor) {
-				await setTableSyncCursor(tableName, trailingSyncedAt);
-				persistedCursor = trailingSyncedAt;
+			finalizeSyncedAtGroup();
+			if (durableCursor > persistedCursor) {
+				await setTableSyncCursor(tableName, durableCursor);
+				persistedCursor = durableCursor;
 			}
 			break;
 		}
@@ -646,34 +944,36 @@ async function pullRemoteRecords(
 		for (const docSnap of remoteSnap.docs) {
 			const rawRemote = docSnap.data() as SyncableRecord & { syncedAt?: unknown };
 			const remoteSyncedAt = getSyncedAtMillis(rawRemote.syncedAt);
-			if (remoteSyncedAt === null) continue;
-
-			if (trailingSyncedAt === null) {
-				trailingSyncedAt = remoteSyncedAt;
-			} else if (remoteSyncedAt > trailingSyncedAt) {
-				durableCursor = Math.max(durableCursor, trailingSyncedAt);
-				trailingSyncedAt = remoteSyncedAt;
+			if (remoteSyncedAt !== null) {
+				if (currentSyncedAt === null) {
+					currentSyncedAt = remoteSyncedAt;
+					currentSyncedAtApplied = true;
+				} else if (remoteSyncedAt > currentSyncedAt) {
+					finalizeSyncedAtGroup();
+					currentSyncedAt = remoteSyncedAt;
+					currentSyncedAtApplied = true;
+				}
 			}
 
-			const remote = fromFirestoreSyncRecord(tableName, rawRemote, docSnap.id);
-			const local = (await table.get(remote.id)) as SyncableRecord | undefined;
-			if (!local || remote.updatedAt > local.updatedAt) {
-				if (!invalidatedAnalytics) {
-					await invalidateAnalyticsCache(userId);
-					invalidatedAnalytics = true;
-				}
-				await putLocalRecord(tableName, remote);
+			const result = await applyRemoteRecord(tableName, docSnap, {
+				invalidateAnalytics: ensureAnalyticsInvalidated,
+			});
+			if (result.pulled) {
 				pagePulled++;
-			} else if (local.updatedAt > remote.updatedAt && local.pendingSync !== true) {
-				await markLocalRecordPending(tableName, local.id);
+			}
+			if (remoteSyncedAt === null) {
+				cursorBlocked = true;
+			}
+			if (remoteSyncedAt === null || !result.appliedLocally) {
+				currentSyncedAtApplied = false;
 			}
 		}
 
 		pulled += pagePulled;
 		lastDocSnap = remoteSnap.docs[remoteSnap.docs.length - 1] ?? null;
 
-		if (remoteSnap.docs.length < FIRESTORE_PULL_PAGE_SIZE && trailingSyncedAt !== null) {
-			durableCursor = Math.max(durableCursor, trailingSyncedAt);
+		if (remoteSnap.docs.length < FIRESTORE_PULL_PAGE_SIZE) {
+			finalizeSyncedAtGroup();
 		}
 		if (durableCursor > persistedCursor) {
 			await setTableSyncCursor(tableName, durableCursor);
@@ -771,6 +1071,65 @@ async function stampRemoteRecords(
 		stamped += chunk.length;
 	}
 	return stamped;
+}
+
+export async function repairSyncFromFirestore(
+	userId: string,
+	tableNames: SyncableTable[] = [...CORE_SYNC_TABLES],
+	onProgress?: (result: SyncRepairTableResult) => void
+): Promise<SyncRepairResult> {
+	const firestore = await withFirestoreTimeout(getFirestoreForUser(userId), "opening Firebase");
+	if (!firestore) throw new Error("Firebase not configured.");
+
+	const results: SyncRepairTableResult[] = [];
+	let invalidatedAnalytics = false;
+	const ensureAnalyticsInvalidated = async () => {
+		if (!invalidatedAnalytics) {
+			await invalidateAnalyticsCache(userId);
+			invalidatedAnalytics = true;
+		}
+	};
+
+	for (const tableName of tableNames) {
+		const remoteSnap = await withFirestoreTimeout(
+			getDocs(collection(firestore, `users/${userId}/${tableName}`)),
+			`repair-scanning ${tableName}`,
+			FIRESTORE_BULK_SYNC_TIMEOUT_MS
+		);
+		const stampOnlyIds: string[] = [];
+		let pulled = 0;
+		let markedPending = 0;
+
+		for (const docSnap of remoteSnap.docs) {
+			const result = await applyRemoteRecord(tableName, docSnap, {
+				invalidateAnalytics: ensureAnalyticsInvalidated,
+			});
+			if (result.pulled) pulled++;
+			if (result.markedPending) markedPending++;
+			if (result.needsStamp) stampOnlyIds.push(docSnap.id);
+		}
+
+		const stamped = await stampRemoteRecords(userId, tableName, firestore, stampOnlyIds);
+		const tableResult: SyncRepairTableResult = {
+			table: tableName,
+			remoteScanned: remoteSnap.docs.length,
+			pulled,
+			stamped,
+			markedPending,
+		};
+		results.push(tableResult);
+		onProgress?.(tableResult);
+	}
+
+	await refreshSyncManifestCounts(userId, firestore, tableNames, { allowDecrease: true });
+
+	return {
+		tables: results,
+		totalRemoteScanned: results.reduce((sum, result) => sum + result.remoteScanned, 0),
+		totalPulled: results.reduce((sum, result) => sum + result.pulled, 0),
+		totalStamped: results.reduce((sum, result) => sum + result.stamped, 0),
+		totalMarkedPending: results.reduce((sum, result) => sum + result.markedPending, 0),
+	};
 }
 
 /** Fields synced to Firestore settings/prefs document. biometricCredentialId is intentionally excluded. */
@@ -1320,6 +1679,7 @@ export async function clearFirestoreForUser(
 		const docsToDelete = [
 			{ key: "settings", ref: doc(firestore, `users/${userId}/settings`, "prefs") },
 			{ key: "analytics", ref: doc(firestore, `users/${userId}/analytics`, "dashboard") },
+			{ key: "meta", ref: getSyncManifestRef(firestore, userId) },
 		];
 
 		for (const { key, ref } of docsToDelete) {

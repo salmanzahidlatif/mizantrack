@@ -23,11 +23,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { upsertDbConfig } from "@/lib/db/dbConfig";
 import { resetFirestoreForUser } from "@/lib/db/firebase";
-import { clearFirestoreForUser, getFirestoreUsage, getSyncBackupCounts } from "@/lib/db/sync";
+import {
+	clearFirestoreForUser,
+	getFirestoreUsage,
+	getSyncBackupCounts,
+	repairSyncFromFirestore,
+} from "@/lib/db/sync";
 import { parseFirebaseConfigJson } from "@/lib/firebaseConfigParser";
 import { useSyncStore } from "@/store/sync-store";
 
-import type { SyncBackupCounts } from "@/lib/db/sync";
+import type { SyncBackupCounts, SyncableTable } from "@/lib/db/sync";
 import type { ParseFirebaseConfigResult } from "@/lib/firebaseConfigParser";
 
 interface FirebaseSyncPanelProps {
@@ -157,6 +162,7 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 		percentUsed: string;
 	} | null>(null);
 	const [backupCounts, setBackupCounts] = useState<SyncBackupCounts | null>(null);
+	const [repairingTable, setRepairingTable] = useState<SyncableTable | null>(null);
 	const currencyPendingTotal =
 		backupCounts?.currencyBreakdown.reduce((sum, currency) => sum + currency.pending, 0) ?? 0;
 
@@ -183,6 +189,34 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 		}
 		void getSyncBackupCounts(userId).then((c) => setBackupCounts(c));
 	}, [enabled, userId, lastSync, syncing]);
+
+	async function handleRepairTable(table: SyncableTable) {
+		setRepairingTable(table);
+		try {
+			const result = await repairSyncFromFirestore(userId, [table]);
+			const repaired = result.tables[0];
+			toast.success(
+				`Repair scanned ${formatBackupCount(
+					result.totalRemoteScanned
+				)} Firebase ${getBackupTableLabel(table).toLowerCase()} rows, pulled ${formatBackupCount(
+					result.totalPulled
+				)}, and re-stamped ${formatBackupCount(result.totalStamped)}.`
+			);
+			if (repaired?.markedPending) {
+				toast.success(
+					`${formatBackupCount(
+						repaired.markedPending
+					)} newer local rows were marked pending and will upload on the next sync.`
+				);
+			}
+			const counts = await getSyncBackupCounts(userId);
+			setBackupCounts(counts);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Failed to repair from Firebase.");
+		} finally {
+			setRepairingTable(null);
+		}
+	}
 
 	async function handleSave() {
 		if (!configJson.trim()) return;
@@ -368,6 +402,8 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 						<div className="space-y-1.5">
 							{backupCounts.tables.map((t) => {
 								const status = getBackupTableStatus(t);
+								const canRepair = status.tone === "review" && t.remote > t.local;
+								const repairReadEstimate = Math.max(0, t.remote);
 
 								return (
 									<details
@@ -391,6 +427,32 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 												Firebase total: {formatBackupCount(t.remote)} · Local total:{" "}
 												{formatBackupCount(t.local)}.
 											</p>
+											{canRepair && (
+												<div className="space-y-1 rounded-md border border-destructive/20 bg-destructive/5 p-2">
+													<p>
+														Repair is opt-in. It will full-scan this Firebase collection (about{" "}
+														{formatBackupCount(repairReadEstimate)} document reads), pull any rows
+														missing locally, and re-stamp rows that are missing
+														<code className="mx-1 rounded bg-background px-1">syncedAt</code>.
+													</p>
+													<Button
+														type="button"
+														variant="outline"
+														size="sm"
+														className="h-7 text-[11px]"
+														onClick={() => {
+															void handleRepairTable(t.table);
+														}}
+														disabled={repairingTable !== null}>
+														{repairingTable === t.table ? (
+															<Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+														) : (
+															<RefreshCw className="mr-1.5 h-3 w-3" />
+														)}
+														Repair from Firebase
+													</Button>
+												</div>
+											)}
 										</div>
 									</details>
 								);
