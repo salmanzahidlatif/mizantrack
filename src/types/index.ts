@@ -236,7 +236,7 @@ export interface GoogleSheetsBackupStatus {
 // ZAKAT TYPES
 // ============================================================================
 
-export type GoldPurity = "21k" | "22k" | "24k";
+export type GoldPurity = "18k" | "21k" | "22k" | "24k";
 
 export interface GoldItem {
 	id: string;
@@ -285,12 +285,31 @@ export interface ZakatCalculation {
 	nisabThreshold: number;
 	zakatObligation: number;
 	isLiable: boolean;
+	zakatSheetYear?: number;
+	basis?: "minimum" | "maximum";
+	basisAmount?: number;
+	ratePercent?: number;
+	perMonth?: number;
+	pastRemaining?: number;
+	totalToPay?: number;
+	paid?: number;
+	balanceOrExcess?: number;
+	goldPriceDate?: string;
+	goldPricesByPurity?: Partial<Record<GoldPurity, number>>;
 
 	// Monthly minimum tracking (for the 12 Islamic months)
 	monthlyBalances?: {
 		month: string; // e.g., "Ramadan 1446"
 		gregorianDate: string; // e.g., "2024-04-10"
 		totalWealth: number;
+	}[];
+	accountMonthlyBalances?: {
+		accountId: string;
+		accountTitle: string;
+		currency: string;
+		accountType: "asset" | "liability";
+		isArchived: boolean;
+		balances: number[];
 	}[];
 
 	createdAt: number;
@@ -308,6 +327,8 @@ export interface ZakatPayment {
 	amount: number;
 	currency: string;
 	recipient?: string; // e.g., "Local Masjid", "Charity X"
+	person?: string;
+	location?: string;
 	notes?: string;
 
 	createdAt: number;
