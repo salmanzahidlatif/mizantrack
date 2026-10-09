@@ -413,6 +413,17 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 				)}
 
 				{/* Per-table backup counts */}
+				{enabled && !backupCounts && backupCountsError && (
+					<div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+						<p className="font-semibold">Backup counts unavailable</p>
+						<p className="mt-1">
+							{online
+								? backupCountsError
+								: "You are offline. Counts are read from Firebase and will reappear once you reconnect."}
+						</p>
+					</div>
+				)}
+
 				{backupCounts && (
 					<div className="space-y-3 rounded-lg border border-border/60 bg-muted/30 p-2.5">
 						<div className="space-y-1">
