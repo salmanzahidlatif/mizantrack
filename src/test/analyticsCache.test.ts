@@ -161,6 +161,21 @@ describe("analytics cache", () => {
 		);
 	});
 
+	it("separates account balance cache keys by future-dated balance basis", () => {
+		const currentKey = getAccountsAnalyticsCacheKey(accountsQuery());
+		const explicitlyCurrentKey = getAccountsAnalyticsCacheKey({
+			...accountsQuery(),
+			includeFutureDatedBalances: false,
+		});
+		const futureInclusiveKey = getAccountsAnalyticsCacheKey({
+			...accountsQuery(),
+			includeFutureDatedBalances: true,
+		});
+
+		expect(explicitlyCurrentKey).toBe(currentKey);
+		expect(futureInclusiveKey).not.toBe(currentKey);
+	});
+
 	it("serves a valid cached analytics entry without recomputation", async () => {
 		await seedBasicData();
 		const source = await getAnalyticsSourceData(USER_ID);

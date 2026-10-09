@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AccountList } from "@/components/accounts/AccountList";
@@ -156,6 +156,7 @@ beforeEach(() => {
 	useFilterStore.setState({
 		activeCurrency: "AED",
 		showArchivedAccounts: true,
+		includeFutureDatedBalances: false,
 		accountId: null,
 	});
 	mocks.useDbConfig.mockReturnValue(config);
@@ -179,6 +180,7 @@ describe("accounts UI rebuild", () => {
 			expect.objectContaining({
 				currency: "AED",
 				period: { interval: "all-time" },
+				includeFutureDatedBalances: false,
 			})
 		);
 
@@ -190,6 +192,51 @@ describe("accounts UI rebuild", () => {
 		expect(summary).toHaveTextContent("2,434,770.56");
 		expect(within(summary).getByText(/outflow/i)).toBeInTheDocument();
 		expect(summary).toHaveTextContent("2,133,900.50");
+	});
+
+	it("renders the future balance toggle off and updates displayed balances when enabled", () => {
+		const futureAnalytics: AccountsAnalytics = {
+			...analytics,
+			netWorth: 97149.12,
+			accounts: analytics.accounts.map((account) =>
+				account.accountId === activeAccount.id ? { ...account, balance: 98546.22 } : account
+			),
+			allAccounts: analytics.allAccounts.map((account) =>
+				account.accountId === activeAccount.id ? { ...account, balance: 98546.22 } : account
+			),
+		};
+		mocks.useAccountsAnalytics.mockImplementation((_id: string, query) =>
+			query?.includeFutureDatedBalances ? futureAnalytics : analytics
+		);
+
+		render(<AccountsPageClient userId={userId} />);
+
+		expect(screen.getByRole("button", { name: "Include Future" })).toBeInTheDocument();
+		expect(screen.getByRole("region", { name: /accounts summary/i })).toHaveTextContent(
+			"Net worth (as of today)"
+		);
+		expect(screen.getByRole("region", { name: /accounts summary/i })).toHaveTextContent(
+			"97,371.12"
+		);
+		expect(mocks.useAccountsAnalytics).toHaveBeenLastCalledWith(
+			userId,
+			expect.objectContaining({ includeFutureDatedBalances: false })
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Include Future" }));
+
+		expect(screen.getByRole("button", { name: "Exclude Future" })).toBeInTheDocument();
+		expect(screen.getByRole("region", { name: /accounts summary/i })).toHaveTextContent(
+			"Net worth (including future)"
+		);
+		expect(screen.getByRole("region", { name: /accounts summary/i })).toHaveTextContent(
+			"97,149.12"
+		);
+		expect(screen.getByText("98,546.22")).toBeInTheDocument();
+		expect(mocks.useAccountsAnalytics).toHaveBeenLastCalledWith(
+			userId,
+			expect.objectContaining({ includeFutureDatedBalances: true })
+		);
 	});
 
 	it("falls back to the default database currency when the active currency is empty", () => {

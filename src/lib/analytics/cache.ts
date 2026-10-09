@@ -133,6 +133,7 @@ export function getAccountsAnalyticsCacheKey(query: AccountsAnalyticsQuery): str
 		enabledCurrencies: [...(query.enabledCurrencies ?? [])].map(normalizeCacheCurrency).sort(),
 		asOfDay: Math.floor(getEndOfAsOfDayMs(asOf, query.timeZoneOffsetMinutes) / MS_PER_DAY),
 		asOfMs: getEndOfAsOfDayMs(asOf, query.timeZoneOffsetMinutes),
+		includeFutureDatedBalances: query.includeFutureDatedBalances === true,
 		period,
 		customRange: rangeMs(query.period?.customRange),
 		timeZoneOffsetMinutes: query.timeZoneOffsetMinutes,

@@ -42,9 +42,11 @@ function SummaryAmountSkeleton({ className }: { className?: string }) {
 function AccountsSummaryCard({
 	analytics,
 	currency,
+	includeFutureDatedBalances,
 }: {
 	analytics: AccountsAnalytics | undefined;
 	currency: string;
+	includeFutureDatedBalances: boolean;
 }) {
 	return (
 		<section
@@ -56,7 +58,9 @@ function AccountsSummaryCard({
 						All Accounts
 					</p>
 					<h2 className="mt-2 text-sm font-medium text-muted-foreground">
-						Net worth (as of today)
+						{includeFutureDatedBalances
+							? "Net worth (including future)"
+							: "Net worth (as of today)"}
 					</h2>
 				</div>
 				<span className="rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-xs font-bold tracking-[0.14em] text-muted-foreground uppercase">
@@ -166,8 +170,14 @@ function getAccountsByCurrencyFallback(
 export function AccountsPageClient({ userId: providedUserId }: AccountsPageClientProps = {}) {
 	const userId = useRequiredUserId(providedUserId);
 	const router = useRouter();
-	const { activeCurrency, showArchivedAccounts, setShowArchivedAccounts, setAccountId } =
-		useFilterStore();
+	const {
+		activeCurrency,
+		showArchivedAccounts,
+		includeFutureDatedBalances,
+		setShowArchivedAccounts,
+		setIncludeFutureDatedBalances,
+		setAccountId,
+	} = useFilterStore();
 	const [sortBy, setSortBy] = useState<AccountSort>("balance-desc");
 	const openAddAccount = useUIStore((s) => s.openAddAccount);
 	const haptics = useHaptics();
@@ -180,8 +190,9 @@ export function AccountsPageClient({ userId: providedUserId }: AccountsPageClien
 			enabledCurrencies: config?.enabledCurrencies,
 			asOf,
 			period: { interval: "all-time" as const },
+			includeFutureDatedBalances,
 		}),
-		[asOf, config?.enabledCurrencies, resolvedCurrency]
+		[asOf, config?.enabledCurrencies, includeFutureDatedBalances, resolvedCurrency]
 	);
 	const analytics = useAccountsAnalytics(userId, analyticsQuery);
 
@@ -248,6 +259,12 @@ export function AccountsPageClient({ userId: providedUserId }: AccountsPageClien
 							{showArchivedAccounts ? "Hide Archived" : "Show Archived"}
 						</Button>
 					)}
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => setIncludeFutureDatedBalances(!includeFutureDatedBalances)}>
+						{includeFutureDatedBalances ? "Exclude Future" : "Include Future"}
+					</Button>
 					<Button size="sm" onClick={handleAddAccount}>
 						<Plus className="mr-1.5 h-4 w-4" />
 						Add
@@ -255,7 +272,11 @@ export function AccountsPageClient({ userId: providedUserId }: AccountsPageClien
 				</div>
 			</div>
 
-			<AccountsSummaryCard analytics={analytics} currency={resolvedCurrency} />
+			<AccountsSummaryCard
+				analytics={analytics}
+				currency={resolvedCurrency}
+				includeFutureDatedBalances={includeFutureDatedBalances}
+			/>
 
 			<DuplicateAccountMergePanel
 				userId={userId}

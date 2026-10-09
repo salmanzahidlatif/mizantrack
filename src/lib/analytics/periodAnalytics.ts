@@ -91,6 +91,7 @@ export interface AccountsAnalyticsQuery {
 	period?: Omit<PeriodAnalyticsQuery, "currency">;
 	asOf?: Date;
 	timeZoneOffsetMinutes?: number;
+	includeFutureDatedBalances?: boolean;
 }
 
 export interface AccountBalanceBreakdownItem {
@@ -677,8 +678,14 @@ export function aggregateAccountsAnalytics(
 	const asOf = query.asOf ?? new Date();
 	const period = resolvePeriod(query.period);
 	const scope = getAccountScope(userId, accounts, currency, query.enabledCurrencies);
-	const asOfMs = getEndOfAsOfDay(asOf, query.timeZoneOffsetMinutes).getTime();
-	const balanceComputation = computeAccountBalances(userId, accounts, transactions, { asOfMs });
+	const balanceComputation = computeAccountBalances(
+		userId,
+		accounts,
+		transactions,
+		query.includeFutureDatedBalances
+			? {}
+			: { asOfMs: getEndOfAsOfDay(asOf, query.timeZoneOffsetMinutes).getTime() }
+	);
 	const balances = balanceComputation.balances;
 	const accountCurrencyWarnings = getAccountCurrencyWarnings(scope.accounts, query);
 
@@ -745,10 +752,11 @@ export async function aggregateAccountsAnalyticsChunked(
 	const asOf = query.asOf ?? new Date();
 	const period = resolvePeriod(query.period);
 	const scope = getAccountScope(userId, accounts, currency, query.enabledCurrencies);
-	const asOfMs = getEndOfAsOfDay(asOf, query.timeZoneOffsetMinutes).getTime();
 	const balanceComputation = await computeAccountBalancesChunked(userId, accounts, transactions, {
 		...options,
-		asOfMs,
+		...(query.includeFutureDatedBalances
+			? {}
+			: { asOfMs: getEndOfAsOfDay(asOf, query.timeZoneOffsetMinutes).getTime() }),
 	});
 	const balances = balanceComputation.balances;
 	const accountCurrencyWarnings = getAccountCurrencyWarnings(scope.accounts, query);

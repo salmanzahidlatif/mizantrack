@@ -733,6 +733,28 @@ describe("historical analytics queries", () => {
 				timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
 			},
 		});
+		const explicitlyCurrentAnalytics = await getAccountsAnalytics(USER_ID, {
+			currency: "AED",
+			asOf: new Date("2026-09-30T23:30:00.000+04:00"),
+			timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			includeFutureDatedBalances: false,
+			period: {
+				interval: "monthly",
+				anchorDate: new Date("2026-09-15T12:00:00.000+04:00"),
+				timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			},
+		});
+		const futureInclusiveAnalytics = await getAccountsAnalytics(USER_ID, {
+			currency: "AED",
+			asOf: new Date("2026-09-30T23:30:00.000+04:00"),
+			timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			includeFutureDatedBalances: true,
+			period: {
+				interval: "monthly",
+				anchorDate: new Date("2026-09-15T12:00:00.000+04:00"),
+				timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+			},
+		});
 
 		expect(analytics.inflow).toBe(1000);
 		expect(analytics.outflow).toBe(320);
@@ -749,6 +771,7 @@ describe("historical analytics queries", () => {
 			"aed-archived": 330,
 			"aed-liability": -500,
 		});
+		expect(explicitlyCurrentAnalytics.accounts).toEqual(analytics.accounts);
 		expect(
 			analytics.allAccounts.find((account) => account.accountId === "usd-active")
 		).toMatchObject({
@@ -756,6 +779,20 @@ describe("historical analytics queries", () => {
 			currency: "USD",
 		});
 		expect(analytics.netWorth).toBe(1319);
+
+		expect(futureInclusiveAnalytics.inflow).toBe(analytics.inflow);
+		expect(futureInclusiveAnalytics.outflow).toBe(analytics.outflow);
+		expect(futureInclusiveAnalytics.netFlow).toBe(analytics.netFlow);
+		expect(
+			Object.fromEntries(
+				futureInclusiveAnalytics.accounts.map((account) => [account.accountId, account.balance])
+			)
+		).toEqual({
+			"aed-active": 1267,
+			"aed-archived": 330,
+			"aed-liability": -500,
+		});
+		expect(futureInclusiveAnalytics.netWorth).toBe(1097);
 	});
 
 	it("warns while preserving legacy invalid-transfer source debits", async () => {
@@ -783,6 +820,26 @@ describe("historical analytics queries", () => {
 		expect(analytics.accounts.find((account) => account.accountId === "aed-active")?.balance).toBe(
 			-530665.23
 		);
+		await expect(
+			getAccountsAnalytics(USER_ID, {
+				currency: "AED",
+				asOf: new Date("2026-09-30T23:30:00.000+04:00"),
+				timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+				includeFutureDatedBalances: true,
+				period: {
+					interval: "monthly",
+					anchorDate: new Date("2026-09-15T12:00:00.000+04:00"),
+					timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+				},
+			})
+		).resolves.toMatchObject({
+			accounts: expect.arrayContaining([
+				expect.objectContaining({ accountId: "aed-active", balance: -530887.23 }),
+			]),
+			inflow: 1000,
+			outflow: 320,
+			netFlow: 680,
+		});
 		expect(analytics.warnings).toContainEqual({
 			code: "invalid_transfer_counterparty_skipped",
 			transactionId: "aed-invalid-transfer",

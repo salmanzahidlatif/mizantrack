@@ -301,6 +301,16 @@ describe("dashboard UI rebuild", () => {
 		expect(screen.getAllByText((text) => text.includes("-4,355,391.13")).length).toBeGreaterThan(0);
 	});
 
+	it("keeps dashboard account analytics on the current balance basis", async () => {
+		const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
+
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		expect(screen.getAllByText((text) => text.includes("97,218.91")).length).toBeGreaterThan(0);
+		const accountQuery = vi.mocked(useAccountsAnalytics).mock.calls.at(-1)?.[1];
+		expect(accountQuery).not.toHaveProperty("includeFutureDatedBalances");
+	});
+
 	it("changing interval updates every figure on the reports screen", async () => {
 		const { usePeriodAnalytics } = await import("@/hooks/usePeriodAnalytics");
 		render(<ReportsPageClient userId={USER_ID} />);

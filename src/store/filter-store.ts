@@ -23,6 +23,8 @@ interface FilterStore {
 	activeCurrency: string;
 	/** Show archived accounts within the active currency. Default false. */
 	showArchivedAccounts: boolean;
+	/** Include future-dated transactions in account balances. Default false. */
+	includeFutureDatedBalances: boolean;
 
 	setPeriod: (period: FilterPeriod) => void;
 	setAccountId: (accountId: string | null) => void;
@@ -32,6 +34,7 @@ interface FilterStore {
 	setCustomRange: (range: DateRange | null) => void;
 	setActiveCurrency: (code: string) => void;
 	setShowArchivedAccounts: (show: boolean) => void;
+	setIncludeFutureDatedBalances: (include: boolean) => void;
 	reset: () => void;
 }
 
@@ -45,6 +48,7 @@ const defaultState = {
 	// Restore last-used currency immediately on startup — no flash to wrong currency
 	activeCurrency: readPersistedCurrency(),
 	showArchivedAccounts: false,
+	includeFutureDatedBalances: false,
 };
 
 export const useFilterStore = create<FilterStore>((set) => ({
@@ -64,6 +68,8 @@ export const useFilterStore = create<FilterStore>((set) => ({
 		set({ activeCurrency });
 	},
 	setShowArchivedAccounts: (showArchivedAccounts) => set({ showArchivedAccounts }),
+	setIncludeFutureDatedBalances: (includeFutureDatedBalances) =>
+		set({ includeFutureDatedBalances }),
 	// reset clears per-page filters but NOT activeCurrency (currency context persists)
 	reset: () =>
 		set((state) => ({

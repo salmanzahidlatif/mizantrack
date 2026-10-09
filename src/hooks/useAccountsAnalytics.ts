@@ -25,6 +25,7 @@ export function useAccountsAnalytics(
 			query?.enabledCurrencies?.join(","),
 			query?.asOf?.getTime(),
 			query?.timeZoneOffsetMinutes,
+			query?.includeFutureDatedBalances,
 			query?.period?.interval,
 			query?.period?.anchorDate?.getTime(),
 			query?.period?.fiscalYearStartMonth,
