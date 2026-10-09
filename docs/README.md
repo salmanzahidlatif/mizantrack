@@ -5,7 +5,6 @@
 ## Start Here
 
 - [`engineering-log-2026-10.md`](engineering-log-2026-10.md) — production regressions, root causes, fixes, features, open risks, and reference commits from the Sep/Oct 2026 recovery session.
-- [`engineering-log-2026-10-09.md`](engineering-log-2026-10-09.md) — 9 October handover: outstanding Firebase security risk, zakat audit findings, sync state, data reconciliations, and parked branch work.
 - [`lessons-learned.md`](lessons-learned.md) — durable engineering lessons and prevention rules. Read this before touching import, sync, analytics, balances, or PWA code.
 - [`pwa-offline-notes.md`](pwa-offline-notes.md) — focused notes on offline cold-start failures and Workbox precache conflicts.
 
