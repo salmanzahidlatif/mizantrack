@@ -9,7 +9,9 @@ Older zakat documents are historical only where they disagree with this file.
 - Workbook: `docs/Zakat - All.xlsx`.
 - The workbook has 7 sheets: `2020`, `2021`, `2022`, `2023`, `2024`, `2025`, `2026`.
 - Each sheet is one zakat year running **Ramaḍān → Shaʿbān**, not January → December.
-- The owner calculated `2020`–`2024` by hand. `2025` and `2026` are not yet final and may contain errors that MizanTrack should help find.
+- The owner calculated `2020`–`2024` by hand. These are the trusted historical evidence for the model, although the owner may still want to find mistakes in them.
+- **The `2025` and `2026` sheets are known to be wrong.** The owner said: **"2025 and 2026 are never calculated properly and have wrong data tbh"**. Do not reconcile against their figures, do not learn the calculation model from them, and do not change the engine to reproduce them.
+- `2025` and `2026` may still be read for layout, sheet naming, started account rows, and started gold rows only. Their calculated figures are not a reference.
 - The owner has said: **"Current zakat functionality is not what I need."**
 
 ## Non-goals and explicit exclusions
@@ -122,9 +124,11 @@ The formula is not gated by nisab.
 
 The workbook was inspected for actual Excel formulas, not only cached values. Formula cells were present in `docs/Zakat - All.xlsx`; there was no need to unzip the workbook XML.
 
-The implementation must reproduce the semantics of these formulas. Reconciliation tests should assert against the owner's workbook numbers and should also flag differences, rather than silently normalising apparent mistakes.
+The implementation must reproduce the semantics of the trusted `2020`–`2024` formulas. Reconciliation tests must cover **2020–2024 only** and should state in their names/comments that `2025` and `2026` are excluded because the owner says those spreadsheet years are known-bad.
 
-### Formula summary by sheet
+The app is expected to compute `2025` and `2026` correctly from MizanTrack transaction data, replacing the bad spreadsheet figures. Reports should state plainly when `2025`/`2026` values are computed fresh and supersede the spreadsheet. The computation must also state which account books and currencies actually have transaction coverage for each year. The owner's AED book begins part-way through the history, while the PKR book is older; if the underlying transactions do not go back far enough for a year, the app must say the year cannot be fully computed rather than silently showing zero or an authoritative-looking partial figure.
+
+### Trusted formula summary by sheet: 2020–2024 only
 
 | Sheet | Monthly `TOTAL` row | `MINIMUM` | `MAXIMUM` | `GOLD` | Zakat base `TOTAL` | `ZAKAT` | `Per Month` | Payment / carry-forward formula |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -133,8 +137,6 @@ The implementation must reproduce the semantics of these formulas. Reconciliatio
 | `2022` | `B18:M18 = SUM(B5:B17)` | `O18 = MIN(B18:M18)` | `P18 = MAX(B30:M30)` | `Q18 = PRODUCT(Q5,Q6)` where `Q5 = 170.52 grams`, `Q6 = 10,725 per gram 21k` | `S18 = SUM(O18,Q18)`, so zakat uses `MINIMUM + GOLD`, not `MAXIMUM` | `T18 = PRODUCT(S18,0.025)` | `U18 = T18/12` | `W18 = SUM(W2:W17)` paid; `W19 = 4,512` manual last remaining; `W20 = ROUNDUP(((T18 - W18) + W19),0)` |
 | `2023` | `B11:M11 = SUM(B5:B10)` | `O11 = MIN(B11:M11)` | `P11 = MAX(B11:M11)` | `Q11 = PRODUCT(Q5,Q6)` where `Q5 = 170.52 grams`, `Q6 = 16,778.12 per gram 21k` | `S11 = SUM(O11,Q11)`, so zakat uses `MINIMUM + GOLD`, not `MAXIMUM` | `T11 = PRODUCT(S11,0.025)` | `U11 = T11/12` | `W11 = SUM(W2:W9)` paid; `W12 = 4,511` manual last remaining; `W13 = ROUNDUP((T11 - W11 + W12),0)` |
 | `2024` | `B10:M10 = SUM(B5:B9)` | `O10 = MIN(A10:M10)`; `A10` is text, so this behaves like `MIN(B10:M10)` | `P10 = MAX(B10:M10)` | `Q10 = PRODUCT(Q5,Q6)` where `Q5 = 170.52 grams`, `Q6 = 18,846.3 per gram 21k` | `S10 = SUM(O10,Q10)`, so zakat uses `MINIMUM + GOLD`, not `MAXIMUM` | `T10 = PRODUCT(S10,0.025)` | `U10 = T10/12` | `W9 = 88,058` manual past remaining; `W10 = SUM(W9,T10)` total to pay; `W11 = SUM(W2:W8)` paid; `W12 = W10 - W11` |
-| `2025` | `B12:M12 = SUM(B5:B11)` | `O12 = MIN(B12:M12)` | `P12 = MAX(B12:M12)` | `Q12 = SUM(PRODUCT(Q5,Q6), PRODUCT(Q7,Q8))`; 21k uses `Q5 = 155.82 grams`, `Q6 = 25,085.7 per gram`; 22k uses `Q7 = 14.4 grams`, `Q8 = 25,604.1 per gram` | `S12 = SUM(O12,Q12)`, so zakat uses `MINIMUM + GOLD`, not `MAXIMUM` | `T12 = PRODUCT(S12,0.025)` | `U12 = T12/12` | `W12 = -51,395.61` manual past remaining; `W13 = SUM(W12,T12)` total to pay; `W14 = SUM(W2:W11)` paid; `W15 = W13 - W14` |
-| `2026` | `B13:M13 = SUM(B5:B12)` | `O13 = MIN(B13:M13)` | `P13 = MAX(B13:M13)` | `Q13 = SUM(PRODUCT(Q5,Q6), PRODUCT(Q7,Q8))`; 21k uses `Q5 = 155.82 grams`, `Q6 = 41,606.7 per gram`; 22k uses `Q7 = 14.4 grams`, `Q8 = 42,645.5 per gram` | `S13 = SUM(O13,Q13)`, so zakat uses `MINIMUM + GOLD`, not `MAXIMUM` | `T13 = PRODUCT(S13,0.025)` | `U13 = T13/12` | `W13 = -12,310.03` manual past remaining; `W14 = SUM(W13,T13)` total to pay; `W15 = SUM(W2:W12)` paid; `W16 = W14 - W15` |
 
 ### Formula findings
 
@@ -155,8 +157,16 @@ These are part of the owner's workbook as found and must be preserved for reconc
 - `2022` similarly calculates `MINIMUM` from `B18:M18`, but `MAXIMUM` from `B30:M30`. This again mixes in a separate property/additions section for maximum only.
 - In `2022`, property rows `15`–`17` contain rolling formulas such as `C15 = SUM(B15,C23)`, then the main `TOTAL` row includes those property balances. Rows `27` and `30` separately total/add property additions again for the maximum-only range.
 - `2024` uses `O10 = MIN(A10:M10)`. `A10` contains the text label `TOTAL`, so spreadsheet `MIN` ignores it and the result matches `MIN(B10:M10)`. This looks like a harmless range typo but should be noted.
-- `2025` and `2026` use two gold karats, combining 21k and 22k by summing two `grams × price-per-gram` products.
-- `2026` has `Past Remaining = -12,310.03`, while the `2025` `Balance/Excess` formula produces positive `12,310.0331`. Under the sign convention documented here, positive means still payable and negative means overpaid, so this looks like a possible manual carry-forward sign error. Ask the owner; do not auto-correct it.
+- `2025` and `2026` are intentionally excluded from the trusted formula list. They have known-bad data and must not be used as reconciliation targets.
+
+### Untrusted layout observations from 2025 and 2026
+
+These observations are useful only for UI/layout and for understanding what the owner had started to enter. They are not reference calculations:
+
+- `2025` and `2026` keep the same broad sheet layout: Islamic months in `B:M`, summary fields in `O:U`, and payments in `W:Y`.
+- They show two started gold karats, combining 21k and 22k rows by summing two `grams × price-per-gram` products.
+- They include started account rows such as `Al Meezan MAICF`, `Kids (MCF)`, and in `2026` `Loan <-- (Basit bhai)`.
+- Do not treat any mismatch against `2025` or `2026` as an engine bug. Those years must be computed afresh from MizanTrack data.
 
 ## Payments and carry-forward
 
@@ -180,7 +190,7 @@ Interpretation:
 - Positive `Balance/Excess` means still payable.
 - Negative `Balance/Excess` means overpaid / excess carried forward.
 
-For example, the `2025` sheet carries the `2024` overpayment as `Past Remaining = -51,395.61`.
+For example, the untrusted `2025` sheet appears to carry the `2024` overpayment as `Past Remaining = -51,395.61`. This is a layout/carry-forward clue only; the `2025` calculation itself is not a reference.
 
 ## Account picker requirements
 
@@ -245,5 +255,4 @@ These must not be lost:
 3. Confirm whether payment records need a payment date in addition to amount, person, and location. The workbook records amount/person/location; the app may still benefit from dates.
 4. Confirm how manually corrected Islamic month date ranges should be sourced and stored for future years.
 5. Confirm how multi-currency account balances should be converted into the selected currency for zakat years, if accounts exist in more than one currency.
-6. Confirm whether 2025 and 2026 should be treated as draft sheets to reconcile against MizanTrack, not as final expected results.
-7. Confirm the apparent `2026` carry-forward sign issue: the `2025` sheet ends with a positive `12,310.0331` balance, but the `2026` sheet manually enters `Past Remaining = -12,310.03`.
+6. Confirm whether there are any owner-approved manual corrections to apply before computing fresh `2025` and `2026` figures from MizanTrack transaction data.
