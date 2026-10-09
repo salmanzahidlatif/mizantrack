@@ -24,14 +24,14 @@ export function ErrorBoundary({
 						<button
 							type="button"
 							onClick={onRetry}
-							className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+							className="cursor-pointer rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
 							Try again
 						</button>
 					)}
 					<button
 						type="button"
 						onClick={() => window.location.reload()}
-						className="rounded-lg border border-border px-4 py-2 text-sm font-medium">
+						className="cursor-pointer rounded-lg border border-border px-4 py-2 text-sm font-medium">
 						Reload app
 					</button>
 				</div>
