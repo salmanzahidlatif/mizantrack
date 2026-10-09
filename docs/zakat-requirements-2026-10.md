@@ -118,6 +118,46 @@ Per Month = ZAKAT ÷ 12
 
 The formula is not gated by nisab.
 
+## Workbook formulas are authoritative
+
+The workbook was inspected for actual Excel formulas, not only cached values. Formula cells were present in `docs/Zakat - All.xlsx`; there was no need to unzip the workbook XML.
+
+The implementation must reproduce the semantics of these formulas. Reconciliation tests should assert against the owner's workbook numbers and should also flag differences, rather than silently normalising apparent mistakes.
+
+### Formula summary by sheet
+
+| Sheet | Monthly `TOTAL` row | `MINIMUM` | `MAXIMUM` | `GOLD` | Zakat base `TOTAL` | `ZAKAT` | `Per Month` | Payment / carry-forward formula |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `2020` | `B14:M14 = SUM(B5:B12)` | `O14 = MIN(B14:M14)` | No maximum formula in this sheet | `P14 = PRODUCT(P5,P6)` where `P5 = 163.4 grams`, `P6 = 7,776 per gram 21k` | `R14 = SUM(O14:Q14)`, effectively `MINIMUM + GOLD` because `Q14` is blank | `S14 = PRODUCT(R14,0.025)` | `T14 = S14/12` | `V14 = SUM(V2:V13)` paid; `V16 = S14 - V14` remainder |
+| `2021` | `B16:M16 = SUM(B5:B15)` | `O16 = MIN(B16:M16)` | `P16 = MAX(B29:M29)` | `Q16 = PRODUCT(Q5,Q6)` where `Q5 = 170.52 grams`, `Q6 = 8,427 per gram 21k` | `S16 = SUM(O16,Q16)`, so zakat uses `MINIMUM + GOLD`, not `MAXIMUM` | `T16 = PRODUCT(S16,0.025)` | `U16 = T16/12` | `W16 = SUM(W2:W15)` paid; `W17 = 1.25` manual last remaining; `W18 = ROUNDUP((T16 - W16 + W17),0)` |
+| `2022` | `B18:M18 = SUM(B5:B17)` | `O18 = MIN(B18:M18)` | `P18 = MAX(B30:M30)` | `Q18 = PRODUCT(Q5,Q6)` where `Q5 = 170.52 grams`, `Q6 = 10,725 per gram 21k` | `S18 = SUM(O18,Q18)`, so zakat uses `MINIMUM + GOLD`, not `MAXIMUM` | `T18 = PRODUCT(S18,0.025)` | `U18 = T18/12` | `W18 = SUM(W2:W17)` paid; `W19 = 4,512` manual last remaining; `W20 = ROUNDUP(((T18 - W18) + W19),0)` |
+| `2023` | `B11:M11 = SUM(B5:B10)` | `O11 = MIN(B11:M11)` | `P11 = MAX(B11:M11)` | `Q11 = PRODUCT(Q5,Q6)` where `Q5 = 170.52 grams`, `Q6 = 16,778.12 per gram 21k` | `S11 = SUM(O11,Q11)`, so zakat uses `MINIMUM + GOLD`, not `MAXIMUM` | `T11 = PRODUCT(S11,0.025)` | `U11 = T11/12` | `W11 = SUM(W2:W9)` paid; `W12 = 4,511` manual last remaining; `W13 = ROUNDUP((T11 - W11 + W12),0)` |
+| `2024` | `B10:M10 = SUM(B5:B9)` | `O10 = MIN(A10:M10)`; `A10` is text, so this behaves like `MIN(B10:M10)` | `P10 = MAX(B10:M10)` | `Q10 = PRODUCT(Q5,Q6)` where `Q5 = 170.52 grams`, `Q6 = 18,846.3 per gram 21k` | `S10 = SUM(O10,Q10)`, so zakat uses `MINIMUM + GOLD`, not `MAXIMUM` | `T10 = PRODUCT(S10,0.025)` | `U10 = T10/12` | `W9 = 88,058` manual past remaining; `W10 = SUM(W9,T10)` total to pay; `W11 = SUM(W2:W8)` paid; `W12 = W10 - W11` |
+| `2025` | `B12:M12 = SUM(B5:B11)` | `O12 = MIN(B12:M12)` | `P12 = MAX(B12:M12)` | `Q12 = SUM(PRODUCT(Q5,Q6), PRODUCT(Q7,Q8))`; 21k uses `Q5 = 155.82 grams`, `Q6 = 25,085.7 per gram`; 22k uses `Q7 = 14.4 grams`, `Q8 = 25,604.1 per gram` | `S12 = SUM(O12,Q12)`, so zakat uses `MINIMUM + GOLD`, not `MAXIMUM` | `T12 = PRODUCT(S12,0.025)` | `U12 = T12/12` | `W12 = -51,395.61` manual past remaining; `W13 = SUM(W12,T12)` total to pay; `W14 = SUM(W2:W11)` paid; `W15 = W13 - W14` |
+| `2026` | `B13:M13 = SUM(B5:B12)` | `O13 = MIN(B13:M13)` | `P13 = MAX(B13:M13)` | `Q13 = SUM(PRODUCT(Q5,Q6), PRODUCT(Q7,Q8))`; 21k uses `Q5 = 155.82 grams`, `Q6 = 41,606.7 per gram`; 22k uses `Q7 = 14.4 grams`, `Q8 = 42,645.5 per gram` | `S13 = SUM(O13,Q13)`, so zakat uses `MINIMUM + GOLD`, not `MAXIMUM` | `T13 = PRODUCT(S13,0.025)` | `U13 = T13/12` | `W13 = -12,310.03` manual past remaining; `W14 = SUM(W13,T13)` total to pay; `W15 = SUM(W2:W12)` paid; `W16 = W14 - W15` |
+
+### Formula findings
+
+1. **The monthly `TOTAL` row is a plain `SUM` over contiguous account rows.** The sheets do not subtract liabilities in a separate formula. Negative balances, such as `Loan <-- (Papa)`, are included in the same `SUM` and therefore reduce the total by their sign.
+2. **The zakat base uses `MINIMUM + GOLD` in every sheet that has a full calculation.** `MAXIMUM` is present from `2021` onwards but does not feed zakat in the workbook formulas.
+3. **The rate is hardcoded as `0.025` in every yearly formula.** There is no editable rate cell in the workbook. MizanTrack must make the rate editable, defaulting to 2.5%, and store the chosen rate with each calculation.
+4. **`Per Month` always divides by `12`.**
+5. **Past remaining values are manual numbers, not cross-sheet references.** The workbook carries balances forward by typing the prior result into the next sheet, sometimes rounded.
+6. **Payment totals are plain sums of the paid-amount column.** Person and location are descriptive fields and do not affect arithmetic.
+
+### Formula inconsistencies and likely review points
+
+These are part of the owner's workbook as found and must be preserved for reconciliation/audit rather than silently corrected:
+
+- `2020` has no `MAXIMUM` formula.
+- `2020` uses `R14 = SUM(O14:Q14)` for the zakat base. Because `Q14` is blank, this is effectively `MINIMUM + GOLD`, but the range is broader than necessary.
+- `2021` calculates `MINIMUM` from `B16:M16`, but `MAXIMUM` from `B29:M29`. Rows `25` and `29` add a separate property/additions section, so the minimum and maximum are not calculated over the same base.
+- `2022` similarly calculates `MINIMUM` from `B18:M18`, but `MAXIMUM` from `B30:M30`. This again mixes in a separate property/additions section for maximum only.
+- In `2022`, property rows `15`–`17` contain rolling formulas such as `C15 = SUM(B15,C23)`, then the main `TOTAL` row includes those property balances. Rows `27` and `30` separately total/add property additions again for the maximum-only range.
+- `2024` uses `O10 = MIN(A10:M10)`. `A10` contains the text label `TOTAL`, so spreadsheet `MIN` ignores it and the result matches `MIN(B10:M10)`. This looks like a harmless range typo but should be noted.
+- `2025` and `2026` use two gold karats, combining 21k and 22k by summing two `grams × price-per-gram` products.
+- `2026` has `Past Remaining = -12,310.03`, while the `2025` `Balance/Excess` formula produces positive `12,310.0331`. Under the sign convention documented here, positive means still payable and negative means overpaid, so this looks like a possible manual carry-forward sign error. Ask the owner; do not auto-correct it.
+
 ## Payments and carry-forward
 
 Each zakat year must support a payment list with:
@@ -206,4 +246,4 @@ These must not be lost:
 4. Confirm how manually corrected Islamic month date ranges should be sourced and stored for future years.
 5. Confirm how multi-currency account balances should be converted into the selected currency for zakat years, if accounts exist in more than one currency.
 6. Confirm whether 2025 and 2026 should be treated as draft sheets to reconcile against MizanTrack, not as final expected results.
-
+7. Confirm the apparent `2026` carry-forward sign issue: the `2025` sheet ends with a positive `12,310.0331` balance, but the `2026` sheet manually enters `Past Remaining = -12,310.03`.
