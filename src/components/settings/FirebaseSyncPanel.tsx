@@ -21,6 +21,7 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useDbConfig } from "@/hooks/useDbConfig";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { upsertDbConfig } from "@/lib/db/dbConfig";
 import { resetFirestoreForUser } from "@/lib/db/firebase";
 import {
@@ -145,6 +146,10 @@ function getBackupStatusBadgeClass(tone: ReturnType<typeof getBackupTableStatus>
 export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 	const config = useDbConfig(userId);
 	const { syncing, lastSync, error, triggerSync } = useSyncStore();
+	// Sync pulls read straight from the server and will fail offline, so the
+	// controls disable themselves the moment connectivity drops - even if this
+	// screen was already open.
+	const online = useOnlineStatus();
 
 	const [configJson, setConfigJson] = useState("");
 	const [enabled, setEnabled] = useState(false);
@@ -336,13 +341,13 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 					onClick={() => {
 						void triggerSync(userId);
 					}}
-					disabled={syncing || !enabled}>
+					disabled={syncing || !enabled || !online}>
 					{syncing ? (
 						<Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
 					) : (
 						<RefreshCw className="mr-1.5 h-3.5 w-3.5" />
 					)}
-					Sync Now
+					{online ? "Sync Now" : "Offline"}
 				</Button>
 				<Button
 					variant="ghost"
@@ -443,7 +448,7 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 														onClick={() => {
 															void handleRepairTable(t.table);
 														}}
-														disabled={repairingTable !== null}>
+														disabled={repairingTable !== null || !online}>
 														{repairingTable === t.table ? (
 															<Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
 														) : (
