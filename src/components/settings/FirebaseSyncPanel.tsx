@@ -167,6 +167,7 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 		percentUsed: string;
 	} | null>(null);
 	const [backupCounts, setBackupCounts] = useState<SyncBackupCounts | null>(null);
+	const [backupCountsError, setBackupCountsError] = useState<string | null>(null);
 	const [repairingTable, setRepairingTable] = useState<SyncableTable | null>(null);
 	const currencyPendingTotal =
 		backupCounts?.currencyBreakdown.reduce((sum, currency) => sum + currency.pending, 0) ?? 0;
@@ -190,9 +191,28 @@ export function FirebaseSyncPanel({ userId }: FirebaseSyncPanelProps) {
 	useEffect(() => {
 		if (!enabled) {
 			setBackupCounts(null);
+			setBackupCountsError(null);
 			return;
 		}
-		void getSyncBackupCounts(userId).then((c) => setBackupCounts(c));
+		let cancelled = false;
+		// These counts read Firebase, so they fail offline or on a flaky link.
+		// Surface that instead of letting the whole section disappear with no
+		// explanation, which looks indistinguishable from having no data.
+		void getSyncBackupCounts(userId)
+			.then((c) => {
+				if (cancelled) return;
+				setBackupCounts(c);
+				setBackupCountsError(null);
+			})
+			.catch((error: unknown) => {
+				if (cancelled) return;
+				setBackupCountsError(
+					error instanceof Error ? error.message : "Could not read backup counts."
+				);
+			});
+		return () => {
+			cancelled = true;
+		};
 	}, [enabled, userId, lastSync, syncing]);
 
 	async function handleRepairTable(table: SyncableTable) {
