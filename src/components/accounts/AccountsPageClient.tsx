@@ -63,8 +63,19 @@ function AccountsSummaryCard({
 							: "Net worth (as of today)"}
 					</h2>
 				</div>
-				<span className="rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-xs font-bold tracking-[0.14em] text-muted-foreground uppercase">
-					{currency}
+				<span className="flex shrink-0 items-center gap-1.5">
+					<span
+						className={cn(
+							"rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] uppercase",
+							includeFutureDatedBalances
+								? "border-primary/40 bg-primary/10 text-primary"
+								: "border-border/70 bg-background/70 text-muted-foreground"
+						)}>
+						{includeFutureDatedBalances ? "Incl. future" : "As of today"}
+					</span>
+					<span className="rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-xs font-bold tracking-[0.14em] text-muted-foreground uppercase">
+						{currency}
+					</span>
 				</span>
 			</div>
 

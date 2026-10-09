@@ -48,7 +48,7 @@ const defaultState = {
 	// Restore last-used currency immediately on startup — no flash to wrong currency
 	activeCurrency: readPersistedCurrency(),
 	showArchivedAccounts: false,
-	includeFutureDatedBalances: false,
+	includeFutureDatedBalances: true,
 };
 
 export const useFilterStore = create<FilterStore>((set) => ({
