@@ -24,7 +24,8 @@
 - [`app-lock/`](app-lock/) — PIN/biometric app-lock PRD/design/workplan.
 - [`ui-ux-polish/`](ui-ux-polish/) — mobile-first visual redesign docs.
 - [`cloud-sync-onboarding/`](cloud-sync-onboarding/) — cloud sync onboarding instructions.
-- [`ZAKAT-FEATURE-COMPLETE.md`](ZAKAT-FEATURE-COMPLETE.md), [`ZAKAT-QUICK-START.md`](ZAKAT-QUICK-START.md), [`zakat-enhancement-plan.md`](zakat-enhancement-plan.md) — zakat feature notes.
+- [`zakat-requirements-2026-10.md`](zakat-requirements-2026-10.md) — **authoritative zakat requirements** from the owner's October 2026 specification and `Zakat - All.xlsx`.
+- Superseded zakat notes: [`ZAKAT-FEATURE-COMPLETE.md`](ZAKAT-FEATURE-COMPLETE.md), [`ZAKAT-QUICK-START.md`](ZAKAT-QUICK-START.md), [`zakat-enhancement-plan.md`](zakat-enhancement-plan.md). Keep them for history, but follow `zakat-requirements-2026-10.md` where they disagree, especially on nisab, yearly minimum/maximum basis, gold pricing, Islamic date boundaries, and implementation status.
 
 ## Google Sheets / Backup Planning
 

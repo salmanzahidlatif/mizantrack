@@ -1,5 +1,7 @@
 # Zakat Feature Enhancement Plan
 
+> **Superseded note — October 2026:** The authoritative zakat requirements are now in [`zakat-requirements-2026-10.md`](zakat-requirements-2026-10.md). This plan remains useful for its early recognition that the zakat year runs Ramaḍān → Shaʿbān, that account balances must be taken at Islamic month ends, that liabilities and loans need explicit signs, and that gold and payments must be tracked. It is obsolete wherever it discusses nisab, threshold-based liability, pure-gold conversion as the primary model, or implementation status. The owner has explicitly said to "forget about the nisab etc."; the calculation must now show minimum/maximum yearly basis, add gold valued by karat/date in the selected currency, and use an editable percentage defaulting to 2.5%.
+
 ## Overview
 Enhance the zakat calculator to match the functionality of the Google Sheets tracker with:
 - Islamic calendar integration

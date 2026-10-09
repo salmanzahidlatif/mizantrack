@@ -1,5 +1,7 @@
 # Zakat Feature Enhancement - Complete Implementation
 
+> **Superseded note — October 2026:** The authoritative zakat requirements are now in [`zakat-requirements-2026-10.md`](zakat-requirements-2026-10.md). This document is historical and its "complete implementation" claim should not be trusted: its own 10-item testing checklist is still unticked. It remains useful as a map of attempted feature areas and files, but is obsolete where it claims the feature is complete, uses nisab or `isLiable`, relies on a single assessment-date calculation, treats approximate Islamic dates as acceptable, or describes gold as pure-weight conversion instead of the owner's spreadsheet model of grams × per-karat price in the selected currency.
+
 ## 🎉 Summary
 
 The zakat calculator has been completely redesigned based on insights from analyzing the Google Sheets zakat tracker (2020-2026). The new implementation includes:

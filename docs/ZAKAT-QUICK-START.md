@@ -1,5 +1,7 @@
 # Zakat Calculator - Quick Start Guide
 
+> **Superseded note — October 2026:** The authoritative zakat requirements are now in [`zakat-requirements-2026-10.md`](zakat-requirements-2026-10.md). This quick-start remains useful only as a rough description of intended user-facing areas such as account selection, gold entry, yearly/monthly review, history, and payment recording. It is obsolete where it tells the user to choose a nisab standard, gates saving/calculation on being above nisab, uses pure-gold conversion as the main calculation model, or implies the existing screen matches the owner's spreadsheet. It also contradicts `zakat-enhancement-plan.md` about the Papa loan: this guide says "Papa owes you / you lent TO Papa", while the plan and the verified `2024` workbook sheet treat Papa as a negative liability. The Papa sign is an open question for the owner; do not guess from this guide.
+
 ## 🚀 What's New?
 
 Your zakat calculator now matches the functionality of your Google Sheets tracker with these major improvements:
