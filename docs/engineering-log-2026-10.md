@@ -505,3 +505,12 @@ Historical docs justified this by assuming each user owns a private Firebase pro
 | `4ef4ae1`, `bea1032`, `2aed773` | Native mobile UI and AED glyph |
 | `2592d2d`, `a0764c1`, `07f5ea6` | Historical analytics, month navigation, rebuilt dashboard/accounts |
 | `18262ef`, `9b0a13d`, `ded01cd` | Category ranking/icons, category currency tagging, per-currency reset |
+
+## 2026-10-09 appendix — short handover notes
+
+- **Firebase security remains the highest-priority outstanding risk.** The rules documented above are effectively `allow read, write: if true` on `/users/**`; the Firebase web config/project ID is public in the app, and the owner syncs real financial data including `pinHash`.
+- Sync commit `5400fa4` was reverted in `7627b58` because forced `getDocsFromServer()` reads were too expensive and coincided with Firebase 429 quota exhaustion. It is unproven whether `5400fa4` caused missing backup counts; the 429s alone may explain them. Later recovery should consider restoring the manifest/count and cursor-safety ideas without forcing server reads on every pull.
+- Known sync symptom: records created on one device can take several syncs to appear on another, but observed records eventually arrive.
+- `DexieError: MissingAPIError` during SSR is non-fatal noise from action modules transitively importing `@/lib/db/local`. The fatal variant is server route code reaching `@/lib/export.ts`, which imports Dexie at module scope; build/tests did not catch this, so server/client boundary work must be verified by booting the app and fetching pages.
+- Parked on `wip-sheets-export`: Google Sheets connect token persistence fix, annual-budget export fix, and merge self-transfer cleanup.
+- Process lesson: agents sharing one working tree must not run bulk checkout/stash/reset/clean; one such command destroyed another agent's in-progress work today.
