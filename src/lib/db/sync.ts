@@ -2,7 +2,6 @@ import {
 	collection,
 	doc,
 	getDocs,
-	getDocsFromServer,
 	getDoc,
 	getCountFromServer,
 	limit as firestoreLimit,
@@ -928,7 +927,7 @@ async function pullRemoteRecords(
 					firestoreLimit(FIRESTORE_PULL_PAGE_SIZE)
 				);
 		const remoteSnap: Awaited<ReturnType<typeof getDocs>> = await withFirestoreTimeout(
-			getDocsFromServer(remoteQuery),
+			getDocs(remoteQuery),
 			`pulling ${tableName} page`
 		);
 
@@ -999,7 +998,7 @@ async function migrateTableToServerCursor(
 
 	const table = getLocalSyncTable(tableName);
 	const remoteSnap = await withFirestoreTimeout(
-		getDocsFromServer(collection(firestore, `users/${userId}/${tableName}`)),
+		getDocs(collection(firestore, `users/${userId}/${tableName}`)),
 		`backfilling ${tableName}`,
 		FIRESTORE_BULK_SYNC_TIMEOUT_MS
 	);
@@ -1093,7 +1092,7 @@ export async function repairSyncFromFirestore(
 
 	for (const tableName of tableNames) {
 		const remoteSnap = await withFirestoreTimeout(
-			getDocsFromServer(collection(firestore, `users/${userId}/${tableName}`)),
+			getDocs(collection(firestore, `users/${userId}/${tableName}`)),
 			`repair-scanning ${tableName}`,
 			FIRESTORE_BULK_SYNC_TIMEOUT_MS
 		);

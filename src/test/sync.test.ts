@@ -25,27 +25,22 @@ vi.mock("@/lib/db/firebase", () => ({
 }));
 
 // Mock firebase/firestore so we can control what getCountFromServer returns
-vi.mock("firebase/firestore", () => {
-	const getDocs = vi.fn();
-
-	return {
-		collection: vi.fn((_db: unknown, path: string) => ({ path })),
-		getCountFromServer: vi.fn(),
-		writeBatch: vi.fn(),
-		doc: vi.fn((_db: unknown, ...segments: string[]) => ({ path: segments.join("/") })),
-		getDocs,
-		getDocsFromServer: vi.fn((...args: unknown[]) => getDocs(...args)),
-		getDoc: vi.fn(),
-		limit: vi.fn((count: number) => ({ type: "limit", count })),
-		runTransaction: vi.fn(),
-		setDoc: vi.fn(),
-		startAfter: vi.fn((docSnap: unknown) => ({ type: "startAfter", docSnap })),
-		query: vi.fn(),
-		where: vi.fn(),
-		orderBy: vi.fn(),
-		serverTimestamp: vi.fn(() => ({ __type: "serverTimestamp" })),
-	};
-});
+vi.mock("firebase/firestore", () => ({
+	collection: vi.fn((_db: unknown, path: string) => ({ path })),
+	getCountFromServer: vi.fn(),
+	writeBatch: vi.fn(),
+	doc: vi.fn((_db: unknown, ...segments: string[]) => ({ path: segments.join("/") })),
+	getDocs: vi.fn(),
+	getDoc: vi.fn(),
+	limit: vi.fn((count: number) => ({ type: "limit", count })),
+	runTransaction: vi.fn(),
+	setDoc: vi.fn(),
+	startAfter: vi.fn((docSnap: unknown) => ({ type: "startAfter", docSnap })),
+	query: vi.fn(),
+	where: vi.fn(),
+	orderBy: vi.fn(),
+	serverTimestamp: vi.fn(() => ({ __type: "serverTimestamp" })),
+}));
 
 function createEmptyFirestoreMocks() {
 	const mockCommit = vi.fn().mockResolvedValue(undefined);
@@ -1299,17 +1294,6 @@ describe("syncAll — server syncedAt cursors", () => {
 			pendingSync: false,
 		});
 		expect((await db.syncMeta.get("lastSync:transactions"))?.timestamp).toBe(2_001);
-	});
-
-	it("syncAll_PullQueriesUseServerReadsInsteadOfCachedSnapshots", async () => {
-		await markMigrationDone();
-		const { firestore } = await configureEmptySyncMocks();
-
-		await syncAll(USER_ID);
-
-		expect(firestore.getDocsFromServer).toHaveBeenCalledWith(
-			expect.objectContaining({ path: `users/${USER_ID}/transactions` })
-		);
 	});
 
 	it("syncAll_PulledFutureClockRecord_DoesNotRepushOnNextSync", async () => {
