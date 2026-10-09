@@ -45,6 +45,7 @@ interface TrendChartProps {
 interface AccountDistributionChartProps {
 	analytics?: AccountsAnalytics;
 	isLoading?: boolean;
+	includeFutureDatedBalances?: boolean;
 	className?: string;
 }
 
@@ -369,6 +370,7 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 export function AccountDistributionChart({
 	analytics,
 	isLoading,
+	includeFutureDatedBalances = false,
 	className,
 }: AccountDistributionChartProps) {
 	const data = useMemo(
@@ -411,16 +413,28 @@ export function AccountDistributionChart({
 						Account distribution
 					</h2>
 					<p className="mt-1 text-xs text-muted-foreground">
-						Positive balances in {analytics.currency}
+						Positive balances in {analytics.currency} ·{" "}
+						{includeFutureDatedBalances ? "including future" : "as of today"}
 					</p>
 				</div>
-				<CurrencyAmount
-					amount={analytics.netWorth}
-					currency={analytics.currency}
-					colorized
-					showNegativeSign
-					className="text-sm tabular-nums"
-				/>
+				<div className="text-right">
+					<span
+						className={cn(
+							"mb-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-[0.14em] uppercase",
+							includeFutureDatedBalances
+								? "border-primary/40 bg-primary/10 text-primary"
+								: "border-border/70 bg-background/70 text-muted-foreground"
+						)}>
+						{includeFutureDatedBalances ? "Incl. future" : "As of today"}
+					</span>
+					<CurrencyAmount
+						amount={analytics.netWorth}
+						currency={analytics.currency}
+						colorized
+						showNegativeSign
+						className="block text-sm tabular-nums"
+					/>
+				</div>
 			</div>
 			<div className="grid min-h-0 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-center gap-4 md:flex-1">
 				<MeasuredChartContainer

@@ -23,7 +23,7 @@ interface FilterStore {
 	activeCurrency: string;
 	/** Show archived accounts within the active currency. Default false. */
 	showArchivedAccounts: boolean;
-	/** Include future-dated transactions in account balances. Default false. */
+	/** Include future-dated transactions in account balances. Default true. */
 	includeFutureDatedBalances: boolean;
 
 	setPeriod: (period: FilterPeriod) => void;

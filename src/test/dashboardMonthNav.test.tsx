@@ -11,6 +11,7 @@ import {
 } from "@/components/charts/DashboardDesktopCharts";
 import { DashboardPageClient } from "@/components/dashboard/DashboardPageClient";
 import { ReportsPageClient } from "@/components/reports/ReportsPageClient";
+import { useFilterStore } from "@/store/filter-store";
 
 import type {
 	AccountsAnalytics,
@@ -119,10 +120,6 @@ vi.mock("@/hooks/useHaptics", () => ({
 
 vi.mock("@/hooks/usePeriodAnalytics", () => ({
 	usePeriodAnalytics: vi.fn(),
-}));
-
-vi.mock("@/store/filter-store", () => ({
-	useFilterStore: () => ({ activeCurrency: "" }),
 }));
 
 vi.mock("@/store/ui-store", () => ({
@@ -271,6 +268,12 @@ describe("dashboard UI rebuild", () => {
 	beforeEach(async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(NOW);
+		useFilterStore.setState({
+			activeCurrency: "",
+			includeFutureDatedBalances: true,
+			showArchivedAccounts: false,
+			accountId: null,
+		});
 		await mockHooks();
 		mockMatchMedia(false);
 	});
@@ -301,14 +304,99 @@ describe("dashboard UI rebuild", () => {
 		expect(screen.getAllByText((text) => text.includes("-4,355,391.13")).length).toBeGreaterThan(0);
 	});
 
-	it("keeps dashboard account analytics on the current balance basis", async () => {
+	it("passes the shared future-dated balance basis to dashboard account analytics by default", async () => {
 		const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
 
 		render(<DashboardPageClient userId={USER_ID} />);
 
 		expect(screen.getAllByText((text) => text.includes("97,218.91")).length).toBeGreaterThan(0);
 		const accountQuery = vi.mocked(useAccountsAnalytics).mock.calls.at(-1)?.[1];
-		expect(accountQuery).not.toHaveProperty("includeFutureDatedBalances");
+		expect(accountQuery).toEqual(
+			expect.objectContaining({
+				asOf: NOW,
+				includeFutureDatedBalances: true,
+			})
+		);
+		expect(screen.getByText("Net worth (including future)")).toBeInTheDocument();
+		expect(screen.getAllByText("Incl. future").length).toBeGreaterThan(0);
+	});
+
+	it("updates the dashboard net-worth figure when toggling future-dated balances", async () => {
+		const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
+		const currentAnalytics = buildAccountsAnalytics(95000);
+		const futureAnalytics = buildAccountsAnalytics(97218.91);
+		vi.mocked(useAccountsAnalytics).mockImplementation((_userId, query) =>
+			query?.includeFutureDatedBalances ? futureAnalytics : currentAnalytics
+		);
+
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		expect(screen.getAllByText((text) => text.includes("97,218.91")).length).toBeGreaterThan(0);
+		expect(screen.getByRole("button", { name: "Exclude Future" })).toBeInTheDocument();
+		expect(vi.mocked(useAccountsAnalytics).mock.calls.at(-1)?.[1]).toEqual(
+			expect.objectContaining({ includeFutureDatedBalances: true })
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Exclude Future" }));
+
+		expect(screen.getAllByText((text) => text.includes("95,000.00")).length).toBeGreaterThan(0);
+		expect(screen.getByRole("button", { name: "Include Future" })).toBeInTheDocument();
+		expect(screen.getByText("Net worth (as of today)")).toBeInTheDocument();
+		expect(vi.mocked(useAccountsAnalytics).mock.calls.at(-1)?.[1]).toEqual(
+			expect.objectContaining({ includeFutureDatedBalances: false })
+		);
+	});
+
+	it("honours the same shared future-balance store state used by the accounts page", async () => {
+		const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
+		useFilterStore.getState().setIncludeFutureDatedBalances(false);
+
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		expect(screen.getByRole("button", { name: "Include Future" })).toBeInTheDocument();
+		expect(screen.getByText("Net worth (as of today)")).toBeInTheDocument();
+		expect(vi.mocked(useAccountsAnalytics).mock.calls.at(-1)?.[1]).toEqual(
+			expect.objectContaining({ includeFutureDatedBalances: false })
+		);
+	});
+
+	it("replaces duplicate period movement with the top expense metric", () => {
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		const overview = screen.getByLabelText("Financial overview");
+		expect(within(overview).queryByText("Period movement")).not.toBeInTheDocument();
+		expect(within(overview).getByText("Top expense")).toBeInTheDocument();
+		const topExpenseTile = within(overview).getByText("Top expense").closest("div")!;
+		expect(within(topExpenseTile).getByText("Food & Drink")).toBeInTheDocument();
+		expect(within(topExpenseTile).getByText((text) => text.includes("400.00"))).toBeInTheDocument();
+		expect(within(topExpenseTile).getByText(/spent/)).toBeInTheDocument();
+	});
+
+	it("keeps period totals and trend charts identical across balance-basis toggles", async () => {
+		const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
+		const currentAnalytics = buildAccountsAnalytics(95000);
+		const futureAnalytics = buildAccountsAnalytics(97218.91);
+		vi.mocked(useAccountsAnalytics).mockImplementation((_userId, query) =>
+			query?.includeFutureDatedBalances ? futureAnalytics : currentAnalytics
+		);
+
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		const initialIncomeCount = screen.getAllByText((text) => text.includes("1,000.00")).length;
+		const initialExpenseCount = screen.getAllByText((text) => text.includes("600.00")).length;
+		const initialCashFlowChart = screen.getByTestId("bar-chart").getAttribute("data-chart");
+		const initialSpendingChart = screen.getByTestId("area-chart").getAttribute("data-chart");
+
+		fireEvent.click(screen.getByRole("button", { name: "Exclude Future" }));
+
+		expect(screen.getAllByText((text) => text.includes("1,000.00"))).toHaveLength(
+			initialIncomeCount
+		);
+		expect(screen.getAllByText((text) => text.includes("600.00"))).toHaveLength(
+			initialExpenseCount
+		);
+		expect(screen.getByTestId("bar-chart")).toHaveAttribute("data-chart", initialCashFlowChart);
+		expect(screen.getByTestId("area-chart")).toHaveAttribute("data-chart", initialSpendingChart);
 	});
 
 	it("changing interval updates every figure on the reports screen", async () => {

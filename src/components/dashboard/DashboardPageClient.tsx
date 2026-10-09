@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
 	AnalyticsIntervalChooser,
@@ -121,6 +121,7 @@ interface SummarySplitCardProps {
 interface WhatYouHaveCardProps {
 	analytics?: AccountsAnalytics;
 	onAddAccount: () => void;
+	includeFutureDatedBalances: boolean;
 	className?: string;
 }
 
@@ -358,7 +359,30 @@ function WhatYouHaveSkeleton({ className }: { className?: string }) {
 	);
 }
 
-function WhatYouHaveCard({ analytics, onAddAccount, className }: WhatYouHaveCardProps) {
+function BalanceBasisBadge({
+	includeFutureDatedBalances,
+}: {
+	includeFutureDatedBalances: boolean;
+}) {
+	return (
+		<span
+			className={cn(
+				"rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] uppercase",
+				includeFutureDatedBalances
+					? "border-primary/40 bg-primary/10 text-primary"
+					: "border-border/70 bg-background/70 text-muted-foreground"
+			)}>
+			{includeFutureDatedBalances ? "Incl. future" : "As of today"}
+		</span>
+	);
+}
+
+function WhatYouHaveCard({
+	analytics,
+	onAddAccount,
+	includeFutureDatedBalances,
+	className,
+}: WhatYouHaveCardProps) {
 	if (!analytics) {
 		return <WhatYouHaveSkeleton className={className} />;
 	}
@@ -375,6 +399,11 @@ function WhatYouHaveCard({ analytics, onAddAccount, className }: WhatYouHaveCard
 					<p id="what-you-have" className="text-sm font-semibold">
 						What You Have
 					</p>
+					<p className="mt-1 text-xs text-muted-foreground">
+						{includeFutureDatedBalances
+							? "Net worth (including future)"
+							: "Net worth (as of today)"}
+					</p>
 					<CurrencyAmount
 						amount={analytics.netWorth}
 						currency={analytics.currency}
@@ -383,7 +412,10 @@ function WhatYouHaveCard({ analytics, onAddAccount, className }: WhatYouHaveCard
 						className="mt-2 block text-3xl leading-9"
 					/>
 				</div>
-				<WalletCards className="mt-1 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+				<span className="flex shrink-0 flex-col items-end gap-2">
+					<BalanceBasisBadge includeFutureDatedBalances={includeFutureDatedBalances} />
+					<WalletCards className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+				</span>
 			</div>
 
 			<div className="grid grid-cols-2 gap-2">
@@ -489,14 +521,12 @@ function SummarySplitCard({ analytics, currency, periodLabel, className }: Summa
 
 function DesktopMetricStrip({
 	analytics,
-	accountAnalytics,
 	currency,
 }: {
 	analytics?: PeriodAnalytics;
-	accountAnalytics?: AccountsAnalytics;
 	currency: string;
 }) {
-	if (!analytics || !accountAnalytics) {
+	if (!analytics) {
 		return (
 			<section className="grid grid-cols-2 gap-3 md:grid-cols-4" aria-busy="true">
 				{Array.from({ length: 4 }).map((_, index) => (
@@ -507,7 +537,13 @@ function DesktopMetricStrip({
 	}
 
 	const savingsRate = analytics.income > 0 ? (analytics.net / analytics.income) * 100 : 0;
-	const metrics = [
+	const topExpenseCategory = analytics.expenseBreakdown.reduce<
+		PeriodAnalytics["expenseBreakdown"][number] | undefined
+	>((topCategory, category) => {
+		if (!topCategory || category.amount > topCategory.amount) return category;
+		return topCategory;
+	}, undefined);
+	const metrics: Array<{ label: string; value: ReactNode; helper: ReactNode }> = [
 		{
 			label: "Net cash flow",
 			value: (
@@ -537,17 +573,27 @@ function DesktopMetricStrip({
 			helper: "Net ÷ income",
 		},
 		{
-			label: "Period movement",
-			value: (
-				<CurrencyAmount
-					amount={accountAnalytics.netFlow}
-					currency={accountAnalytics.currency}
-					colorized
-					showNegativeSign
-					className="text-lg leading-6 tabular-nums md:text-xl md:leading-7"
-				/>
+			label: "Top expense",
+			value: topExpenseCategory ? (
+				<span className="block truncate text-lg leading-6 font-semibold md:text-xl md:leading-7">
+					{topExpenseCategory.title}
+				</span>
+			) : (
+				<span className="text-lg leading-6 font-semibold md:text-xl md:leading-7">—</span>
 			),
-			helper: "Account inflow less outflow",
+			helper: topExpenseCategory ? (
+				<>
+					<CurrencyAmount
+						amount={topExpenseCategory.amount}
+						currency={currency}
+						variant="negative"
+						className="text-[11px] leading-4"
+					/>{" "}
+					spent
+				</>
+			) : (
+				"No expenses in period"
+			),
 		},
 		{
 			label: "Transactions",
@@ -566,7 +612,7 @@ function DesktopMetricStrip({
 				<div key={metric.label} className={cn(CARD_SURFACE, "min-h-24 p-3 md:min-h-28 md:p-4")}>
 					<p className="text-xs font-medium text-muted-foreground">{metric.label}</p>
 					<div className="mt-2">{metric.value}</div>
-					<p className="mt-2 text-[11px] leading-4 text-muted-foreground">{metric.helper}</p>
+					<div className="mt-2 text-[11px] leading-4 text-muted-foreground">{metric.helper}</div>
 				</div>
 			))}
 		</section>
@@ -682,7 +728,8 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	const userId = useRequiredUserId(providedUserId);
 	const config = useDbConfig(userId);
 	const haptics = useHaptics();
-	const { activeCurrency } = useFilterStore();
+	const { activeCurrency, includeFutureDatedBalances, setIncludeFutureDatedBalances } =
+		useFilterStore();
 	const openAddAccount = useUIStore((state) => state.openAddAccount);
 	const currency = resolveCurrencyCode(activeCurrency, config?.currency);
 	const fiscalYearStartMonth = config?.fiscalYearStartMonth ?? 7;
@@ -732,7 +779,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	const accountAnalytics = useAccountsAnalytics(userId, {
 		currency,
 		enabledCurrencies: config?.enabledCurrencies,
-		asOf: interval === "all-time" ? now : resolvedPeriod.to,
+		asOf: now,
 		period: {
 			interval,
 			anchorDate: selectedMonth,
@@ -741,6 +788,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 			timeZoneOffsetMinutes,
 		},
 		timeZoneOffsetMinutes,
+		includeFutureDatedBalances,
 	});
 	const trendSummaries = useAnalyticsMonthSummaries(userId, {
 		currency,
@@ -796,15 +844,28 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 		openAddAccount();
 	}
 
+	function handleToggleFutureBalances() {
+		setIncludeFutureDatedBalances(!includeFutureDatedBalances);
+		haptics.selection();
+	}
+
 	const isAnalyticsBusy = periodAnalytics === undefined || accountAnalytics === undefined;
 
 	return (
 		<div className="space-y-4 md:space-y-5" aria-busy={isAnalyticsBusy}>
-			<div>
-				<h1 className="hidden text-2xl font-bold tracking-tight md:block">Dashboard</h1>
-				<p className="text-sm text-muted-foreground">
-					{getIntervalLabel(interval)} view · {periodLabel}
-				</p>
+			<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+				<div>
+					<h1 className="hidden text-2xl font-bold tracking-tight md:block">Dashboard</h1>
+					<p className="text-sm text-muted-foreground">
+						{getIntervalLabel(interval)} view · {periodLabel}
+					</p>
+				</div>
+				<div className="flex flex-wrap items-center gap-2">
+					<BalanceBasisBadge includeFutureDatedBalances={includeFutureDatedBalances} />
+					<Button variant="outline" size="sm" onClick={handleToggleFutureBalances}>
+						{includeFutureDatedBalances ? "Exclude Future" : "Include Future"}
+					</Button>
+				</div>
 			</div>
 
 			<MonthStrip
@@ -836,6 +897,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					<WhatYouHaveCard
 						analytics={accountAnalytics}
 						onAddAccount={handleAddAccount}
+						includeFutureDatedBalances={includeFutureDatedBalances}
 						className="md:w-full"
 					/>
 				</div>
@@ -853,16 +915,13 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					<AccountDistributionChart
 						analytics={accountAnalytics}
 						isLoading={accountAnalytics === undefined}
+						includeFutureDatedBalances={includeFutureDatedBalances}
 						className="md:w-full"
 					/>
 				</div>
 
 				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[3]}>
-					<DesktopMetricStrip
-						analytics={periodAnalytics}
-						accountAnalytics={accountAnalytics}
-						currency={currency}
-					/>
+					<DesktopMetricStrip analytics={periodAnalytics} currency={currency} />
 				</div>
 
 				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[4]}>
