@@ -48,6 +48,11 @@ const backupTableLabels: Record<string, string> = {
 	goldItems: "Gold items",
 	zakatCalculations: "Zakat calculations",
 	zakatPayments: "Zakat payments",
+	reportAccountTags: "Report account tags",
+	reportProjects: "Report projects",
+	reportTransactionTags: "Report transaction tags",
+	reportManualEntries: "Report manual entries",
+	reportMonthlySalaryRows: "Report salary rows",
 };
 
 const backupCountFormatter = new Intl.NumberFormat();

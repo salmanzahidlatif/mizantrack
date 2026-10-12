@@ -33,6 +33,11 @@ import type {
 	Category,
 	DbConfig,
 	GoldItem,
+	ReportAccountTag,
+	ReportManualEntry,
+	ReportMonthlySalaryRow,
+	ReportProject,
+	ReportTransactionTag,
 	Transaction,
 	ZakatCalculation,
 	ZakatPayment,
@@ -46,7 +51,12 @@ export type SyncableTable =
 	| "budgets"
 	| "goldItems"
 	| "zakatCalculations"
-	| "zakatPayments";
+	| "zakatPayments"
+	| "reportAccountTags"
+	| "reportProjects"
+	| "reportTransactionTags"
+	| "reportManualEntries"
+	| "reportMonthlySalaryRows";
 type SyncableRecord = (
 	| Account
 	| Category
@@ -55,6 +65,11 @@ type SyncableRecord = (
 	| GoldItem
 	| ZakatCalculation
 	| ZakatPayment
+	| ReportAccountTag
+	| ReportProject
+	| ReportTransactionTag
+	| ReportManualEntry
+	| ReportMonthlySalaryRow
 ) &
 	SyncDirtyFields;
 export type SyncScope = SyncableTable | "firebase" | "settings" | "dashboard";
@@ -66,6 +81,11 @@ type OptionalSyncFieldsByTable = {
 	goldItems: readonly (keyof GoldItem)[];
 	zakatCalculations: readonly (keyof ZakatCalculation)[];
 	zakatPayments: readonly (keyof ZakatPayment)[];
+	reportAccountTags: readonly (keyof ReportAccountTag)[];
+	reportProjects: readonly (keyof ReportProject)[];
+	reportTransactionTags: readonly (keyof ReportTransactionTag)[];
+	reportManualEntries: readonly (keyof ReportManualEntry)[];
+	reportMonthlySalaryRows: readonly (keyof ReportMonthlySalaryRow)[];
 };
 type NonClearingOptionalSyncFieldsByTable = {
 	accounts: readonly (keyof Account)[];
@@ -75,6 +95,11 @@ type NonClearingOptionalSyncFieldsByTable = {
 	goldItems: readonly (keyof GoldItem)[];
 	zakatCalculations: readonly (keyof ZakatCalculation)[];
 	zakatPayments: readonly (keyof ZakatPayment)[];
+	reportAccountTags: readonly (keyof ReportAccountTag)[];
+	reportProjects: readonly (keyof ReportProject)[];
+	reportTransactionTags: readonly (keyof ReportTransactionTag)[];
+	reportManualEntries: readonly (keyof ReportManualEntry)[];
+	reportMonthlySalaryRows: readonly (keyof ReportMonthlySalaryRow)[];
 };
 
 export const FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT = 20_000;
@@ -96,6 +121,13 @@ export const CORE_SYNC_TABLES = [
 	"goldItems",
 	"zakatCalculations",
 	"zakatPayments",
+	// Report tables sync AFTER transactions/accounts so the records they reference
+	// already exist locally when a tag arrives from another device.
+	"reportAccountTags",
+	"reportProjects",
+	"reportTransactionTags",
+	"reportManualEntries",
+	"reportMonthlySalaryRows",
 ] as const;
 
 function formatFirestoreLimit(limit: number): string {
@@ -256,6 +288,19 @@ const OPTIONAL_SYNC_FIELDS = {
 	goldItems: ["purchaseDate", "purchasePrice", "notes", "deletedAt"],
 	zakatCalculations: ["silverPricePerGram", "monthlyBalances", "deletedAt"],
 	zakatPayments: ["calculationId", "recipient", "notes", "deletedAt"],
+	// Report inputs only. No computed report output is ever persisted or synced.
+	reportAccountTags: ["isRemittanceSource", "deletedAt"],
+	reportProjects: ["note", "sortOrder", "deletedAt"],
+	reportTransactionTags: ["projectId", "deletedAt"],
+	reportManualEntries: ["date", "note", "fiscalYearKey", "deletedAt"],
+	reportMonthlySalaryRows: [
+		"company",
+		"salaryPkr",
+		"salaryUsd",
+		"taxablePkr",
+		"providentFundRefund",
+		"deletedAt",
+	],
 } as const satisfies OptionalSyncFieldsByTable;
 
 // sourceId is optional for legacy/manual records, but it is not null-written:
@@ -268,9 +313,18 @@ const NON_CLEARING_OPTIONAL_SYNC_FIELDS = {
 	goldItems: [],
 	zakatCalculations: [],
 	zakatPayments: [],
+	// Report tables carry no sourceId — they are created in-app, never imported.
+	reportAccountTags: [],
+	reportProjects: [],
+	reportTransactionTags: [],
+	reportManualEntries: [],
+	reportMonthlySalaryRows: [],
 } as const satisfies NonClearingOptionalSyncFieldsByTable;
 
 const LOCAL_ONLY_SYNC_FIELDS = new Set(["pendingSync", "syncedAt"]);
+// Legacy backfill only: pre-v10 zakat documents were written without a currency and
+// must default to PKR on pull. Report tables never had that legacy shape, so they are
+// deliberately excluded — reportManualEntries.currency is always user-supplied.
 const ZAKAT_SYNC_TABLES = new Set<SyncableTable>([
 	"goldItems",
 	"zakatCalculations",
@@ -415,6 +469,21 @@ async function putLocalRecord(tableName: SyncableTable, record: SyncableRecord):
 				break;
 			case "zakatPayments":
 				await localDb.zakatPayments.put(localRecord as ZakatPayment);
+				break;
+			case "reportAccountTags":
+				await localDb.reportAccountTags.put(localRecord as ReportAccountTag);
+				break;
+			case "reportProjects":
+				await localDb.reportProjects.put(localRecord as ReportProject);
+				break;
+			case "reportTransactionTags":
+				await localDb.reportTransactionTags.put(localRecord as ReportTransactionTag);
+				break;
+			case "reportManualEntries":
+				await localDb.reportManualEntries.put(localRecord as ReportManualEntry);
+				break;
+			case "reportMonthlySalaryRows":
+				await localDb.reportMonthlySalaryRows.put(localRecord as ReportMonthlySalaryRow);
 				break;
 		}
 	});
