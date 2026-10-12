@@ -27,6 +27,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useAccounts } from "@/hooks/useAccounts";
+import { useCategories } from "@/hooks/useCategories";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useFiscalReport, useTransactionDateBounds } from "@/hooks/useFiscalReport";
 import { normalizeCurrencyCode, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
@@ -52,6 +53,7 @@ export function FiscalReportPanel({ userId }: FiscalReportPanelProps) {
 
 	const bounds = useTransactionDateBounds(userId);
 	const accounts = useAccounts(userId, { showArchived: true });
+	const categories = useCategories(userId);
 	const projects = useLiveQuery(
 		() =>
 			db.reportProjects
@@ -132,6 +134,10 @@ export function FiscalReportPanel({ userId }: FiscalReportPanelProps) {
 	const accountsById = useMemo(
 		() => new Map((accounts ?? []).map((account) => [account.id, account])),
 		[accounts]
+	);
+	const categoriesById = useMemo(
+		() => new Map((categories ?? []).map((category) => [category.id, category.title])),
+		[categories]
 	);
 
 	function handleExport() {
@@ -236,6 +242,7 @@ export function FiscalReportPanel({ userId }: FiscalReportPanelProps) {
 						userId={userId}
 						detected={detected}
 						accountsById={accountsById}
+						categoriesById={categoriesById}
 						projects={projects ?? []}
 					/>
 

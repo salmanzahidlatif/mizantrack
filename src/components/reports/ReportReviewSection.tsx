@@ -38,6 +38,7 @@ interface ReportReviewSectionProps {
 	userId: string;
 	detected: DetectedReportTransaction[];
 	accountsById: Map<string, Account>;
+	categoriesById: Map<string, string>;
 	projects: ReportProject[];
 }
 
@@ -53,13 +54,41 @@ function resolveTitle(transaction: Transaction): string {
 	if (description) return description;
 	const place = transaction.place?.trim();
 	if (place) return place;
-	return "Transfer";
+	return transaction.type;
+}
+
+/**
+ * Many imported rows carry no description, so the title alone is often just
+ * "Transfer". Showing where the money moved and its category is what actually
+ * identifies the transaction when tagging.
+ */
+function resolveContext(
+	transaction: Transaction,
+	accountsById: Map<string, Account>,
+	categoriesById: Map<string, string>
+): string {
+	const parts: string[] = [];
+	const from = accountsById.get(transaction.accountId)?.title;
+	const to = transaction.toAccountId ? accountsById.get(transaction.toAccountId)?.title : undefined;
+
+	if (from && to) parts.push(`${from} → ${to}`);
+	else if (to) parts.push(`→ ${to}`);
+	else if (from) parts.push(from);
+
+	const category = transaction.categoryId ? categoriesById.get(transaction.categoryId) : undefined;
+	if (category) parts.push(category);
+
+	const place = transaction.place?.trim();
+	if (place && place !== resolveTitle(transaction)) parts.push(place);
+
+	return parts.join(" • ");
 }
 
 export function ReportReviewSection({
 	userId,
 	detected,
 	accountsById,
+	categoriesById,
 	projects,
 }: ReportReviewSectionProps) {
 	const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
@@ -126,6 +155,7 @@ export function ReportReviewSection({
 		const transaction = item.transaction;
 		const draft = getDraft(item);
 		const currency = accountsById.get(transaction.accountId)?.currency;
+		const context = resolveContext(transaction, accountsById, categoriesById);
 		const isPending = !item.confirmed;
 
 		return (
@@ -150,8 +180,14 @@ export function ReportReviewSection({
 							)}
 						</div>
 						<p className="mt-0.5 text-xs text-muted-foreground">
-							{format(transaction.date, "d MMM yyyy")} • {getDetectionReasonLabel(item)}
+							{format(transaction.date, "d MMM yyyy")}
+							{context ? ` • ${context}` : ""}
 						</p>
+						{isPending ? (
+							<p className="mt-0.5 text-[11px] text-muted-foreground/80">
+								{getDetectionReasonLabel(item)}
+							</p>
+						) : null}
 					</div>
 					<CurrencyAmount amount={transaction.amount} currency={currency} className="text-sm" />
 				</div>
