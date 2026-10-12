@@ -11,6 +11,11 @@ import type {
 	GoldItem,
 	ZakatCalculation,
 	ZakatPayment,
+	ReportAccountTag,
+	ReportProject,
+	ReportTransactionTag,
+	ReportManualEntry,
+	ReportMonthlySalaryRow,
 } from "@/types";
 
 export interface SyncDirtyFields {
@@ -53,6 +58,103 @@ function installSyncDirtyHooks<T extends object>(table: Table<T>): void {
 	});
 }
 
+type StoreSchema = Record<string, string | null>;
+
+/**
+ * Schema versions are cumulative: each version spreads the previous one and only
+ * declares what actually changed. A `null` value drops a table in that version.
+ */
+const STORES_V1: StoreSchema = {
+	accounts: "id, userId, isArchived, updatedAt, deletedAt",
+	categories: "id, userId, type, updatedAt, deletedAt",
+	transactions: "id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt",
+	dbConfig: "id",
+	syncMeta: "id",
+};
+
+// Version 2: Add zakat-related tables
+const STORES_V2: StoreSchema = {
+	...STORES_V1,
+	accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt",
+	goldItems: "id, userId, purity, updatedAt, deletedAt",
+	zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
+	zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
+};
+
+// Version 3: Add precomputed dashboard analytics cache
+const STORES_V3: StoreSchema = {
+	...STORES_V2,
+	dashboardStats: "id, updatedAt",
+};
+
+// Version 4: Index category currency
+const STORES_V4: StoreSchema = {
+	...STORES_V3,
+	categories: "id, userId, type, currency, updatedAt, deletedAt",
+};
+
+// Version 5: Track pending sync state on user-editable tables
+const STORES_V5: StoreSchema = {
+	...STORES_V4,
+	accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt, pendingSync",
+	categories: "id, userId, type, currency, updatedAt, deletedAt, pendingSync",
+	transactions:
+		"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt, pendingSync",
+};
+
+// Version 6: Add category currency backfill decisions
+const STORES_V6: StoreSchema = {
+	...STORES_V5,
+	categoryCurrencyBackfillDecisions: "id, userId, categoryId, action, assignedAt",
+};
+
+// Version 7: Add [userId+date] compound index for transaction range queries
+const STORES_V7: StoreSchema = {
+	...STORES_V6,
+	transactions:
+		"id, userId, [userId+date], type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt, pendingSync",
+};
+
+// Version 8: Add budgets and sourceId provenance
+const STORES_V8: StoreSchema = {
+	...STORES_V7,
+	accounts: "id, userId, isArchived, accountType, sourceId, updatedAt, deletedAt, pendingSync",
+	categories: "id, userId, type, currency, sourceId, updatedAt, deletedAt, pendingSync",
+	transactions:
+		"id, userId, [userId+date], type, date, accountId, categoryId, toAccountId, sourceId, updatedAt, deletedAt, pendingSync",
+	budgets:
+		"id, userId, categoryId, period, [userId+period], [categoryId+period], sourceId, updatedAt, deletedAt, pendingSync",
+};
+
+// Version 9: Drop the category currency backfill decisions table
+const STORES_V9: StoreSchema = {
+	...STORES_V8,
+	categoryCurrencyBackfillDecisions: null,
+};
+
+// Version 10: Scope zakat data by currency
+const STORES_V10: StoreSchema = {
+	...STORES_V9,
+	goldItems: "id, userId, currency, [userId+currency], purity, updatedAt, deletedAt, pendingSync",
+	zakatCalculations:
+		"id, userId, currency, [userId+currency], islamicYear, assessmentDate, updatedAt, deletedAt, pendingSync",
+	zakatPayments:
+		"id, userId, currency, [userId+currency], islamicYear, date, calculationId, updatedAt, deletedAt, pendingSync",
+};
+
+// Version 11: Add runtime-report user inputs (no computed report data is ever stored)
+const STORES_V11: StoreSchema = {
+	...STORES_V10,
+	reportAccountTags: "id, userId, accountId, [userId+accountId], updatedAt, deletedAt, pendingSync",
+	reportProjects: "id, userId, updatedAt, deletedAt, pendingSync",
+	reportTransactionTags:
+		"id, userId, transactionId, projectId, [userId+transactionId], role, updatedAt, deletedAt, pendingSync",
+	reportManualEntries:
+		"id, userId, fiscalYearKey, section, [userId+fiscalYearKey], updatedAt, deletedAt, pendingSync",
+	reportMonthlySalaryRows:
+		"id, userId, fiscalYearKey, monthKey, [userId+fiscalYearKey], updatedAt, deletedAt, pendingSync",
+};
+
 export class MizanTrackDB extends Dexie {
 	accounts!: Table<Account>;
 	categories!: Table<Category>;
@@ -64,151 +166,25 @@ export class MizanTrackDB extends Dexie {
 	goldItems!: Table<GoldItem>;
 	zakatCalculations!: Table<ZakatCalculation>;
 	zakatPayments!: Table<ZakatPayment>;
+	reportAccountTags!: Table<ReportAccountTag>;
+	reportProjects!: Table<ReportProject>;
+	reportTransactionTags!: Table<ReportTransactionTag>;
+	reportManualEntries!: Table<ReportManualEntry>;
+	reportMonthlySalaryRows!: Table<ReportMonthlySalaryRow>;
 
 	constructor(databaseName = "mizantrack") {
 		super(databaseName);
-		this.version(1).stores({
-			accounts: "id, userId, isArchived, updatedAt, deletedAt",
-			categories: "id, userId, type, updatedAt, deletedAt",
-			transactions:
-				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt",
-			dbConfig: "id",
-			syncMeta: "id",
-		});
-
-		// Version 2: Add zakat-related tables
-		this.version(2).stores({
-			accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt",
-			categories: "id, userId, type, updatedAt, deletedAt",
-			transactions:
-				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt",
-			dbConfig: "id",
-			syncMeta: "id",
-			goldItems: "id, userId, purity, updatedAt, deletedAt",
-			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
-			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
-		});
-
-		// Version 3: Add precomputed dashboard analytics cache
-		this.version(3).stores({
-			accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt",
-			categories: "id, userId, type, updatedAt, deletedAt",
-			transactions:
-				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt",
-			dbConfig: "id",
-			syncMeta: "id",
-			dashboardStats: "id, updatedAt",
-			goldItems: "id, userId, purity, updatedAt, deletedAt",
-			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
-			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
-		});
-
-		this.version(4).stores({
-			accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt",
-			categories: "id, userId, type, currency, updatedAt, deletedAt",
-			transactions:
-				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt",
-			dbConfig: "id",
-			syncMeta: "id",
-			dashboardStats: "id, updatedAt",
-			goldItems: "id, userId, purity, updatedAt, deletedAt",
-			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
-			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
-		});
-
-		this.version(5).stores({
-			accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt, pendingSync",
-			categories: "id, userId, type, currency, updatedAt, deletedAt, pendingSync",
-			transactions:
-				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt, pendingSync",
-			dbConfig: "id",
-			syncMeta: "id",
-			dashboardStats: "id, updatedAt",
-			goldItems: "id, userId, purity, updatedAt, deletedAt",
-			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
-			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
-		});
-
-		this.version(6).stores({
-			accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt, pendingSync",
-			categories: "id, userId, type, currency, updatedAt, deletedAt, pendingSync",
-			transactions:
-				"id, userId, type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt, pendingSync",
-			dbConfig: "id",
-			syncMeta: "id",
-			categoryCurrencyBackfillDecisions: "id, userId, categoryId, action, assignedAt",
-			dashboardStats: "id, updatedAt",
-			goldItems: "id, userId, purity, updatedAt, deletedAt",
-			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
-			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
-		});
-
-		this.version(7).stores({
-			accounts: "id, userId, isArchived, accountType, updatedAt, deletedAt, pendingSync",
-			categories: "id, userId, type, currency, updatedAt, deletedAt, pendingSync",
-			transactions:
-				"id, userId, [userId+date], type, date, accountId, categoryId, toAccountId, updatedAt, deletedAt, pendingSync",
-			dbConfig: "id",
-			syncMeta: "id",
-			categoryCurrencyBackfillDecisions: "id, userId, categoryId, action, assignedAt",
-			dashboardStats: "id, updatedAt",
-			goldItems: "id, userId, purity, updatedAt, deletedAt",
-			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
-			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
-		});
-
-		this.version(8).stores({
-			accounts: "id, userId, isArchived, accountType, sourceId, updatedAt, deletedAt, pendingSync",
-			categories: "id, userId, type, currency, sourceId, updatedAt, deletedAt, pendingSync",
-			transactions:
-				"id, userId, [userId+date], type, date, accountId, categoryId, toAccountId, sourceId, updatedAt, deletedAt, pendingSync",
-			budgets:
-				"id, userId, categoryId, period, [userId+period], [categoryId+period], sourceId, updatedAt, deletedAt, pendingSync",
-			dbConfig: "id",
-			syncMeta: "id",
-			categoryCurrencyBackfillDecisions: "id, userId, categoryId, action, assignedAt",
-			dashboardStats: "id, updatedAt",
-			goldItems: "id, userId, purity, updatedAt, deletedAt",
-			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
-			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
-		});
-
-		this.version(9).stores({
-			accounts: "id, userId, isArchived, accountType, sourceId, updatedAt, deletedAt, pendingSync",
-			categories: "id, userId, type, currency, sourceId, updatedAt, deletedAt, pendingSync",
-			transactions:
-				"id, userId, [userId+date], type, date, accountId, categoryId, toAccountId, sourceId, updatedAt, deletedAt, pendingSync",
-			budgets:
-				"id, userId, categoryId, period, [userId+period], [categoryId+period], sourceId, updatedAt, deletedAt, pendingSync",
-			dbConfig: "id",
-			syncMeta: "id",
-			categoryCurrencyBackfillDecisions: null,
-			dashboardStats: "id, updatedAt",
-			goldItems: "id, userId, purity, updatedAt, deletedAt",
-			zakatCalculations: "id, userId, islamicYear, assessmentDate, updatedAt, deletedAt",
-			zakatPayments: "id, userId, islamicYear, date, calculationId, updatedAt, deletedAt",
-		});
-
+		this.version(1).stores(STORES_V1);
+		this.version(2).stores(STORES_V2);
+		this.version(3).stores(STORES_V3);
+		this.version(4).stores(STORES_V4);
+		this.version(5).stores(STORES_V5);
+		this.version(6).stores(STORES_V6);
+		this.version(7).stores(STORES_V7);
+		this.version(8).stores(STORES_V8);
+		this.version(9).stores(STORES_V9);
 		this.version(10)
-			.stores({
-				accounts:
-					"id, userId, isArchived, accountType, sourceId, updatedAt, deletedAt, pendingSync",
-				categories: "id, userId, type, currency, sourceId, updatedAt, deletedAt, pendingSync",
-				transactions:
-					"id, userId, [userId+date], type, date, accountId, categoryId, toAccountId, sourceId, updatedAt, deletedAt, pendingSync",
-				budgets:
-					"id, userId, categoryId, period, [userId+period], [categoryId+period], sourceId, updatedAt, deletedAt, pendingSync",
-				dbConfig: "id",
-				syncMeta: "id",
-				categoryCurrencyBackfillDecisions: null,
-				dashboardStats: "id, updatedAt",
-				goldItems:
-					"id, userId, currency, [userId+currency], purity, updatedAt, deletedAt, pendingSync",
-				zakatCalculations:
-					"id, userId, currency, [userId+currency], islamicYear, assessmentDate, updatedAt, deletedAt, pendingSync",
-				zakatPayments:
-					"id, userId, currency, [userId+currency], islamicYear, date, calculationId, updatedAt, deletedAt, pendingSync",
-			})
+			.stores(STORES_V10)
 			.upgrade(async (tx) => {
 				const syncMeta = tx.table<SyncMeta, string>("syncMeta");
 				const alreadyBackfilled = await syncMeta.get(ZAKAT_CURRENCY_BACKFILL_META_ID);
@@ -225,6 +201,7 @@ export class MizanTrackDB extends Dexie {
 				await tx.table("zakatPayments").toCollection().modify(backfillCurrency);
 				await syncMeta.put({ id: ZAKAT_CURRENCY_BACKFILL_META_ID, timestamp: Date.now() });
 			});
+		this.version(11).stores(STORES_V11);
 
 		installSyncDirtyHooks(this.accounts);
 		installSyncDirtyHooks(this.categories);
@@ -233,6 +210,11 @@ export class MizanTrackDB extends Dexie {
 		installSyncDirtyHooks(this.goldItems);
 		installSyncDirtyHooks(this.zakatCalculations);
 		installSyncDirtyHooks(this.zakatPayments);
+		installSyncDirtyHooks(this.reportAccountTags);
+		installSyncDirtyHooks(this.reportProjects);
+		installSyncDirtyHooks(this.reportTransactionTags);
+		installSyncDirtyHooks(this.reportManualEntries);
+		installSyncDirtyHooks(this.reportMonthlySalaryRows);
 
 		this.on("blocked", (event) => {
 			console.warn("MizanTrack IndexedDB upgrade is blocked by another open app instance.", event);
