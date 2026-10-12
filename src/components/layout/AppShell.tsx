@@ -12,6 +12,8 @@ import {
 	Moon,
 	Plus,
 	WalletCards,
+	Eye,
+	EyeOff,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -39,7 +41,7 @@ import {
 import { useAutoSync } from "@/hooks/useAutoSync";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
-import { useSyncHideAmounts } from "@/hooks/useHideAmounts";
+import { useSyncHideAmounts, useHideAmounts } from "@/hooks/useHideAmounts";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import {
@@ -47,10 +49,12 @@ import {
 	scheduleAnalyticsRecompute,
 } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
+import { upsertDbConfig } from "@/lib/db/dbConfig";
 import { FAB, FROSTED_HEADER } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
 import { useLockStore } from "@/store/lock-store";
+import { usePrivacyStore } from "@/store/privacy-store";
 import { useSyncStore } from "@/store/sync-store";
 import { useUIStore } from "@/store/ui-store";
 
@@ -161,6 +165,14 @@ export function AppShell({ user, children }: AppShellProps) {
 
 	const canLock = Boolean(config?.appLockEnabled && config?.pinHash);
 	const handleLockNow = () => useLockStore.getState().lock();
+	const hideAmounts = useHideAmounts();
+	const handleToggleHideAmounts = () => {
+		if (!user?.id) return;
+		const next = !hideAmounts;
+		usePrivacyStore.getState().setHideAmounts(next);
+		haptics.selection();
+		void upsertDbConfig(user.id, { hideAmounts: next });
+	};
 	const renderSettingsMenuItem = () => (
 		<DropdownMenuItem asChild className="gap-2">
 			<Link href="/settings">
@@ -285,6 +297,14 @@ export function AppShell({ user, children }: AppShellProps) {
 								}}
 							/>
 							<SyncStatusBadge />
+							{user?.id ? (
+								<HideAmountsToggle
+									userId={user.id}
+									variant="ghost"
+									size="icon"
+									className="press-scale tappable hidden h-10 w-10 rounded-full hover:bg-accent/80 sm:inline-flex"
+								/>
+							) : null}
 							<ThemeToggle />
 							<DropdownMenu>
 								<DropdownMenuTrigger asChild>
@@ -318,6 +338,22 @@ export function AppShell({ user, children }: AppShellProps) {
 											<DropdownMenuSeparator />
 										</>
 									)}
+									{/* The header toggle is hidden on small screens, so expose it here. */}
+									{user?.id ? (
+										<DropdownMenuItem
+											onSelect={(event) => {
+												event.preventDefault();
+												handleToggleHideAmounts();
+											}}
+											className="gap-2 sm:hidden">
+											{hideAmounts ? (
+												<EyeOff className="h-4 w-4" />
+											) : (
+												<Eye className="h-4 w-4" />
+											)}
+											{hideAmounts ? "Show amounts" : "Hide amounts"}
+										</DropdownMenuItem>
+									) : null}
 									{renderBudgetsMenuItem()}
 									{renderSettingsMenuItem()}
 									<DropdownMenuSeparator />

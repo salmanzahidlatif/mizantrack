@@ -11,10 +11,17 @@ import { usePrivacyStore } from "@/store/privacy-store";
 interface HideAmountsToggleProps {
 	userId: string;
 	className?: string;
+	variant?: "outline" | "ghost";
+	size?: "sm" | "icon";
 }
 
 /** Masks or reveals every monetary amount app-wide. Persisted in dbConfig. */
-export function HideAmountsToggle({ userId, className }: HideAmountsToggleProps) {
+export function HideAmountsToggle({
+	userId,
+	className,
+	variant = "outline",
+	size = "sm",
+}: HideAmountsToggleProps) {
 	const hideAmounts = useHideAmounts();
 	const haptics = useHaptics();
 
@@ -28,8 +35,8 @@ export function HideAmountsToggle({ userId, className }: HideAmountsToggleProps)
 	return (
 		<Button
 			type="button"
-			variant="outline"
-			size="sm"
+			variant={variant}
+			size={size}
 			className={className}
 			data-testid="hide-amounts-toggle"
 			aria-pressed={hideAmounts}
