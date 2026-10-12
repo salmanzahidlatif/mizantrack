@@ -7,7 +7,6 @@ import {
 	Plus,
 	TrendingDown,
 	TrendingUp,
-	WalletCards,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -28,6 +27,7 @@ import {
 	shiftDashboardPeriod,
 } from "@/components/dashboard/monthData";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
+import { HideAmountsToggle } from "@/components/shared/HideAmountsToggle";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
 import { SkeletonChart } from "@/components/shared/SkeletonChart";
 import { Button } from "@/components/ui/button";
@@ -124,6 +124,7 @@ interface SummarySplitCardProps {
 }
 
 interface WhatYouHaveCardProps {
+	userId: string;
 	analytics?: AccountsAnalytics;
 	onAddAccount: () => void;
 	includeFutureDatedBalances: boolean;
@@ -409,6 +410,7 @@ function BalanceBasisBadge({
 }
 
 function WhatYouHaveCard({
+	userId,
 	analytics,
 	onAddAccount,
 	includeFutureDatedBalances,
@@ -445,7 +447,7 @@ function WhatYouHaveCard({
 				</div>
 				<span className="flex shrink-0 flex-col items-end gap-2">
 					<BalanceBasisBadge includeFutureDatedBalances={includeFutureDatedBalances} />
-					<WalletCards className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+					<HideAmountsToggle userId={userId} />
 				</span>
 			</div>
 
@@ -934,6 +936,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 				style={{ touchAction: "pan-y" }}>
 				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[0]} data-testid="dashboard-top-card-cell">
 					<WhatYouHaveCard
+						userId={userId}
 						analytics={accountAnalytics}
 						onAddAccount={handleAddAccount}
 						includeFutureDatedBalances={includeFutureDatedBalances}

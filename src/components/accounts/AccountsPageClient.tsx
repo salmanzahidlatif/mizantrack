@@ -9,6 +9,7 @@ import { AccountList } from "@/components/accounts/AccountList";
 import { accountSortOptions, type AccountSort } from "@/components/accounts/accountSort";
 import { DuplicateAccountMergePanel } from "@/components/accounts/DuplicateAccountMergePanel";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
+import { HideAmountsToggle } from "@/components/shared/HideAmountsToggle";
 import { Button } from "@/components/ui/button";
 import {
 	Select,
@@ -276,6 +277,7 @@ export function AccountsPageClient({ userId: providedUserId }: AccountsPageClien
 						onClick={() => setIncludeFutureDatedBalances(!includeFutureDatedBalances)}>
 						{includeFutureDatedBalances ? "Exclude Future" : "Include Future"}
 					</Button>
+					<HideAmountsToggle userId={userId} />
 					<Button size="sm" onClick={handleAddAccount}>
 						<Plus className="mr-1.5 h-4 w-4" />
 						Add

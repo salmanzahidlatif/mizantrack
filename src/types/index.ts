@@ -88,6 +88,8 @@ export interface DbConfig {
 	biometricCredentialId?: string; // Base64 WebAuthn credentialId; device-local, NOT synced
 	// Multi-currency
 	enabledCurrencies?: string[]; // ISO codes of active currencies; min 1
+	// Privacy
+	hideAmounts?: boolean; // mask every monetary amount in the UI; default false
 }
 
 export interface SyncMeta {

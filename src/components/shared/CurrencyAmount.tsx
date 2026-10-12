@@ -1,3 +1,6 @@
+"use client";
+
+import { useHideAmounts } from "@/hooks/useHideAmounts";
 import { getCurrencyDisplay, type CurrencySymbol } from "@/lib/currencySymbols";
 import { cn } from "@/lib/utils";
 
@@ -19,13 +22,33 @@ interface CurrencyAmountProps {
 
 const RTL_SYMBOL_PATTERN = /[\u0590-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 
+export const AMOUNT_MASK = "••••";
+
+function maskAmount(code: string, symbol: CurrencySymbol): ReactNode {
+	return (
+		<>
+			{renderCurrencySymbol(code, symbol)}{" "}
+			<span aria-hidden="true" className="inline-block min-w-[4ch] text-center tracking-wide">
+				{AMOUNT_MASK}
+			</span>
+			<span className="sr-only">Amount hidden</span>
+		</>
+	);
+}
+
 function formatAmount(
 	amount: number,
 	currency: string | undefined,
 	fallbackCurrency: string,
-	showNegativeSign: boolean
+	showNegativeSign: boolean,
+	hideAmounts: boolean
 ): ReactNode {
 	const { code, symbol } = getCurrencyDisplay(currency, fallbackCurrency);
+
+	if (hideAmounts) {
+		return maskAmount(code, symbol);
+	}
+
 	const abs = Math.abs(amount);
 	const formatted = abs.toLocaleString("en-US", {
 		minimumFractionDigits: 2,
@@ -73,12 +96,15 @@ export function CurrencyAmount({
 	variant,
 	className,
 }: CurrencyAmountProps) {
+	const hideAmounts = useHideAmounts();
 	const resolvedVariant =
 		variant ?? (colorized ? (amount >= 0 ? "positive" : "negative") : "neutral");
 
 	return (
 		<span
 			data-currency-amount
+			data-amount-hidden={hideAmounts ? "true" : undefined}
+			aria-label={hideAmounts ? "Amount hidden" : undefined}
 			dir="ltr"
 			className={cn(
 				"inline-block font-semibold tracking-tight tabular-nums transition-colors duration-200",
@@ -88,7 +114,7 @@ export function CurrencyAmount({
 				"[unicode-bidi:isolate]",
 				className
 			)}>
-			{formatAmount(amount, currency, fallbackCurrency, showNegativeSign)}
+			{formatAmount(amount, currency, fallbackCurrency, showNegativeSign, hideAmounts)}
 		</span>
 	);
 }

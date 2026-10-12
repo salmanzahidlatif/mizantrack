@@ -39,6 +39,7 @@ import {
 import { useAutoSync } from "@/hooks/useAutoSync";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useSyncHideAmounts } from "@/hooks/useHideAmounts";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import {
@@ -156,6 +157,7 @@ export function AppShell({ user, children }: AppShellProps) {
 	}, [lastSyncResult]);
 
 	useAutoSync(user?.id ?? "");
+	useSyncHideAmounts(config);
 
 	const canLock = Boolean(config?.appLockEnabled && config?.pinHash);
 	const handleLockNow = () => useLockStore.getState().lock();

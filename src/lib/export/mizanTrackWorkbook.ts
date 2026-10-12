@@ -148,6 +148,7 @@ const DB_CONFIG_COLUMNS = [
 	"appLockEnabled",
 	"biometricEnabled",
 	"enabledCurrencies",
+	"hideAmounts",
 ] as const satisfies readonly (keyof DbConfig)[];
 
 const SYNC_META_COLUMNS = ["id", "timestamp"] as const satisfies readonly (keyof SyncMeta)[];
