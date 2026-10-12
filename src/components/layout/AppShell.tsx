@@ -27,6 +27,7 @@ import { BottomNav, BOTTOM_NAV_ROUTES } from "@/components/layout/BottomNav";
 import { CurrencySelector } from "@/components/layout/CurrencySelector";
 import { SyncStatusBadge } from "@/components/layout/SyncStatusBadge";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { HideAmountsToggle } from "@/components/shared/HideAmountsToggle";
 import { TransactionDrawer } from "@/components/transactions/TransactionDrawer";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
