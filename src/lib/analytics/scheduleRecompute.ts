@@ -9,7 +9,10 @@ import {
 import { getFirestoreForUser } from "@/lib/db/firebase";
 import { db } from "@/lib/db/local";
 
-const RECOMPUTE_DELAY_MS = 0;
+// Local writes resolve as soon as Dexie has persisted the record, so the
+// recompute runs on a short debounce window instead. A burst of writes (rapid
+// saves, a merge, an import) therefore collapses into one recompute.
+export const ANALYTICS_RECOMPUTE_DEBOUNCE_MS = 120;
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingInvalidations = new Map<string, Promise<void>>();
@@ -128,7 +131,7 @@ export function scheduleAnalyticsRecompute(userId: string): void {
 				.catch((error) => {
 					console.error("Dashboard analytics recompute failed:", error);
 				});
-		}, RECOMPUTE_DELAY_MS)
+		}, ANALYTICS_RECOMPUTE_DEBOUNCE_MS)
 	);
 }
 

@@ -10,6 +10,7 @@ import {
 	updateTransaction,
 } from "@/lib/actions/transactions";
 import { ALL_CURRENCIES_KEY } from "@/lib/analytics/computeDashboardStats";
+import { flushAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
 import { transactionSchema } from "@/lib/validations/transaction";
 
@@ -245,7 +246,7 @@ describe("transactions db operations", () => {
 		expect(txn?.categoryId).toBeUndefined();
 	});
 
-	it("updates dashboard stats immediately after create, edit, and delete actions", async () => {
+	it("updates dashboard stats after create, edit, and delete actions settle", async () => {
 		await db.accounts.put({
 			id: ACCOUNT_ID,
 			userId: USER_ID,
@@ -266,6 +267,7 @@ describe("transactions db operations", () => {
 			},
 			{ id: TXN_ID }
 		);
+		await flushAnalyticsRecompute(USER_ID);
 		let stats = await db.dashboardStats.get(USER_ID);
 		expect(stats?.perCurrency.AED?.monthExpense).toBe(100);
 		expect(stats?.perCurrency[ALL_CURRENCIES_KEY]?.monthExpense).toBe(100);
@@ -276,11 +278,13 @@ describe("transactions db operations", () => {
 			date: new Date(),
 			accountId: ACCOUNT_ID,
 		});
+		await flushAnalyticsRecompute(USER_ID);
 		stats = await db.dashboardStats.get(USER_ID);
 		expect(stats?.perCurrency.AED?.monthExpense).toBe(250);
 		expect(stats?.balances[ACCOUNT_ID]).toBe(-250);
 
 		await deleteTransaction(USER_ID, id);
+		await flushAnalyticsRecompute(USER_ID);
 		stats = await db.dashboardStats.get(USER_ID);
 		expect(stats?.perCurrency.AED?.monthExpense).toBe(0);
 		expect(stats?.balances[ACCOUNT_ID]).toBe(0);

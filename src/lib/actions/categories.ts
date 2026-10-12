@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 
-import { invalidateAnalyticsCache } from "@/lib/analytics/cache";
-import { recomputeAnalyticsNow } from "@/lib/analytics/scheduleRecompute";
+import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 
@@ -18,6 +17,13 @@ function parseCategory(values: unknown): CategoryFormValues {
 function normalizeCurrency(value: string | undefined) {
 	const currency = value?.trim();
 	return currency === "" ? undefined : currency;
+}
+
+// The analytics recompute reads every transaction, so it is queued after the
+// Dexie write instead of being awaited. Callers that need fresh analytics can
+// await `flushAnalyticsRecompute(userId)`.
+function recomputeAfterLocalWrite(userId: string): void {
+	scheduleAnalyticsRecompute(userId);
 }
 
 export async function createCategory(
@@ -39,9 +45,8 @@ export async function createCategory(
 	};
 	if (currency) category.currency = currency;
 
-	await invalidateAnalyticsCache(userId);
 	await db.categories.put(category);
-	await recomputeAnalyticsNow(userId);
+	recomputeAfterLocalWrite(userId);
 	return category.id;
 }
 
@@ -56,7 +61,6 @@ export async function updateCategory(
 		throw new Error("Category was not found. Please reload and try again.");
 	}
 
-	await invalidateAnalyticsCache(userId);
 	const currency = normalizeCurrency(parsed.currency);
 	const category: Category = {
 		...existing,
@@ -74,11 +78,10 @@ export async function updateCategory(
 	}
 
 	await db.categories.put(category);
-	await recomputeAnalyticsNow(userId);
+	recomputeAfterLocalWrite(userId);
 }
 
 export async function deleteCategory(category: Category): Promise<void> {
-	await invalidateAnalyticsCache(category.userId);
 	const updated = await db.categories.update(category.id, {
 		deletedAt: Date.now(),
 		updatedAt: Date.now(),
@@ -86,5 +89,5 @@ export async function deleteCategory(category: Category): Promise<void> {
 	if (updated === 0) {
 		throw new Error("Category was not found. Please reload and try again.");
 	}
-	await recomputeAnalyticsNow(category.userId);
+	recomputeAfterLocalWrite(category.userId);
 }

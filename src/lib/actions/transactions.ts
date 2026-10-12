@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 
-import { invalidateAnalyticsCache } from "@/lib/analytics/cache";
-import { recomputeAnalyticsNow } from "@/lib/analytics/scheduleRecompute";
+import { scheduleAnalyticsRecompute } from "@/lib/analytics/scheduleRecompute";
 import { db } from "@/lib/db/local";
 import { transactionSchema, type TransactionFormValues } from "@/lib/validations/transaction";
 
@@ -46,8 +45,11 @@ function toTransactionPayload(
 	};
 }
 
-async function recomputeAfterLocalWrite(userId: string): Promise<void> {
-	await recomputeAnalyticsNow(userId);
+// The analytics recompute reads every transaction, so it is queued after the
+// Dexie write instead of being awaited. Callers that need fresh analytics can
+// await `flushAnalyticsRecompute(userId)`.
+function recomputeAfterLocalWrite(userId: string): void {
+	scheduleAnalyticsRecompute(userId);
 }
 
 export async function createTransaction(
@@ -57,13 +59,12 @@ export async function createTransaction(
 ): Promise<string> {
 	const parsed = validationErrorMessage(values);
 	const id = options?.id ?? uuidv4();
-	await invalidateAnalyticsCache(userId);
 	await withTimeout(
 		db.transactions.put({ id, ...toTransactionPayload(userId, parsed) }),
 		LOCAL_TRANSACTION_WRITE_TIMEOUT_MS,
 		"Saving the transaction is taking too long. Close other MizanTrack tabs and try again."
 	);
-	await recomputeAfterLocalWrite(userId);
+	recomputeAfterLocalWrite(userId);
 	return id;
 }
 
@@ -73,7 +74,6 @@ export async function updateTransaction(
 	values: TransactionFormValues
 ): Promise<void> {
 	const parsed = validationErrorMessage(values);
-	await invalidateAnalyticsCache(userId);
 	const updated = await withTimeout(
 		db.transactions.update(transactionId, toTransactionPayload(userId, parsed)),
 		LOCAL_TRANSACTION_WRITE_TIMEOUT_MS,
@@ -84,12 +84,11 @@ export async function updateTransaction(
 		throw new Error("Transaction was not found. Please reload and try again.");
 	}
 
-	await recomputeAfterLocalWrite(userId);
+	recomputeAfterLocalWrite(userId);
 }
 
 export async function deleteTransaction(userId: string, transactionId: string): Promise<void> {
 	const now = Date.now();
-	await invalidateAnalyticsCache(userId);
 	const updated = await withTimeout(
 		db.transactions.update(transactionId, {
 			deletedAt: now,
@@ -103,5 +102,5 @@ export async function deleteTransaction(userId: string, transactionId: string): 
 		throw new Error("Transaction was not found. Please reload and try again.");
 	}
 
-	await recomputeAfterLocalWrite(userId);
+	recomputeAfterLocalWrite(userId);
 }
