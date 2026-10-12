@@ -49,8 +49,8 @@ import {
 	recomputeAnalyticsNow,
 	scheduleAnalyticsRecompute,
 } from "@/lib/analytics/scheduleRecompute";
-import { db } from "@/lib/db/local";
 import { upsertDbConfig } from "@/lib/db/dbConfig";
+import { db } from "@/lib/db/local";
 import { FAB, FROSTED_HEADER } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
