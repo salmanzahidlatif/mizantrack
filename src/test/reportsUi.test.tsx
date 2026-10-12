@@ -135,4 +135,76 @@ describe("Reports fiscal panel", () => {
 		const tags = await db.reportAccountTags.toArray();
 		expect(tags[0]).toMatchObject({ accountId: account.id, includeInReport: true });
 	});
+
+	it("offers only accounts in the active currency for selection", async () => {
+		await db.accounts.put({
+			id: "pkr-bank",
+			userId: USER_ID,
+			title: "Meezan Savings",
+			openingBalance: 100_000,
+			currency: "PKR",
+			isArchived: false,
+			updatedAt: 1,
+		});
+
+		render(<FiscalReportPanel userId={USER_ID} />);
+
+		expect(await screen.findByRole("button", { name: /FAB Current/ })).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /Meezan Savings/ })).not.toBeInTheDocument();
+		expect(await screen.findByTestId("report-accounts-summary")).toHaveTextContent(
+			"0 of 1 included"
+		);
+	});
+
+	it("surfaces an income for review and carries it into the report once tagged", async () => {
+		await db.transactions.put({
+			id: "income-1",
+			userId: USER_ID,
+			type: "Income",
+			amount: 1800,
+			accountId: account.id,
+			description: "Consulting credit",
+			date: Date.now() - 2 * 24 * 60 * 60 * 1000,
+			updatedAt: 1,
+		});
+
+		render(<FiscalReportPanel userId={USER_ID} />);
+
+		await waitFor(() => {
+			expect(screen.getByTestId("report-pending-count")).toHaveTextContent("2 pending review");
+		});
+
+		const incomesSection = screen.getByRole("heading", { name: "Incomes" }).closest("section");
+		expect(within(incomesSection!).getByText(/No confirmed income yet/)).toBeInTheDocument();
+
+		const incomeRow = screen.getByText("Consulting credit").closest("[data-testid]");
+		fireEvent.click(within(incomeRow as HTMLElement).getByRole("button", { name: /Confirm/ }));
+
+		await waitFor(() => {
+			expect(within(incomesSection!).getByText("Consulting credit")).toBeInTheDocument();
+		});
+
+		const storedTag = await db.reportTransactionTags.get({ transactionId: "income-1" });
+		expect(storedTag).toMatchObject({ role: "income", confirmed: true });
+	});
+
+	it("never surfaces an expense for review", async () => {
+		await db.transactions.put({
+			id: "metro-expense",
+			userId: USER_ID,
+			type: "Expense",
+			amount: 7.5,
+			accountId: account.id,
+			description: "metro city snack",
+			date: Date.now() - 2 * 24 * 60 * 60 * 1000,
+			updatedAt: 1,
+		});
+
+		render(<FiscalReportPanel userId={USER_ID} />);
+
+		await waitFor(() => {
+			expect(screen.getByTestId("report-pending-count")).toHaveTextContent("1 pending review");
+		});
+		expect(screen.queryByText("metro city snack")).not.toBeInTheDocument();
+	});
 });

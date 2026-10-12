@@ -410,11 +410,7 @@ export interface ReportMonthlySalaryRow {
 	pendingSync?: boolean;
 }
 
-export type ReportDetectionReason =
-	| "keyword"
-	| "cross-currency-transfer"
-	| "manual"
-	| "account-flag";
+export type ReportDetectionReason = "keyword" | "inflow" | "manual" | "account-flag";
 
 /** Runtime-only detection candidate. Never persisted. */
 export interface DetectedReportTransaction {
@@ -462,15 +458,28 @@ export interface ReportRemittance {
 	title: string;
 }
 
+/** Runtime-only. Never persisted. Mirrors ReportRemittance for income the user tagged. */
+export interface ReportIncome {
+	transactionId: string;
+	date: number;
+	amount: number;
+	currency: string;
+	title: string;
+}
+
 /** Runtime-only aggregate recomputed on every render. Never persisted. */
 export interface FiscalReportSummary {
 	rangeKey: string;
 	rangeLabel: string;
 	fromMs: number;
 	toMs: number;
+	/** The single currency the whole report is scoped to; empty when unscoped. */
+	currency: string;
 	accountBalances: ReportAccountBalance[];
 	remittances: ReportRemittance[];
 	remittanceTotal: number;
+	incomes: ReportIncome[];
+	incomeTotal: number;
 	projectGroups: ReportProjectGroup[];
 	projectGrandTotal: number;
 	manualEntries: ReportManualEntry[];

@@ -18,8 +18,8 @@ export function getDetectionReasonLabel(detected: DetectedReportTransaction): st
 			return detected.matchedKeyword
 				? `Matched the keyword "${detected.matchedKeyword}"`
 				: "Matched a report keyword";
-		case "cross-currency-transfer":
-			return "Transfer between accounts in different currencies";
+		case "inflow":
+			return "Money received into an included account — tag it so it counts";
 		case "account-flag":
 			return "Account is marked as a remittance source";
 		case "manual":

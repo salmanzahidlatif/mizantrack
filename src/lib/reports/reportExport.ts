@@ -2,6 +2,7 @@
  * Excel export for the fiscal report. Everything here is derived at runtime from the
  * summary handed in — nothing is persisted, cached or recomputed, and no tax figure is
  * ever calculated: amounts are copied through exactly as the user entered or recorded them.
+ * The summary is already scoped to one currency, so the workbook carries that currency only.
  */
 import { addMonths, format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -141,6 +142,23 @@ function buildRemittanceBlock(summary: FiscalReportSummary): SheetRow[] {
 	return rows;
 }
 
+function buildIncomeBlock(summary: FiscalReportSummary): SheetRow[] {
+	const rows: SheetRow[] = [["Incomes"], ["Date", "Title", "Amount", "Currency"]];
+
+	for (const income of summary.incomes) {
+		rows.push([
+			formatDate(income.date),
+			textCell(income.title),
+			numericCell(income.amount),
+			textCell(income.currency),
+		]);
+	}
+
+	rows.push(["Total", null, numericCell(summary.incomeTotal), singleCurrency(summary.incomes)]);
+
+	return rows;
+}
+
 function buildManualEntryBlock(entries: ReportManualEntry[]): SheetRow[] {
 	if (entries.length === 0) return [];
 
@@ -179,6 +197,7 @@ function buildBanksSheetRows(summary: FiscalReportSummary): SheetRow[] {
 	appendBlock(rows, buildSalaryBlock(summary));
 	appendBlock(rows, buildClosingBalanceBlock(summary));
 	appendBlock(rows, buildRemittanceBlock(summary));
+	appendBlock(rows, buildIncomeBlock(summary));
 	appendBlock(rows, buildManualEntryBlock(manualEntries));
 	appendBlock(rows, buildWarningBlock(summary));
 

@@ -2,6 +2,7 @@
 
 import { format } from "date-fns";
 
+import { reportListScrollClass } from "@/components/reports/reportScroll";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import {
 	Table,
@@ -15,6 +16,8 @@ import { CARD_SURFACE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 import type { ReportRemittance } from "@/types";
+
+const SCROLL_AFTER_ROWS = 6;
 
 interface ReportRemittancesSectionProps {
 	remittances: ReportRemittance[];
@@ -33,7 +36,9 @@ export function ReportRemittancesSection({ remittances, total }: ReportRemittanc
 					<h2 id="report-remittances-heading" className="text-sm font-semibold">
 						Remittances
 					</h2>
-					<p className="text-xs text-muted-foreground">Confirmed remittances in this period.</p>
+					<p className="text-xs text-muted-foreground">
+						Confirmed remittances in this period, in the selected currency.
+					</p>
 				</div>
 				{remittances.length > 0 && (
 					<CurrencyAmount amount={total} currency={totalCurrency} className="text-base" />
@@ -45,7 +50,14 @@ export function ReportRemittancesSection({ remittances, total }: ReportRemittanc
 					No confirmed remittances yet. Confirm a suggestion above to add one.
 				</p>
 			) : (
-				<div className="overflow-x-auto">
+				<div
+					className={cn(
+						"overflow-x-auto",
+						reportListScrollClass(remittances.length, SCROLL_AFTER_ROWS)
+					)}
+					tabIndex={0}
+					role="group"
+					aria-label="Confirmed remittances">
 					<Table>
 						<TableHeader>
 							<TableRow>

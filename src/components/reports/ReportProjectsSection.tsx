@@ -5,6 +5,10 @@ import { Edit2, Plus, Save, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import {
+	reportListScrollClass,
+	REPORT_NESTED_LIST_SCROLL,
+} from "@/components/reports/reportScroll";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +43,8 @@ interface ProjectFormValues {
 	title: string;
 	note: string;
 }
+
+const SCROLL_AFTER_PAYMENTS = 4;
 
 export function ReportProjectsSection({
 	userId,
@@ -111,7 +117,7 @@ export function ReportProjectsSection({
 						Plot payments
 					</h2>
 					<p className="text-xs text-muted-foreground">
-						Confirmed property payments grouped by project.
+						Confirmed property payments grouped by project, in the selected currency.
 					</p>
 				</div>
 				<Button size="sm" variant="outline" onClick={() => setIsAdding(true)}>
@@ -196,7 +202,17 @@ export function ReportProjectsSection({
 										No payments confirmed for this project yet.
 									</p>
 								) : (
-									<ul className="mt-3 space-y-2">
+									<ul
+										className={cn(
+											"mt-3 space-y-2",
+											reportListScrollClass(
+												group.payments.length,
+												SCROLL_AFTER_PAYMENTS,
+												REPORT_NESTED_LIST_SCROLL
+											)
+										)}
+										tabIndex={0}
+										aria-label={`${group.project.title} payments`}>
 										{group.payments.map((payment) => (
 											<li
 												key={payment.transactionId}

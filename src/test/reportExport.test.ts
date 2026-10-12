@@ -29,9 +29,12 @@ function makeSummary(overrides: Partial<FiscalReportSummary> = {}): FiscalReport
 		rangeLabel: "2023 - 2024",
 		fromMs: FY_FROM_MS,
 		toMs: FY_TO_MS,
+		currency: "",
 		accountBalances: [],
 		remittances: [],
 		remittanceTotal: 0,
+		incomes: [],
+		incomeTotal: 0,
 		projectGroups: [],
 		projectGrandTotal: 0,
 		manualEntries: [],
@@ -170,6 +173,52 @@ describe("buildFiscalReportWorkbook", () => {
 		expect(rows).toContainEqual(["09/08/2023", "Home transfer", 5000, "AED"]);
 		expect(rows).toContainEqual(["15/01/2024", "Family support", 7500, "AED"]);
 		expect(findRow(rows, "Total")).toEqual(["Total", undefined, 12500, "AED"]);
+	});
+
+	it("writes tagged incomes as their own block with a total row", () => {
+		const workbook = buildFiscalReportWorkbook(
+			makeSummary({
+				currency: "PKR",
+				incomes: [
+					{
+						transactionId: "i1",
+						date: Date.UTC(2023, 7, 9, 12),
+						amount: 400000,
+						currency: "PKR",
+						title: "Meezan credit",
+					},
+					{
+						transactionId: "i2",
+						date: Date.UTC(2024, 0, 15, 12),
+						amount: 250000,
+						currency: "PKR",
+						title: "Bridge settlement",
+					},
+				],
+				incomeTotal: 650000,
+			})
+		);
+
+		const rows = sheetRows(workbook, BANKS_SHEET);
+		expect(findRow(rows, "Incomes")).toEqual(["Incomes"]);
+		expect(rows).toContainEqual(["09/08/2023", "Meezan credit", 400000, "PKR"]);
+		expect(rows).toContainEqual(["15/01/2024", "Bridge settlement", 250000, "PKR"]);
+
+		const incomeIndex = rows.findIndex((row) => row[0] === "Incomes");
+		const totalAfterIncomes = rows
+			.slice(incomeIndex)
+			.find((row) => row[0] === "Total") as unknown[];
+		expect(totalAfterIncomes).toEqual(["Total", undefined, 650000, "PKR"]);
+	});
+
+	it("keeps the incomes block after the remittances block", () => {
+		const workbook = buildFiscalReportWorkbook(makeSummary());
+		const rows = sheetRows(workbook, BANKS_SHEET);
+
+		const remittanceIndex = rows.findIndex((row) => row[0] === "Remittances");
+		const incomeIndex = rows.findIndex((row) => row[0] === "Incomes");
+		expect(remittanceIndex).toBeGreaterThanOrEqual(0);
+		expect(incomeIndex).toBeGreaterThan(remittanceIndex);
 	});
 
 	it("renders the monthly salary grid in fiscal order with 12 month columns", () => {

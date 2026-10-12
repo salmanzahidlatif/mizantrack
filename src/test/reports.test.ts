@@ -3,9 +3,11 @@
  * Everything under test is pure — reports are recomputed at runtime and never stored.
  */
 import { describe, expect, it } from "vitest";
+import * as XLSX from "xlsx";
 
 import { detectReportTransactions } from "@/lib/reports/reportDetection";
 import { buildFiscalReport } from "@/lib/reports/reportEngine";
+import { buildFiscalReportWorkbook } from "@/lib/reports/reportExport";
 import { listFiscalYearOptions } from "@/lib/reports/reportFiscalYears";
 
 import type {
@@ -87,6 +89,11 @@ const PKR_PROPERTY_ACCOUNT = makeAccount({
 	title: "Property Holdings",
 	currency: "PKR",
 });
+const PKR_BRIDGE_ACCOUNT = makeAccount({
+	id: "pkr-bridge",
+	title: "PKR Bridge",
+	currency: "PKR",
+});
 
 function buildReport(params: {
 	accounts?: Account[];
@@ -94,6 +101,7 @@ function buildReport(params: {
 	accountTags?: ReportAccountTag[];
 	projects?: ReportProject[];
 	transactionTags?: ReportTransactionTag[];
+	currency?: string;
 }) {
 	return buildFiscalReport({
 		userId: USER_ID,
@@ -108,6 +116,7 @@ function buildReport(params: {
 		transactionTags: params.transactionTags ?? [],
 		manualEntries: [],
 		monthlySalaryRows: [],
+		currency: params.currency,
 	});
 }
 
@@ -300,18 +309,87 @@ describe("detectReportTransactions", () => {
 		expect(detected).toHaveLength(0);
 	});
 
-	it("flags a cross-currency transfer as a remittance candidate", () => {
+	it("flags a same-currency incoming transfer into an included account", () => {
 		const detected = detectReportTransactions({
 			transactions: [
 				makeTransaction({
-					id: "fx-transfer",
+					id: "bridge-transfer",
 					date: inRangeDate,
-					accountId: "aed-bank",
+					accountId: "pkr-bridge",
 					toAccountId: "pkr-bank",
 					description: "monthly send home",
 				}),
 			],
-			accounts: [AED_ACCOUNT, PKR_ACCOUNT],
+			accounts: [PKR_ACCOUNT, PKR_BRIDGE_ACCOUNT],
+			accountTags: [makeAccountTag("pkr-bank")],
+			existingTags: [],
+			fromMs: FY_FROM_MS,
+			toMs: FY_TO_MS,
+		});
+
+		expect(detected).toHaveLength(1);
+		expect(detected[0]?.suggestedRole).toBe("income");
+		expect(detected[0]?.reason).toBe("inflow");
+	});
+
+	it("ignores an outgoing transfer that matches no keyword", () => {
+		const detected = detectReportTransactions({
+			transactions: [
+				makeTransaction({
+					id: "outgoing",
+					date: inRangeDate,
+					accountId: "pkr-bank",
+					toAccountId: "pkr-bridge",
+					description: "moving money out",
+				}),
+			],
+			accounts: [PKR_ACCOUNT, PKR_BRIDGE_ACCOUNT],
+			accountTags: [makeAccountTag("pkr-bank")],
+			existingTags: [],
+			fromMs: FY_FROM_MS,
+			toMs: FY_TO_MS,
+		});
+
+		expect(detected).toHaveLength(0);
+	});
+
+	it("surfaces every income as a candidate even without a keyword", () => {
+		const detected = detectReportTransactions({
+			transactions: [
+				makeTransaction({
+					id: "meezan-income",
+					date: inRangeDate,
+					type: "Income",
+					accountId: "pkr-bank",
+					amount: 400_000,
+					description: "Credit from UAE",
+				}),
+			],
+			accounts: [PKR_ACCOUNT],
+			existingTags: [],
+			fromMs: FY_FROM_MS,
+			toMs: FY_TO_MS,
+		});
+
+		expect(detected).toHaveLength(1);
+		expect(detected[0]?.suggestedRole).toBe("income");
+		expect(detected[0]?.reason).toBe("inflow");
+		expect(detected[0]?.confirmed).toBe(false);
+	});
+
+	it("suggests remittance for an income whose description matches a remittance keyword", () => {
+		const detected = detectReportTransactions({
+			transactions: [
+				makeTransaction({
+					id: "meezan-remittance",
+					date: inRangeDate,
+					type: "Income",
+					accountId: "pkr-bank",
+					amount: 400_000,
+					description: "Remittance received",
+				}),
+			],
+			accounts: [PKR_ACCOUNT],
 			existingTags: [],
 			fromMs: FY_FROM_MS,
 			toMs: FY_TO_MS,
@@ -319,7 +397,95 @@ describe("detectReportTransactions", () => {
 
 		expect(detected).toHaveLength(1);
 		expect(detected[0]?.suggestedRole).toBe("remittance");
-		expect(detected[0]?.reason).toBe("cross-currency-transfer");
+		expect(detected[0]?.reason).toBe("keyword");
+		expect(detected[0]?.matchedKeyword).toBe("remittance");
+	});
+
+	it("still never surfaces an expense, even one that looks like an inflow", () => {
+		const detected = detectReportTransactions({
+			transactions: [
+				makeTransaction({
+					id: "metro-expense",
+					date: inRangeDate,
+					type: "Expense",
+					accountId: "pkr-bank",
+					amount: 7.5,
+					description: "metro city",
+				}),
+				makeTransaction({
+					id: "remittance-fee",
+					date: inRangeDate,
+					type: "Expense",
+					accountId: "pkr-bank",
+					amount: 25,
+					description: "remittance fee",
+				}),
+			],
+			accounts: [PKR_ACCOUNT],
+			accountTags: [makeAccountTag("pkr-bank")],
+			existingTags: [],
+			fromMs: FY_FROM_MS,
+			toMs: FY_TO_MS,
+		});
+
+		expect(detected).toHaveLength(0);
+	});
+
+	it("only surfaces candidates from accounts in the selected currency", () => {
+		const detected = detectReportTransactions({
+			transactions: [
+				makeTransaction({
+					id: "pkr-income",
+					date: inRangeDate,
+					type: "Income",
+					accountId: "pkr-bank",
+					description: "Credit",
+				}),
+				makeTransaction({
+					id: "aed-income",
+					date: inRangeDate,
+					type: "Income",
+					accountId: "aed-bank",
+					description: "Salary",
+				}),
+				makeTransaction({
+					id: "orphan-income",
+					date: inRangeDate,
+					type: "Income",
+					accountId: "deleted-account",
+					description: "Credit",
+				}),
+			],
+			accounts: [AED_ACCOUNT, PKR_ACCOUNT],
+			existingTags: [],
+			fromMs: FY_FROM_MS,
+			toMs: FY_TO_MS,
+			currency: "PKR",
+		});
+
+		expect(detected.map((entry) => entry.transaction.id)).toEqual(["pkr-income"]);
+	});
+
+	it("falls back to every account when the user has included none yet", () => {
+		const detected = detectReportTransactions({
+			transactions: [
+				makeTransaction({
+					id: "bridge-transfer",
+					date: inRangeDate,
+					accountId: "pkr-bridge",
+					toAccountId: "pkr-bank",
+					description: "no keyword here",
+				}),
+			],
+			accounts: [PKR_ACCOUNT, PKR_BRIDGE_ACCOUNT],
+			accountTags: [],
+			existingTags: [],
+			fromMs: FY_FROM_MS,
+			toMs: FY_TO_MS,
+		});
+
+		expect(detected).toHaveLength(1);
+		expect(detected[0]?.reason).toBe("inflow");
 	});
 
 	it("lets a confirmed user tag override auto-detection", () => {
@@ -393,6 +559,162 @@ describe("detectReportTransactions", () => {
 		});
 
 		expect(detected.map((entry) => entry.transaction.id)).toEqual(["early", "late"]);
+	});
+});
+
+// ─── Incomes ─────────────────────────────────────────────────────────────────
+
+describe("Tagged incomes", () => {
+	const incomeDate = Date.UTC(2023, 9, 10);
+
+	function incomeTransaction(id: string, accountId: string, amount: number): Transaction {
+		return makeTransaction({
+			id,
+			date: incomeDate,
+			type: "Income",
+			accountId,
+			amount,
+			description: `Credit ${id}`,
+		});
+	}
+
+	it("collects transactions tagged as income into their own list and total", () => {
+		const report = buildReport({
+			accounts: [PKR_ACCOUNT],
+			transactions: [
+				incomeTransaction("income-1", "pkr-bank", 400_000),
+				incomeTransaction("income-2", "pkr-bank", 250_000),
+			],
+			transactionTags: [
+				makeTransactionTag({ id: "t1", transactionId: "income-1", role: "income" }),
+				makeTransactionTag({ id: "t2", transactionId: "income-2", role: "income" }),
+			],
+		});
+
+		expect(report.incomes.map((entry) => entry.transactionId)).toEqual(["income-1", "income-2"]);
+		expect(report.incomeTotal).toBe(650_000);
+		expect(report.incomes.every((entry) => entry.currency === "PKR")).toBe(true);
+		expect(report.remittances).toEqual([]);
+	});
+
+	it("carries a tagged income through to the Excel export", () => {
+		const report = buildReport({
+			accounts: [PKR_ACCOUNT],
+			transactions: [incomeTransaction("income-1", "pkr-bank", 400_000)],
+			transactionTags: [
+				makeTransactionTag({ id: "t1", transactionId: "income-1", role: "income" }),
+			],
+			currency: "PKR",
+		});
+
+		const sheet = buildFiscalReportWorkbook(report).Sheets["Banks & Salaries"];
+		const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet!, { header: 1, blankrows: true });
+
+		expect(rows).toContainEqual(["Incomes"]);
+		expect(rows.some((row) => row[1] === "Credit income-1" && row[2] === 400_000)).toBe(true);
+
+		const incomeIndex = rows.findIndex((row) => row[0] === "Incomes");
+		expect(rows.slice(incomeIndex).find((row) => row[0] === "Total")).toEqual([
+			"Total",
+			undefined,
+			400_000,
+			"PKR",
+		]);
+	});
+
+	it("keeps income out of the remittance and project totals", () => {
+		const report = buildReport({
+			accounts: [PKR_ACCOUNT],
+			transactions: [incomeTransaction("income-1", "pkr-bank", 400_000)],
+			transactionTags: [
+				makeTransactionTag({ id: "t1", transactionId: "income-1", role: "income" }),
+			],
+		});
+
+		expect(report.remittanceTotal).toBe(0);
+		expect(report.projectGrandTotal).toBe(0);
+		expect(report.incomeTotal).toBe(400_000);
+	});
+});
+
+// ─── Currency scoping ────────────────────────────────────────────────────────
+
+describe("Currency scoping", () => {
+	const inRangeDate = Date.UTC(2023, 9, 10);
+
+	const transactions = [
+		makeTransaction({
+			id: "pkr-income",
+			date: inRangeDate,
+			type: "Income",
+			accountId: "pkr-bank",
+			amount: 400_000,
+		}),
+		makeTransaction({
+			id: "aed-income",
+			date: inRangeDate,
+			type: "Income",
+			accountId: "aed-bank",
+			amount: 9_000,
+		}),
+	];
+
+	const transactionTags = [
+		makeTransactionTag({ id: "t1", transactionId: "pkr-income", role: "income" }),
+		makeTransactionTag({ id: "t2", transactionId: "aed-income", role: "income" }),
+	];
+
+	it("keeps only the selected currency in the incomes list", () => {
+		const report = buildReport({ transactions, transactionTags, currency: "PKR" });
+
+		expect(report.currency).toBe("PKR");
+		expect(report.incomes.map((entry) => entry.transactionId)).toEqual(["pkr-income"]);
+		expect(report.incomeTotal).toBe(400_000);
+		expect(report.warnings).toEqual([]);
+	});
+
+	it("keeps only the selected currency's closing balances", () => {
+		const report = buildReport({
+			accountTags: [makeAccountTag("aed-bank"), makeAccountTag("pkr-bank")],
+			currency: "PKR",
+		});
+
+		expect(report.accountBalances.map((balance) => balance.accountId)).toEqual(["pkr-bank"]);
+	});
+
+	it("keeps only the selected currency's plot payments", () => {
+		const report = buildReport({
+			projects: [makeProject("bwc", "BWC 7 Marla Overseas Block", 1)],
+			transactions,
+			transactionTags: [
+				makeTransactionTag({
+					id: "t1",
+					transactionId: "pkr-income",
+					role: "plot-payment",
+					projectId: "bwc",
+				}),
+				makeTransactionTag({
+					id: "t2",
+					transactionId: "aed-income",
+					role: "plot-payment",
+					projectId: "bwc",
+				}),
+			],
+			currency: "PKR",
+		});
+
+		const group = report.projectGroups.find((entry) => entry.project.id === "bwc");
+		expect(group?.payments.map((payment) => payment.transactionId)).toEqual(["pkr-income"]);
+		expect(group?.total).toBe(400_000);
+		expect(report.projectGrandTotal).toBe(400_000);
+		expect(report.warnings).toEqual([]);
+	});
+
+	it("aggregates every currency when no currency is selected", () => {
+		const report = buildReport({ transactions, transactionTags });
+
+		expect(report.currency).toBe("");
+		expect(report.incomes).toHaveLength(2);
 	});
 });
 

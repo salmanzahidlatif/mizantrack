@@ -48,10 +48,12 @@ export function useTransactionDateBounds(userId: string): TransactionDateBounds 
 /**
  * Loads every report input from Dexie and recomputes the report on each change.
  * Nothing is ever written back: the summary only exists for the current render.
+ * `currency` scopes the whole report — changing it rebuilds every figure from scratch.
  */
 export function useFiscalReport(
 	userId: string,
-	range: FiscalReportRange | undefined
+	range: FiscalReportRange | undefined,
+	currency?: string
 ): UseFiscalReportResult {
 	const data = useLiveQuery(async () => {
 		if (!userId) return undefined;
@@ -103,8 +105,9 @@ export function useFiscalReport(
 			transactionTags: data.transactionTags,
 			manualEntries: data.manualEntries,
 			monthlySalaryRows: data.monthlySalaryRows,
+			currency,
 		});
-	}, [data, range, userId]);
+	}, [data, range, userId, currency]);
 
 	const detected = useMemo(() => {
 		if (!data || !range) return [];
@@ -115,8 +118,10 @@ export function useFiscalReport(
 			existingTags: data.transactionTags,
 			fromMs: range.fromMs,
 			toMs: range.toMs,
+			currency,
+			accountTags: data.accountTags,
 		});
-	}, [data, range]);
+	}, [data, range, currency]);
 
 	return { summary, detected, isLoading: data === undefined || range === undefined };
 }

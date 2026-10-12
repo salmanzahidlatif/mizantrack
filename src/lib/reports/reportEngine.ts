@@ -1,10 +1,16 @@
-import { computeAccountBalances } from "@/lib/analytics/balanceMath";
+import { computeAccountBalances, normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
+import {
+	buildAccountCurrencyIndex,
+	resolveTransactionCurrency,
+	transactionMatchesCurrency,
+} from "@/lib/reports/reportCurrency";
 
 import type {
 	Account,
 	FiscalReportSummary,
 	ReportAccountBalance,
 	ReportAccountTag,
+	ReportIncome,
 	ReportManualEntry,
 	ReportMonthlySalaryRow,
 	ReportProject,
@@ -30,6 +36,8 @@ export interface BuildFiscalReportParams {
 	transactionTags: ReportTransactionTag[];
 	manualEntries: ReportManualEntry[];
 	monthlySalaryRows: ReportMonthlySalaryRow[];
+	/** Scopes the whole report to a single currency. Omitted or empty means "every currency". */
+	currency?: string;
 }
 
 interface TaggedTransaction {
@@ -103,6 +111,11 @@ function isManualEntryInScope(
  * Builds the runtime fiscal report. Pure and deterministic: it reads nothing but its
  * params, writes nothing, and no result is ever persisted. Amounts are only ever
  * aggregated — no rates, conversions or derived figures are invented.
+ *
+ * When `currency` is given the ENTIRE report is scoped to it: account balances, the
+ * remittances, the incomes and every plot payment. A transaction's currency is the
+ * currency of its account, so transactions on accounts in other currencies — and
+ * transactions whose account is missing or deleted — are left out completely.
  */
 export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReportSummary {
 	const {
@@ -118,9 +131,11 @@ export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReport
 		transactionTags,
 		manualEntries,
 		monthlySalaryRows,
+		currency,
 	} = params;
 
 	const warnings: string[] = [];
+	const reportCurrency = normalizeCurrencyCode(currency);
 
 	// Balances are cumulative from each account's opening balance, so the FULL transaction
 	// list is passed and only the as-of cutoff limits it — never the range start.
@@ -134,6 +149,9 @@ export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReport
 
 	const accountBalances: ReportAccountBalance[] = computation.accounts
 		.filter((account) => includedAccountIds.has(account.id))
+		.filter(
+			(account) => !reportCurrency || normalizeCurrencyCode(account.currency) === reportCurrency
+		)
 		.map((account) => ({
 			accountId: account.id,
 			title: account.title,
@@ -148,10 +166,8 @@ export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReport
 		);
 	}
 
-	const accountById = new Map(
-		accounts
-			.filter((account) => account.userId === userId && !account.deletedAt)
-			.map((account) => [account.id, account])
+	const accountById = buildAccountCurrencyIndex(
+		accounts.filter((account) => account.userId === userId)
 	);
 
 	const tagByTransactionId = new Map<string, ReportTransactionTag>();
@@ -164,12 +180,13 @@ export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReport
 	for (const transaction of transactions) {
 		if (transaction.userId !== userId || transaction.deletedAt) continue;
 		if (transaction.date < fromMs || transaction.date > toMs) continue;
+		if (!transactionMatchesCurrency(transaction, accountById, reportCurrency)) continue;
 		const tag = tagByTransactionId.get(transaction.id);
 		if (!tag) continue;
 		taggedInRange.push({
 			transaction,
 			tag,
-			currency: accountById.get(transaction.accountId)?.currency ?? "",
+			currency: resolveTransactionCurrency(transaction, accountById),
 		});
 	}
 
@@ -195,6 +212,28 @@ export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReport
 		);
 	} else {
 		remittanceTotal = remittances.reduce((total, entry) => total + entry.amount, 0);
+	}
+
+	const incomes: ReportIncome[] = taggedInRange
+		.filter((entry) => entry.tag.role === "income")
+		.map((entry) => ({
+			transactionId: entry.transaction.id,
+			date: entry.transaction.date,
+			amount: entry.transaction.amount,
+			currency: entry.currency,
+			title: resolveTitle(entry.transaction, "Income"),
+		}));
+
+	const incomeCurrencies = listCurrencies(incomes);
+	let incomeTotal = 0;
+	if (incomeCurrencies.length > 1) {
+		const dominantCurrency = resolveDominantCurrency(incomes);
+		incomeTotal = sumInCurrency(incomes, dominantCurrency);
+		warnings.push(
+			`Incomes mix currencies (${incomeCurrencies.join(", ")}). The total shows ${dominantCurrency} only; no exchange rate was applied.`
+		);
+	} else {
+		incomeTotal = incomes.reduce((total, entry) => total + entry.amount, 0);
 	}
 
 	const paymentsByProjectId = new Map<string, ReportProjectPayment[]>();
@@ -292,9 +331,12 @@ export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReport
 		rangeLabel,
 		fromMs,
 		toMs,
+		currency: reportCurrency,
 		accountBalances,
 		remittances,
 		remittanceTotal,
+		incomes,
+		incomeTotal,
 		projectGroups,
 		projectGrandTotal,
 		manualEntries: scopedManualEntries,

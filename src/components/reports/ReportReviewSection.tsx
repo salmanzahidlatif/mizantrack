@@ -10,6 +10,7 @@ import {
 	getReportRoleLabel,
 	REPORT_ROLE_OPTIONS,
 } from "@/components/reports/reportLabels";
+import { reportListScrollClass } from "@/components/reports/reportScroll";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,8 @@ interface ReportReviewSectionProps {
 	accountsById: Map<string, Account>;
 	projects: ReportProject[];
 }
+
+const SCROLL_AFTER_ROWS = 3;
 
 interface DraftState {
 	role: ReportTransactionRole;
@@ -253,7 +256,8 @@ export function ReportReviewSection({
 						Review &amp; confirm
 					</h2>
 					<p className="text-xs text-muted-foreground">
-						Suggestions are never counted until you confirm them.
+						Suggestions are never counted until you confirm them. Only transactions in the selected
+						currency are listed.
 					</p>
 				</div>
 				<Badge
@@ -268,7 +272,13 @@ export function ReportReviewSection({
 					Nothing new detected for this period.
 				</p>
 			) : (
-				<div className="space-y-2">{pending.map(renderRow)}</div>
+				<div
+					className={cn("space-y-2", reportListScrollClass(pending.length, SCROLL_AFTER_ROWS))}
+					tabIndex={0}
+					role="group"
+					aria-label="Suggestions pending review">
+					{pending.map(renderRow)}
+				</div>
 			)}
 
 			<div className="space-y-2">
@@ -280,7 +290,13 @@ export function ReportReviewSection({
 						Confirm a suggestion and it will appear here and in the report below.
 					</p>
 				) : (
-					confirmed.map(renderRow)
+					<div
+						className={cn("space-y-2", reportListScrollClass(confirmed.length, SCROLL_AFTER_ROWS))}
+						tabIndex={0}
+						role="group"
+						aria-label="Confirmed transactions">
+						{confirmed.map(renderRow)}
+					</div>
 				)}
 			</div>
 		</section>
