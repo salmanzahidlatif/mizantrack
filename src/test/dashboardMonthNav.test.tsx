@@ -467,6 +467,50 @@ describe("dashboard UI rebuild", () => {
 		expect(vi.mocked(usePeriodAnalytics).mock.calls.at(-1)?.[1]?.currency).toBe("AED");
 	});
 
+	it("values balances at the end of a past period instead of today", async () => {
+		const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
+		useFilterStore.setState({ includeFutureDatedBalances: false });
+
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		// Current month: balances are still valued as of today.
+		expect(vi.mocked(useAccountsAnalytics).mock.calls.at(-1)?.[1]).toEqual(
+			expect.objectContaining({ asOf: NOW })
+		);
+		expect(screen.getByText("Net worth (as of today)")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+
+		// August 2026 has ended, so balances are valued at its close, not today.
+		const asOf = vi.mocked(useAccountsAnalytics).mock.calls.at(-1)?.[1]?.asOf;
+		expect(asOf).toBeInstanceOf(Date);
+		expect(asOf!.getTime()).toBeLessThan(NOW.getTime());
+		// Last local millisecond of August, whatever the runner's timezone.
+		expect(asOf!.getMonth()).toBe(7);
+		expect(asOf!.getDate()).toBe(31);
+		expect(asOf!.getHours()).toBe(23);
+		expect(asOf!.getMinutes()).toBe(59);
+		expect(asOf!.getMilliseconds()).toBe(999);
+		// The caption switches from "as of today" to the period's close. The exact
+		// label comes from the mocked analytics, so match the shape, not the month.
+		expect(screen.getByText(/^Net worth \(end of .+\)$/)).toBeInTheDocument();
+		expect(screen.getAllByText(/^End .+/).length).toBeGreaterThan(0);
+		expect(screen.queryByText("Net worth (as of today)")).not.toBeInTheDocument();
+	});
+
+	it("keeps balances including future dated transactions when that basis is on", async () => {
+		const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
+		useFilterStore.setState({ includeFutureDatedBalances: true });
+
+		render(<DashboardPageClient userId={USER_ID} />);
+		fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+
+		expect(vi.mocked(useAccountsAnalytics).mock.calls.at(-1)?.[1]).toEqual(
+			expect.objectContaining({ includeFutureDatedBalances: true })
+		);
+		expect(screen.getByText("Net worth (including future)")).toBeInTheDocument();
+	});
+
 	it("keeps donut legend amounts equal to the displayed total", () => {
 		render(
 			<CategoryBreakdownChart

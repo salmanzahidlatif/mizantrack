@@ -128,6 +128,8 @@ interface WhatYouHaveCardProps {
 	analytics?: AccountsAnalytics;
 	onAddAccount: () => void;
 	includeFutureDatedBalances: boolean;
+	/** Set only when the selected period has already ended, so balances are historical. */
+	asOfPeriodLabel?: string;
 	className?: string;
 }
 
@@ -393,8 +395,10 @@ function WhatYouHaveSkeleton({ className }: { className?: string }) {
 
 function BalanceBasisBadge({
 	includeFutureDatedBalances,
+	asOfLabel,
 }: {
 	includeFutureDatedBalances: boolean;
+	asOfLabel?: string;
 }) {
 	return (
 		<span
@@ -404,7 +408,7 @@ function BalanceBasisBadge({
 					? "border-primary/40 bg-primary/10 text-primary"
 					: "border-border/70 bg-background/70 text-muted-foreground"
 			)}>
-			{includeFutureDatedBalances ? "Incl. future" : "As of today"}
+			{includeFutureDatedBalances ? "Incl. future" : (asOfLabel ?? "As of today")}
 		</span>
 	);
 }
@@ -414,6 +418,7 @@ function WhatYouHaveCard({
 	analytics,
 	onAddAccount,
 	includeFutureDatedBalances,
+	asOfPeriodLabel,
 	className,
 }: WhatYouHaveCardProps) {
 	if (!analytics) {
@@ -421,6 +426,11 @@ function WhatYouHaveCard({
 	}
 
 	const accounts = sortDashboardAccounts(analytics.accounts).slice(0, 5);
+	const netWorthCaption = includeFutureDatedBalances
+		? "Net worth (including future)"
+		: asOfPeriodLabel
+			? `Net worth (end of ${asOfPeriodLabel})`
+			: "Net worth (as of today)";
 
 	return (
 		<section
@@ -432,11 +442,7 @@ function WhatYouHaveCard({
 					<p id="what-you-have" className="text-sm font-semibold">
 						What You Have
 					</p>
-					<p className="mt-1 text-xs text-muted-foreground">
-						{includeFutureDatedBalances
-							? "Net worth (including future)"
-							: "Net worth (as of today)"}
-					</p>
+					<p className="mt-1 text-xs text-muted-foreground">{netWorthCaption}</p>
 					<CurrencyAmount
 						amount={analytics.netWorth}
 						currency={analytics.currency}
@@ -446,7 +452,10 @@ function WhatYouHaveCard({
 					/>
 				</div>
 				<span className="flex shrink-0 flex-col items-end gap-2">
-					<BalanceBasisBadge includeFutureDatedBalances={includeFutureDatedBalances} />
+					<BalanceBasisBadge
+						includeFutureDatedBalances={includeFutureDatedBalances}
+						asOfLabel={asOfPeriodLabel ? `End ${asOfPeriodLabel}` : undefined}
+					/>
 					<HideAmountsToggle userId={userId} />
 				</span>
 			</div>
@@ -799,6 +808,14 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 			}),
 		[interval, fiscalYearStartMonth, now, selectedMonth, timeZoneOffsetMinutes]
 	);
+	// Balances follow the period being viewed: a period that has already ended
+	// shows what the accounts held at its close, not today. The current period
+	// still uses today, since a balance cannot run ahead of itself.
+	const balanceAsOf = useMemo(
+		() => (resolvedPeriod.to.getTime() < now.getTime() ? resolvedPeriod.to : now),
+		[now, resolvedPeriod.to]
+	);
+	const isHistoricalBalance = balanceAsOf !== now;
 	const periodAnalytics = usePeriodAnalytics(userId, periodQuery);
 	const monthlyBudgetAnalytics = usePeriodAnalytics(
 		userId,
@@ -816,7 +833,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	const accountAnalytics = useAccountsAnalytics(userId, {
 		currency,
 		enabledCurrencies: config?.enabledCurrencies,
-		asOf: now,
+		asOf: balanceAsOf,
 		period: {
 			interval,
 			anchorDate: selectedMonth,
@@ -900,7 +917,10 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					</p>
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
-					<BalanceBasisBadge includeFutureDatedBalances={includeFutureDatedBalances} />
+					<BalanceBasisBadge
+						includeFutureDatedBalances={includeFutureDatedBalances}
+						asOfLabel={isHistoricalBalance ? `End ${periodLabel}` : undefined}
+					/>
 					<Button variant="outline" size="sm" onClick={handleToggleFutureBalances}>
 						{includeFutureDatedBalances ? "Exclude Future" : "Include Future"}
 					</Button>
@@ -940,6 +960,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 						analytics={accountAnalytics}
 						onAddAccount={handleAddAccount}
 						includeFutureDatedBalances={includeFutureDatedBalances}
+						asOfPeriodLabel={isHistoricalBalance ? periodLabel : undefined}
 						className="md:w-full"
 					/>
 				</div>
