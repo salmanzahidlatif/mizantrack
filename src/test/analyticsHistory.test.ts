@@ -722,6 +722,47 @@ describe("historical analytics queries", () => {
 		]);
 	});
 
+	it("buckets summaries by the requested interval instead of months", async () => {
+		const anchorDate = new Date("2026-09-15T12:00:00.000+04:00");
+		const quarterly = await getMonthlySummaries(USER_ID, {
+			currency: "AED",
+			months: 2,
+			interval: "quarterly",
+			anchorDate,
+			timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+		});
+		const halfYearly = await getMonthlySummaries(USER_ID, {
+			currency: "AED",
+			months: 2,
+			interval: "half-yearly",
+			anchorDate,
+			timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+		});
+		const fiscalYearly = await getMonthlySummaries(USER_ID, {
+			currency: "AED",
+			months: 2,
+			interval: "yearly",
+			fiscalYearStartMonth: 7,
+			anchorDate,
+			timeZoneOffsetMinutes: GST_OFFSET_MINUTES,
+		});
+
+		expect(quarterly.map((item) => [item.key, item.month, item.income, item.expense])).toEqual([
+			["2026-Q2", "Q2 26", 0, 0],
+			["2026-Q3", "Q3 26", 1000, 431],
+		]);
+		expect(quarterly.at(-1)?.from.toISOString()).toBe("2026-06-30T20:00:00.000Z");
+		expect(quarterly.at(-1)?.to.toISOString()).toBe("2026-09-30T19:59:59.999Z");
+		expect(halfYearly.map((item) => [item.key, item.month, item.income, item.expense])).toEqual([
+			["2026-H1", "H1 26", 0, 0],
+			["2026-H2", "H2 26", 1000, 653],
+		]);
+		expect(fiscalYearly.map((item) => [item.key, item.month, item.income, item.expense])).toEqual([
+			["FY-2025-2026", "FY 25/26", 0, 0],
+			["FY-2026-2027", "FY 26/27", 1000, 653],
+		]);
+	});
+
 	it("includes archived accounts in account totals and current balances", async () => {
 		const analytics = await getAccountsAnalytics(USER_ID, {
 			currency: "AED",

@@ -15,11 +15,10 @@ import { yieldAfterChunk, type AnalyticsChunkOptions } from "@/lib/analytics/chu
 import {
 	formatMonthLabel,
 	getDateRange,
-	getMonthRange,
-	getMonthRangeOffset,
-	getMonthStripRanges,
+	getPeriodStripRanges,
 	resolveAnalyticsPeriod,
 	type AnalyticsInterval,
+	type PeriodRange,
 	type ResolvedAnalyticsPeriod,
 } from "@/lib/dateRange";
 
@@ -65,6 +64,8 @@ export interface PeriodAnalytics {
 export interface MonthlySummariesQuery {
 	currency: string;
 	months?: number;
+	interval?: AnalyticsInterval;
+	fiscalYearStartMonth?: number;
 	anchorDate?: Date;
 	mode?: MonthlySummaryMode;
 	timeZoneOffsetMinutes?: number;
@@ -74,6 +75,7 @@ export interface AnalyticsMonthSummaryItem {
 	month: string;
 	key: string;
 	label: string;
+	interval: AnalyticsInterval;
 	from: Date;
 	to: Date;
 	fromMs: number;
@@ -474,23 +476,67 @@ export async function getPeriodAnalytics(
 	);
 }
 
-function getMonthlyRanges(query: MonthlySummariesQuery) {
-	const months = Math.max(1, Math.floor(query.months ?? 6));
+function getSummaryRanges(query: MonthlySummariesQuery) {
+	const periods = Math.max(1, Math.floor(query.months ?? 6));
 	const anchorDate = query.anchorDate ?? new Date();
 
-	if (query.mode === "around") {
-		return getMonthStripRanges(anchorDate, {
-			months,
-			timeZoneOffsetMinutes: query.timeZoneOffsetMinutes,
-		});
+	return getPeriodStripRanges(anchorDate, {
+		interval: query.interval ?? "monthly",
+		fiscalYearStartMonth: query.fiscalYearStartMonth,
+		periods,
+		mode: query.mode === "around" ? "around" : "ending",
+		timeZoneOffsetMinutes: query.timeZoneOffsetMinutes,
+	});
+}
+
+function createEmptySummaries(ranges: PeriodRange[], currency: string) {
+	return ranges.map((range) => ({
+		month: range.shortLabel,
+		key: range.key,
+		label: range.label,
+		interval: range.interval,
+		from: range.from,
+		to: range.to,
+		fromMs: range.fromMs,
+		toMs: range.toMs,
+		income: 0,
+		expense: 0,
+		net: 0,
+		hasData: false,
+		currency,
+	}));
+}
+
+function findSummaryIndex(ranges: PeriodRange[], timestamp: number): number {
+	let low = 0;
+	let high = ranges.length - 1;
+
+	while (low <= high) {
+		const mid = (low + high) >> 1;
+		const range = ranges[mid]!;
+		if (timestamp < range.fromMs) {
+			high = mid - 1;
+		} else if (timestamp > range.toMs) {
+			low = mid + 1;
+		} else {
+			return mid;
+		}
 	}
 
-	return Array.from({ length: months }, (_, index) => {
-		const offset = index - (months - 1);
-		return getMonthRangeOffset(anchorDate, offset, {
-			timeZoneOffsetMinutes: query.timeZoneOffsetMinutes,
-		});
-	});
+	return -1;
+}
+
+function applySummaryTransaction(
+	summary: AnalyticsMonthSummaryItem,
+	transaction: Transaction
+): void {
+	if (transaction.type === "Income") {
+		summary.income += transaction.amount;
+	} else if (transaction.type === "Expense") {
+		summary.expense += transaction.amount;
+	}
+	summary.net = summary.income - summary.expense;
+	summary.hasData = summary.income > 0 || summary.expense > 0;
 }
 
 export function aggregateMonthlySummaries(
@@ -500,27 +546,9 @@ export function aggregateMonthlySummaries(
 	query: MonthlySummariesQuery
 ): AnalyticsMonthSummaryItem[] {
 	const currency = assertCurrency(query.currency);
-	const ranges = getMonthlyRanges(query);
+	const ranges = getSummaryRanges(query);
 	const scope = getAccountScope(userId, accounts, currency);
-	const summaries = new Map(
-		ranges.map((range) => [
-			range.key,
-			{
-				month: range.shortLabel,
-				key: range.key,
-				label: range.label,
-				from: range.from,
-				to: range.to,
-				fromMs: range.fromMs,
-				toMs: range.toMs,
-				income: 0,
-				expense: 0,
-				net: 0,
-				hasData: false,
-				currency,
-			},
-		])
-	);
+	const summaries = createEmptySummaries(ranges, currency);
 
 	for (const transaction of transactions) {
 		if (
@@ -532,22 +560,13 @@ export function aggregateMonthlySummaries(
 			continue;
 		}
 
-		const key = getMonthRange(new Date(transaction.date), {
-			timeZoneOffsetMinutes: query.timeZoneOffsetMinutes,
-		}).key;
-		const summary = summaries.get(key);
-		if (!summary) continue;
+		const index = findSummaryIndex(ranges, transaction.date);
+		if (index < 0) continue;
 
-		if (transaction.type === "Income") {
-			summary.income += transaction.amount;
-		} else if (transaction.type === "Expense") {
-			summary.expense += transaction.amount;
-		}
-		summary.net = summary.income - summary.expense;
-		summary.hasData = summary.income > 0 || summary.expense > 0;
+		applySummaryTransaction(summaries[index]!, transaction);
 	}
 
-	return ranges.map((range) => summaries.get(range.key)!);
+	return summaries;
 }
 
 export async function aggregateMonthlySummariesChunked(
@@ -558,27 +577,9 @@ export async function aggregateMonthlySummariesChunked(
 	options: AnalyticsChunkOptions = {}
 ): Promise<AnalyticsMonthSummaryItem[]> {
 	const currency = assertCurrency(query.currency);
-	const ranges = getMonthlyRanges(query);
+	const ranges = getSummaryRanges(query);
 	const scope = getAccountScope(userId, accounts, currency);
-	const summaries = new Map(
-		ranges.map((range) => [
-			range.key,
-			{
-				month: range.shortLabel,
-				key: range.key,
-				label: range.label,
-				from: range.from,
-				to: range.to,
-				fromMs: range.fromMs,
-				toMs: range.toMs,
-				income: 0,
-				expense: 0,
-				net: 0,
-				hasData: false,
-				currency,
-			},
-		])
-	);
+	const summaries = createEmptySummaries(ranges, currency);
 	let processed = 0;
 
 	for (const transaction of transactions) {
@@ -594,22 +595,13 @@ export async function aggregateMonthlySummariesChunked(
 			continue;
 		}
 
-		const key = getMonthRange(new Date(transaction.date), {
-			timeZoneOffsetMinutes: query.timeZoneOffsetMinutes,
-		}).key;
-		const summary = summaries.get(key);
-		if (!summary) continue;
+		const index = findSummaryIndex(ranges, transaction.date);
+		if (index < 0) continue;
 
-		if (transaction.type === "Income") {
-			summary.income += transaction.amount;
-		} else if (transaction.type === "Expense") {
-			summary.expense += transaction.amount;
-		}
-		summary.net = summary.income - summary.expense;
-		summary.hasData = summary.income > 0 || summary.expense > 0;
+		applySummaryTransaction(summaries[index]!, transaction);
 	}
 
-	return ranges.map((range) => summaries.get(range.key)!);
+	return summaries;
 }
 
 export async function getMonthlySummaries(

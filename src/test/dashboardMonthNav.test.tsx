@@ -11,11 +11,13 @@ import {
 } from "@/components/charts/DashboardDesktopCharts";
 import { DashboardPageClient } from "@/components/dashboard/DashboardPageClient";
 import { ReportsPageClient } from "@/components/reports/ReportsPageClient";
+import { getPeriodStripRanges } from "@/lib/dateRange";
 import { useFilterStore } from "@/store/filter-store";
 
 import type {
 	AccountsAnalytics,
 	AnalyticsMonthSummaryItem,
+	MonthlySummariesQuery,
 	PeriodAnalytics,
 } from "@/lib/analytics/periodAnalytics";
 import type { ReactNode } from "react";
@@ -226,6 +228,7 @@ function trendSummaries(empty = false): AnalyticsMonthSummaryItem[] {
 		month,
 		key,
 		label: `${month} 2026`,
+		interval: "monthly",
 		from: new Date(`${key}-01T00:00:00.000Z`),
 		to: new Date(`${key}-28T23:59:59.999Z`),
 		fromMs: new Date(`${key}-01T00:00:00.000Z`).getTime(),
@@ -238,6 +241,51 @@ function trendSummaries(empty = false): AnalyticsMonthSummaryItem[] {
 	}));
 }
 
+function periodSummaries(
+	query: MonthlySummariesQuery | undefined,
+	empty = false
+): AnalyticsMonthSummaryItem[] {
+	const ranges = getPeriodStripRanges(query?.anchorDate ?? NOW, {
+		interval: query?.interval ?? "monthly",
+		fiscalYearStartMonth: query?.fiscalYearStartMonth,
+		periods: query?.months ?? 6,
+		mode: query?.mode === "around" ? "around" : "ending",
+		timeZoneOffsetMinutes: query?.timeZoneOffsetMinutes,
+	});
+
+	return ranges.map((range, index) => {
+		const income = empty ? 0 : 1000 + index * 200;
+		const expense = empty ? 0 : 500 + index * 100;
+
+		return {
+			month: range.shortLabel,
+			key: range.key,
+			label: range.label,
+			interval: range.interval,
+			from: range.from,
+			to: range.to,
+			fromMs: range.fromMs,
+			toMs: range.toMs,
+			income,
+			expense,
+			net: income - expense,
+			hasData: !empty,
+			currency: "AED",
+		};
+	});
+}
+
+function chartBuckets(testId: "bar-chart" | "area-chart"): string[] {
+	const raw = screen.getByTestId(testId).getAttribute("data-chart");
+	return (JSON.parse(raw ?? "[]") as Array<{ month: string }>).map((item) => item.month);
+}
+
+function applyInterval(label: string) {
+	fireEvent.click(screen.getByRole("button", { name: "Choose interval" }));
+	fireEvent.click(screen.getByRole("radio", { name: label }));
+	fireEvent.click(screen.getByRole("button", { name: "APPLY" }));
+}
+
 async function mockHooks(empty = false) {
 	const { useAccountsAnalytics } = await import("@/hooks/useAccountsAnalytics");
 	const { usePeriodAnalytics } = await import("@/hooks/usePeriodAnalytics");
@@ -247,7 +295,9 @@ async function mockHooks(empty = false) {
 		if (!query?.currency) return undefined;
 		return buildAnalytics(query.interval === "quarterly" ? "quarterly" : "monthly", empty);
 	});
-	mocks.useAnalyticsMonthSummaries.mockReturnValue(trendSummaries(empty));
+	mocks.useAnalyticsMonthSummaries.mockImplementation((_userId, query) =>
+		periodSummaries(query, empty)
+	);
 	mocks.useBudgets.mockReturnValue({ budgets: [], categories: [], rows: [] });
 }
 
@@ -682,5 +732,197 @@ describe("dashboard UI rebuild", () => {
 
 		rerender(<AccountDistributionChart analytics={emptyAccounts} />);
 		expect(screen.getByText("No positive account balances")).toBeInTheDocument();
+	});
+});
+
+describe("dashboard interval propagation", () => {
+	beforeEach(async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(NOW);
+		useFilterStore.setState({
+			activeCurrency: "",
+			includeFutureDatedBalances: true,
+			showArchivedAccounts: false,
+			accountId: null,
+		});
+		await mockHooks();
+		mockMatchMedia(false);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.clearAllMocks();
+	});
+
+	it("keeps monthly trend buckets and month navigation unchanged", () => {
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		expect(chartBuckets("bar-chart")).toEqual([
+			"Feb 26",
+			"Mar 26",
+			"Apr 26",
+			"May 26",
+			"Jun 26",
+			"Jul 26",
+			"Aug 26",
+			"Sep 26",
+		]);
+		expect(chartBuckets("area-chart")).toEqual(chartBuckets("bar-chart"));
+		expect(screen.getByText("Last 8 months in the selected currency")).toBeInTheDocument();
+		expect(screen.getByLabelText("Select dashboard month")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Sep 2026, selected" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Next month" })).toBeDisabled();
+
+		fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+
+		expect(screen.getByRole("button", { name: "Aug 2026, selected" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Next month" })).toBeEnabled();
+		expect(chartBuckets("bar-chart").at(-1)).toBe("Aug 26");
+	});
+
+	it("rebuckets the trend charts when the interval changes", () => {
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		const monthlyBuckets = chartBuckets("bar-chart");
+
+		applyInterval("Quarterly");
+
+		const quarterlyBuckets = chartBuckets("bar-chart");
+		expect(quarterlyBuckets).not.toEqual(monthlyBuckets);
+		expect(quarterlyBuckets).toEqual([
+			"Q4 24",
+			"Q1 25",
+			"Q2 25",
+			"Q3 25",
+			"Q4 25",
+			"Q1 26",
+			"Q2 26",
+			"Q3 26",
+		]);
+		expect(chartBuckets("area-chart")).toEqual(quarterlyBuckets);
+		expect(screen.getByText("Last 8 quarters in the selected currency")).toBeInTheDocument();
+		expect(screen.getByText("Highest quarter")).toBeInTheDocument();
+
+		applyInterval("Half yearly");
+
+		expect(chartBuckets("bar-chart")).toEqual([
+			"H1 23",
+			"H2 23",
+			"H1 24",
+			"H2 24",
+			"H1 25",
+			"H2 25",
+			"H1 26",
+			"H2 26",
+		]);
+		expect(screen.getByText("Last 8 half-years in the selected currency")).toBeInTheDocument();
+
+		applyInterval("Yearly");
+
+		expect(chartBuckets("bar-chart")).toEqual([
+			"2019",
+			"2020",
+			"2021",
+			"2022",
+			"2023",
+			"2024",
+			"2025",
+			"2026",
+		]);
+		expect(screen.getByText("Last 8 years in the selected currency")).toBeInTheDocument();
+
+		applyInterval("All Time");
+
+		expect(chartBuckets("bar-chart")).toEqual([
+			"2019",
+			"2020",
+			"2021",
+			"2022",
+			"2023",
+			"2024",
+			"2025",
+			"2026",
+		]);
+	});
+
+	it("requests interval-aware summaries for the strip and the trend charts", async () => {
+		const { useAnalyticsMonthSummaries } = await import("@/hooks/useAnalyticsMonthSummaries");
+
+		render(<DashboardPageClient userId={USER_ID} />);
+		applyInterval("Quarterly");
+
+		const queries = vi.mocked(useAnalyticsMonthSummaries).mock.calls.map(([, query]) => query);
+		expect(queries).toContainEqual(
+			expect.objectContaining({ currency: "AED", months: 8, mode: "ending", interval: "quarterly" })
+		);
+		expect(queries).toContainEqual(
+			expect.objectContaining({ currency: "AED", months: 5, mode: "around", interval: "quarterly" })
+		);
+	});
+
+	it("renders the strip in the selected unit and navigates by that unit", () => {
+		render(<DashboardPageClient userId={USER_ID} />);
+		applyInterval("Quarterly");
+
+		expect(screen.getByLabelText("Select dashboard quarter")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Q3 2026, selected" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Q1 2026" })).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Sep 2026, selected" })).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Next quarter" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Q4 2026" })).toBeDisabled();
+
+		fireEvent.click(screen.getByRole("button", { name: "Previous quarter" }));
+
+		expect(screen.getByRole("button", { name: "Q2 2026, selected" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Next quarter" })).toBeEnabled();
+		expect(chartBuckets("bar-chart").at(-1)).toBe("Q2 26");
+
+		fireEvent.click(screen.getByRole("button", { name: "Next quarter" }));
+
+		expect(screen.getByRole("button", { name: "Q3 2026, selected" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Next quarter" })).toBeDisabled();
+
+		fireEvent.click(screen.getByRole("button", { name: "Q1 2026" }));
+
+		expect(screen.getByRole("button", { name: "Q1 2026, selected" })).toBeInTheDocument();
+		expect(chartBuckets("bar-chart").at(-1)).toBe("Q1 26");
+	});
+
+	it("labels the strip with halves and years for the wider intervals", () => {
+		render(<DashboardPageClient userId={USER_ID} />);
+
+		applyInterval("Half yearly");
+
+		expect(screen.getByLabelText("Select dashboard half-year")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "H2 2026, selected" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "H1 2026" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Next half-year" })).toBeDisabled();
+
+		fireEvent.click(screen.getByRole("button", { name: "Previous half-year" }));
+		expect(screen.getByRole("button", { name: "H1 2026, selected" })).toBeInTheDocument();
+
+		applyInterval("Yearly");
+
+		expect(screen.getByLabelText("Select dashboard year")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "2026, selected" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "2024" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Next year" })).toBeDisabled();
+
+		fireEvent.click(screen.getByRole("button", { name: "Previous year" }));
+		expect(screen.getByRole("button", { name: "2025, selected" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Next year" })).toBeEnabled();
+	});
+
+	it("keeps budget progress on the monthly period when a wider interval is chosen", async () => {
+		const { usePeriodAnalytics } = await import("@/hooks/usePeriodAnalytics");
+
+		render(<DashboardPageClient userId={USER_ID} />);
+		applyInterval("Quarterly");
+
+		expect(screen.getByText("Budget progress")).toBeInTheDocument();
+		expect(screen.getByText("Sep 2026")).toBeInTheDocument();
+		expect(vi.mocked(usePeriodAnalytics).mock.calls.map(([, query]) => query)).toContainEqual(
+			expect.objectContaining({ interval: "monthly" })
+		);
 	});
 });

@@ -19,6 +19,7 @@ import {
 import { MeasuredChartContainer } from "@/components/charts/MeasuredChartContainer";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { SkeletonChart } from "@/components/shared/SkeletonChart";
+import { getPeriodUnitLabel, type AnalyticsInterval } from "@/lib/dateRange";
 import { CARD_SURFACE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,7 @@ const ACCOUNT_PALETTE = [
 interface TrendChartProps {
 	summaries?: AnalyticsMonthSummaryItem[];
 	currency: string;
+	interval?: AnalyticsInterval;
 	isLoading?: boolean;
 	className?: string;
 }
@@ -142,7 +144,13 @@ function AccountTooltip({ active, payload }: AccountTooltipProps) {
 	);
 }
 
-export function CashFlowTrendChart({ summaries, currency, isLoading, className }: TrendChartProps) {
+export function CashFlowTrendChart({
+	summaries,
+	currency,
+	interval = "monthly",
+	isLoading,
+	className,
+}: TrendChartProps) {
 	const data = useMemo(
 		() =>
 			summaries?.map((item) => ({
@@ -182,7 +190,8 @@ export function CashFlowTrendChart({ summaries, currency, isLoading, className }
 						Income vs expense trend
 					</h2>
 					<p className="mt-1 text-xs text-muted-foreground">
-						Last {data?.length ?? 0} months in the selected currency
+						Last {data?.length ?? 0} {getPeriodUnitLabel(interval, data?.length ?? 0)} in the
+						selected currency
 					</p>
 				</div>
 				{latest && (
@@ -267,7 +276,13 @@ export function CashFlowTrendChart({ summaries, currency, isLoading, className }
 	);
 }
 
-export function SpendingTrendChart({ summaries, currency, isLoading, className }: TrendChartProps) {
+export function SpendingTrendChart({
+	summaries,
+	currency,
+	interval = "monthly",
+	isLoading,
+	className,
+}: TrendChartProps) {
 	const data = useMemo(
 		() =>
 			summaries?.map((item) => ({
@@ -296,7 +311,7 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 		return (
 			<ChartEmptyState
 				title="No spending trend yet"
-				description="Monthly spending bars will appear here after expenses are recorded."
+				description={`Spending bars for each ${getPeriodUnitLabel(interval)} will appear here after expenses are recorded.`}
 				className={className}
 			/>
 		);
@@ -344,7 +359,7 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 				id="spending-trend-legend"
 				className="mt-3 grid w-full grid-cols-[repeat(2,minmax(0,1fr))] gap-2 text-xs md:mt-4 md:gap-3">
 				<div className="min-w-0 rounded-2xl bg-muted/45 p-2.5 md:p-3">
-					<p className="text-muted-foreground">Highest month</p>
+					<p className="text-muted-foreground">Highest {getPeriodUnitLabel(interval)}</p>
 					<p className="mt-1 font-semibold">{highest?.month}</p>
 					<CurrencyAmount
 						amount={highest?.expense ?? 0}
@@ -354,7 +369,7 @@ export function SpendingTrendChart({ summaries, currency, isLoading, className }
 					/>
 				</div>
 				<div className="min-w-0 rounded-2xl bg-muted/45 p-2.5 md:p-3">
-					<p className="text-muted-foreground">Average active month</p>
+					<p className="text-muted-foreground">Average active {getPeriodUnitLabel(interval)}</p>
 					<CurrencyAmount
 						amount={average}
 						currency={currency}

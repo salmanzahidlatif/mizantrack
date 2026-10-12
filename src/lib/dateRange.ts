@@ -62,6 +62,40 @@ export interface MonthStripOptions {
 	timeZoneOffsetMinutes?: number;
 }
 
+export interface PeriodRange extends MonthRange {
+	interval: AnalyticsInterval;
+}
+
+export interface PeriodRangeOptions extends DateRangeOptions {
+	interval: AnalyticsInterval;
+	fiscalYearStartMonth?: number;
+}
+
+export type PeriodStripMode = "around" | "ending";
+
+export interface PeriodStripOptions extends PeriodRangeOptions {
+	periods?: number;
+	mode?: PeriodStripMode;
+}
+
+const PERIOD_MONTH_SPANS: Record<AnalyticsInterval, number> = {
+	monthly: 1,
+	quarterly: 3,
+	"half-yearly": 6,
+	yearly: 12,
+	"all-time": 12,
+	custom: 1,
+};
+
+const PERIOD_UNIT_LABELS: Record<AnalyticsInterval, { one: string; many: string }> = {
+	monthly: { one: "month", many: "months" },
+	quarterly: { one: "quarter", many: "quarters" },
+	"half-yearly": { one: "half-year", many: "half-years" },
+	yearly: { one: "year", many: "years" },
+	"all-time": { one: "year", many: "years" },
+	custom: { one: "period", many: "periods" },
+};
+
 function clampFiscalYearStartMonth(month: number): number {
 	return Math.min(12, Math.max(1, Math.floor(month)));
 }
@@ -315,6 +349,96 @@ export function resolveAnalyticsPeriod(options: AnalyticsPeriodOptions): Resolve
 		fromMs: from.getTime(),
 		toMs: to.getTime(),
 	};
+}
+
+export function getPeriodMonthSpan(interval: AnalyticsInterval): number {
+	return PERIOD_MONTH_SPANS[interval] ?? 1;
+}
+
+export function getPeriodUnitLabel(interval: AnalyticsInterval, count = 1): string {
+	const unit = PERIOD_UNIT_LABELS[interval] ?? PERIOD_UNIT_LABELS.monthly;
+	return count === 1 ? unit.one : unit.many;
+}
+
+function getPeriodShortLabel(
+	period: ResolvedAnalyticsPeriod,
+	timeZoneOffsetMinutes: number
+): string {
+	const { year, monthIndex } = getLocalParts(period.from, timeZoneOffsetMinutes);
+	const shortYear = String(year).slice(-2);
+
+	if (period.interval === "quarterly") {
+		return `Q${Math.floor(monthIndex / 3) + 1} ${shortYear}`;
+	}
+	if (period.interval === "half-yearly") {
+		return `H${monthIndex < 6 ? 1 : 2} ${shortYear}`;
+	}
+	if (period.interval === "yearly") {
+		if (monthIndex === 0) return String(year);
+		const endParts = getLocalParts(period.to, timeZoneOffsetMinutes);
+		return `FY ${shortYear}/${String(endParts.year).slice(-2)}`;
+	}
+
+	return `${MONTH_LABELS[monthIndex]} ${shortYear}`;
+}
+
+export function getPeriodRange(date: Date, options: PeriodRangeOptions): PeriodRange {
+	const timeZoneOffsetMinutes = getTimeZoneOffsetMinutes(options, date);
+	const interval = options.interval;
+
+	if (interval === "monthly" || interval === "custom") {
+		return { ...getMonthRange(date, { timeZoneOffsetMinutes }), interval };
+	}
+
+	const period = resolveAnalyticsPeriod({
+		interval: interval === "all-time" ? "yearly" : interval,
+		anchorDate: date,
+		fiscalYearStartMonth: interval === "all-time" ? 1 : options.fiscalYearStartMonth,
+		timeZoneOffsetMinutes,
+	});
+
+	return {
+		interval,
+		date: period.from,
+		key: period.key,
+		label: period.label,
+		shortLabel: getPeriodShortLabel(period, timeZoneOffsetMinutes),
+		from: period.from,
+		to: period.to,
+		fromMs: period.fromMs,
+		toMs: period.toMs,
+	};
+}
+
+export function getPeriodRangeOffset(
+	date: Date,
+	periodOffset: number,
+	options: PeriodRangeOptions
+): PeriodRange {
+	const timeZoneOffsetMinutes = getTimeZoneOffsetMinutes(options, date);
+	const current = getPeriodRange(date, { ...options, timeZoneOffsetMinutes });
+	if (periodOffset === 0) return current;
+
+	const shifted = startOfLocalMonth(
+		current.from,
+		timeZoneOffsetMinutes,
+		periodOffset * getPeriodMonthSpan(options.interval)
+	);
+
+	return getPeriodRange(shifted, { ...options, timeZoneOffsetMinutes });
+}
+
+export function getPeriodStripRanges(
+	anchorDate = new Date(),
+	options: PeriodStripOptions = { interval: "monthly" }
+): PeriodRange[] {
+	const periods = Math.max(1, Math.floor(options.periods ?? 5));
+	const timeZoneOffsetMinutes = getTimeZoneOffsetMinutes(options, anchorDate);
+	const before = options.mode === "ending" ? periods - 1 : Math.floor((periods - 1) / 2);
+
+	return Array.from({ length: periods }, (_, index) =>
+		getPeriodRangeOffset(anchorDate, index - before, { ...options, timeZoneOffsetMinutes })
+	);
 }
 
 export function getDateRange(

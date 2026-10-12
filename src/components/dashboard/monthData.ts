@@ -10,6 +10,7 @@ import {
 
 import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { ALL_CURRENCIES_KEY } from "@/lib/analytics/computeDashboardStats";
+import { getPeriodRange, getPeriodRangeOffset, type AnalyticsInterval } from "@/lib/dateRange";
 
 import type { DashboardStats } from "@/types";
 
@@ -80,6 +81,63 @@ export function shiftDashboardMonth(date: Date, amount: number, max = new Date()
 
 export function isCurrentDashboardMonth(date: Date, now = new Date()) {
 	return isSameMonth(date, now);
+}
+
+export interface DashboardPeriodOptions {
+	now?: Date;
+	fiscalYearStartMonth?: number;
+	timeZoneOffsetMinutes?: number;
+}
+
+function toPeriodRangeOptions(interval: AnalyticsInterval, options: DashboardPeriodOptions) {
+	return {
+		interval,
+		fiscalYearStartMonth: options.fiscalYearStartMonth,
+		timeZoneOffsetMinutes: options.timeZoneOffsetMinutes,
+	};
+}
+
+export function clampDashboardPeriod(
+	date: Date,
+	interval: AnalyticsInterval,
+	options: DashboardPeriodOptions = {}
+) {
+	const now = options.now ?? new Date();
+	if (interval === "monthly") return clampDashboardMonth(date, now);
+
+	const rangeOptions = toPeriodRangeOptions(interval, options);
+	const selected = getPeriodRange(date, rangeOptions);
+	const current = getPeriodRange(now, rangeOptions);
+
+	return selected.fromMs > current.fromMs ? current.from : selected.from;
+}
+
+export function shiftDashboardPeriod(
+	date: Date,
+	amount: number,
+	interval: AnalyticsInterval,
+	options: DashboardPeriodOptions = {}
+) {
+	const now = options.now ?? new Date();
+	if (interval === "monthly") return shiftDashboardMonth(date, amount, now);
+
+	const rangeOptions = toPeriodRangeOptions(interval, options);
+	const shifted = getPeriodRangeOffset(date, amount, rangeOptions);
+
+	return clampDashboardPeriod(shifted.from, interval, { ...options, now });
+}
+
+export function isCurrentDashboardPeriod(
+	date: Date,
+	interval: AnalyticsInterval,
+	options: DashboardPeriodOptions = {}
+) {
+	const now = options.now ?? new Date();
+	if (interval === "monthly") return isCurrentDashboardMonth(date, now);
+
+	const rangeOptions = toPeriodRangeOptions(interval, options);
+
+	return getPeriodRange(date, rangeOptions).key === getPeriodRange(now, rangeOptions).key;
 }
 
 export function getDashboardBucket(stats: DashboardStats | undefined, activeCurrency?: string) {

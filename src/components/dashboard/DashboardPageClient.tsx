@@ -23,8 +23,9 @@ import {
 } from "@/components/dashboard/dashboardGrid";
 import {
 	clampDashboardMonth,
-	isCurrentDashboardMonth,
-	shiftDashboardMonth,
+	clampDashboardPeriod,
+	isCurrentDashboardPeriod,
+	shiftDashboardPeriod,
 } from "@/components/dashboard/monthData";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
@@ -42,10 +43,12 @@ import { resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import {
 	getLocalTimeZoneOffsetMinutes,
 	getMonthKey,
-	getMonthStripRanges,
+	getPeriodRange,
+	getPeriodStripRanges,
+	getPeriodUnitLabel,
 	resolveAnalyticsPeriod,
 	type AnalyticsInterval,
-	type MonthRange,
+	type PeriodRange,
 } from "@/lib/dateRange";
 import { CARD_SURFACE, LIST_ROW, PRESS_SCALE, TAPPABLE, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -104,6 +107,8 @@ interface MonthStripProps {
 	userId: string;
 	currency: string;
 	selectedMonth: Date;
+	interval: AnalyticsInterval;
+	fiscalYearStartMonth: number;
 	now: Date;
 	timeZoneOffsetMinutes: number;
 	onChangeMonth: (delta: number) => void;
@@ -190,17 +195,20 @@ function useMonthSwipe(onChangeMonth: (delta: number) => void, canGoNext: boolea
 	return ref;
 }
 
-function isFutureMonth(range: Pick<MonthRange, "date">, now: Date) {
-	return getMonthKey(range.date) > getMonthKey(now);
+function isFuturePeriod(range: Pick<PeriodRange, "fromMs">, currentPeriod: PeriodRange) {
+	return range.fromMs > currentPeriod.fromMs;
 }
 
-function normalizeMonthRanges(
+function normalizePeriodRanges(
 	summaries: AnalyticsMonthSummaryItem[] | undefined,
 	selectedMonth: Date,
+	interval: AnalyticsInterval,
+	fiscalYearStartMonth: number,
 	timeZoneOffsetMinutes: number
-) {
+): PeriodRange[] {
 	return (
 		summaries?.map((summary) => ({
+			interval: summary.interval,
 			date: summary.from,
 			key: summary.key,
 			label: summary.label,
@@ -210,8 +218,11 @@ function normalizeMonthRanges(
 			fromMs: summary.fromMs,
 			toMs: summary.toMs,
 		})) ??
-		getMonthStripRanges(selectedMonth, {
-			months: 5,
+		getPeriodStripRanges(selectedMonth, {
+			interval,
+			fiscalYearStartMonth,
+			periods: 5,
+			mode: "around",
 			timeZoneOffsetMinutes,
 		})
 	);
@@ -221,6 +232,8 @@ function MonthStrip({
 	userId,
 	currency,
 	selectedMonth,
+	interval,
+	fiscalYearStartMonth,
 	now,
 	timeZoneOffsetMinutes,
 	onChangeMonth,
@@ -230,16 +243,34 @@ function MonthStrip({
 	const summaries = useAnalyticsMonthSummaries(userId, {
 		currency,
 		months: 5,
+		interval,
+		fiscalYearStartMonth,
 		anchorDate: selectedMonth,
 		mode: "around",
 		timeZoneOffsetMinutes,
 	});
 	const ranges = useMemo(
-		() => normalizeMonthRanges(summaries, selectedMonth, timeZoneOffsetMinutes),
-		[summaries, selectedMonth, timeZoneOffsetMinutes]
+		() =>
+			normalizePeriodRanges(
+				summaries,
+				selectedMonth,
+				interval,
+				fiscalYearStartMonth,
+				timeZoneOffsetMinutes
+			),
+		[summaries, selectedMonth, interval, fiscalYearStartMonth, timeZoneOffsetMinutes]
 	);
-	const selectedKey = getMonthKey(selectedMonth, { timeZoneOffsetMinutes });
-	const canGoNext = !isCurrentDashboardMonth(selectedMonth, now);
+	const periodOptions = useMemo(
+		() => ({ interval, fiscalYearStartMonth, timeZoneOffsetMinutes }),
+		[interval, fiscalYearStartMonth, timeZoneOffsetMinutes]
+	);
+	const selectedPeriod = useMemo(
+		() => getPeriodRange(selectedMonth, periodOptions),
+		[selectedMonth, periodOptions]
+	);
+	const currentPeriod = useMemo(() => getPeriodRange(now, periodOptions), [now, periodOptions]);
+	const unitLabel = getPeriodUnitLabel(interval);
+	const canGoNext = selectedPeriod.key !== currentPeriod.key;
 
 	return (
 		<section className="space-y-2" aria-labelledby="dashboard-month-heading">
@@ -247,7 +278,7 @@ function MonthStrip({
 				<div className="flex items-center gap-1">
 					<button
 						type="button"
-						aria-label="Previous month"
+						aria-label={`Previous ${unitLabel}`}
 						onClick={() => onChangeMonth(-1)}
 						className={cn(
 							"flex h-10 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -259,10 +290,10 @@ function MonthStrip({
 					<div
 						data-swipe-navigation-ignore
 						className="no-scrollbar flex min-w-0 flex-1 snap-x gap-1 overflow-x-auto"
-						aria-label="Select dashboard month">
+						aria-label={`Select dashboard ${unitLabel}`}>
 						{ranges.map((range) => {
-							const selected = range.key === selectedKey;
-							const disabled = isFutureMonth(range, now);
+							const selected = range.key === selectedPeriod.key;
+							const disabled = isFuturePeriod(range, currentPeriod);
 
 							return (
 								<button
@@ -290,7 +321,7 @@ function MonthStrip({
 					</div>
 					<button
 						type="button"
-						aria-label="Next month"
+						aria-label={`Next ${unitLabel}`}
 						disabled={!canGoNext}
 						onClick={() => onChangeMonth(1)}
 						className={cn(
@@ -314,10 +345,10 @@ function MonthStrip({
 				</div>
 			</div>
 			<h2 id="dashboard-month-heading" className="sr-only">
-				Dashboard month
+				Dashboard {unitLabel}
 			</h2>
 			<p className="sr-only" aria-live="polite">
-				Showing {getMonthKey(selectedMonth, { timeZoneOffsetMinutes })}.
+				Showing {selectedPeriod.key}.
 			</p>
 		</section>
 	);
@@ -738,7 +769,11 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	const [interval, setInterval] = useState<AnalyticsInterval>("monthly");
 	const [intervalOpen, setIntervalOpen] = useState(false);
 	const timeZoneOffsetMinutes = useMemo(() => getLocalTimeZoneOffsetMinutes(now), [now]);
-	const canGoNext = !isCurrentDashboardMonth(selectedMonth, now);
+	const periodNavOptions = useMemo(
+		() => ({ now, fiscalYearStartMonth, timeZoneOffsetMinutes }),
+		[now, fiscalYearStartMonth, timeZoneOffsetMinutes]
+	);
+	const canGoNext = !isCurrentDashboardPeriod(selectedMonth, interval, periodNavOptions);
 
 	const periodQuery = useMemo<PeriodAnalyticsQuery>(
 		() => ({
@@ -793,6 +828,8 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	const trendSummaries = useAnalyticsMonthSummaries(userId, {
 		currency,
 		months: 8,
+		interval,
+		fiscalYearStartMonth,
 		anchorDate: selectedMonth,
 		mode: "ending",
 		timeZoneOffsetMinutes,
@@ -821,18 +858,18 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 
 	const changeMonth = useCallback(
 		(delta: number) => {
-			const nextMonth = shiftDashboardMonth(selectedMonth, delta, now);
+			const nextMonth = shiftDashboardPeriod(selectedMonth, delta, interval, periodNavOptions);
 			if (nextMonth.getTime() === selectedMonth.getTime()) return;
 
 			setSelectedMonth(nextMonth);
 			haptics.selection();
 		},
-		[haptics, now, selectedMonth]
+		[haptics, interval, periodNavOptions, selectedMonth]
 	);
 	const swipeRef = useMonthSwipe(changeMonth, canGoNext);
 
 	function handleSelectMonth(month: Date) {
-		const nextMonth = clampDashboardMonth(month, now);
+		const nextMonth = clampDashboardPeriod(month, interval, periodNavOptions);
 		if (nextMonth.getTime() === selectedMonth.getTime()) return;
 
 		setSelectedMonth(nextMonth);
@@ -872,6 +909,8 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 				userId={userId}
 				currency={currency}
 				selectedMonth={selectedMonth}
+				interval={interval}
+				fiscalYearStartMonth={fiscalYearStartMonth}
 				now={now}
 				timeZoneOffsetMinutes={timeZoneOffsetMinutes}
 				onChangeMonth={changeMonth}
@@ -928,6 +967,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					<CashFlowTrendChart
 						summaries={trendSummaries}
 						currency={currency}
+						interval={interval}
 						isLoading={trendSummaries === undefined}
 						className="md:w-full"
 					/>
@@ -937,6 +977,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 					<SpendingTrendChart
 						summaries={trendSummaries}
 						currency={currency}
+						interval={interval}
 						isLoading={trendSummaries === undefined}
 						className="md:w-full"
 					/>

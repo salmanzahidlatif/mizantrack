@@ -23,6 +23,8 @@ export function useAnalyticsMonthSummaries(
 		dependencies: [
 			query?.currency,
 			query?.months,
+			query?.interval,
+			query?.fiscalYearStartMonth,
 			query?.anchorDate?.getTime(),
 			query?.mode,
 			query?.timeZoneOffsetMinutes,

@@ -118,6 +118,8 @@ export function getMonthlySummariesCacheKey(query: MonthlySummariesQuery): strin
 	return stableStringify({
 		currency: normalizeCacheCurrency(query.currency),
 		months: Math.max(1, Math.floor(query.months ?? 6)),
+		interval: query.interval ?? "monthly",
+		fiscalYearStartMonth: query.fiscalYearStartMonth,
 		anchorDate: dateMs(query.anchorDate),
 		mode: query.mode ?? "ending",
 		timeZoneOffsetMinutes: query.timeZoneOffsetMinutes,
