@@ -332,3 +332,146 @@ export const ISLAMIC_MONTHS = [
 ] as const;
 
 export type IslamicMonth = (typeof ISLAMIC_MONTHS)[number];
+
+// ============================================================================
+// REPORTS TYPES
+// ============================================================================
+
+export type ReportTransactionRole = "remittance" | "plot-payment" | "income" | "excluded";
+
+/** Per-account opt-in for the fiscal report; the user decides which accounts appear. */
+export interface ReportAccountTag {
+	id: string;
+	userId: string;
+	accountId: string;
+	includeInReport: boolean;
+	isRemittanceSource?: boolean;
+	updatedAt: number;
+	deletedAt?: number;
+	pendingSync?: boolean;
+}
+
+/** A user-defined grouping for property payments, e.g. "BWC 7 Marla Overseas Block". */
+export interface ReportProject {
+	id: string;
+	userId: string;
+	title: string;
+	note?: string;
+	sortOrder?: number;
+	updatedAt: number;
+	deletedAt?: number;
+	pendingSync?: boolean;
+}
+
+/** The user's confirm/untag decision for ONE transaction. */
+export interface ReportTransactionTag {
+	id: string;
+	userId: string;
+	transactionId: string;
+	role: ReportTransactionRole;
+	projectId?: string; // Set when role === "plot-payment"
+	confirmed: boolean; // True once the user explicitly accepted or overrode the suggestion
+	updatedAt: number;
+	deletedAt?: number;
+	pendingSync?: boolean;
+}
+
+/** Free-form rows the user types in by hand, e.g. "Nayatel tax" 4285 PKR. */
+export interface ReportManualEntry {
+	id: string;
+	userId: string;
+	label: string;
+	amount: number;
+	currency: string;
+	section: "banks" | "plots" | "other";
+	date?: number; // Unix ms
+	note?: string;
+	fiscalYearKey?: string; // Optional scoping to a single fiscal year
+	updatedAt: number;
+	deletedAt?: number;
+	pendingSync?: boolean;
+}
+
+/** One row of the Jul→Jun salary grid the user maintains manually. */
+export interface ReportMonthlySalaryRow {
+	id: string;
+	userId: string;
+	fiscalYearKey: string;
+	monthKey: string; // Calendar month in YYYY-MM form
+	company?: string;
+	salaryPkr?: number;
+	salaryUsd?: number;
+	taxablePkr?: number;
+	providentFundRefund?: number;
+	updatedAt: number;
+	deletedAt?: number;
+	pendingSync?: boolean;
+}
+
+export type ReportDetectionReason =
+	| "keyword"
+	| "cross-currency-transfer"
+	| "manual"
+	| "account-flag";
+
+/** Runtime-only detection candidate. Never persisted. */
+export interface DetectedReportTransaction {
+	transaction: Transaction;
+	suggestedRole: ReportTransactionRole;
+	reason: ReportDetectionReason;
+	matchedKeyword?: string;
+	confirmed: boolean;
+	projectId?: string;
+}
+
+/** Runtime-only. Never persisted. */
+export interface ReportAccountBalance {
+	accountId: string;
+	title: string;
+	currency: string;
+	closingBalance: number;
+	isArchived: boolean;
+}
+
+/** Runtime-only. Never persisted. */
+export interface ReportProjectPayment {
+	transactionId: string;
+	date: number;
+	amount: number;
+	currency: string;
+	title: string;
+	note?: string;
+}
+
+/** Runtime-only. Never persisted. */
+export interface ReportProjectGroup {
+	project: ReportProject;
+	payments: ReportProjectPayment[];
+	total: number;
+	currency: string;
+}
+
+/** Runtime-only. Never persisted. */
+export interface ReportRemittance {
+	transactionId: string;
+	date: number;
+	amount: number;
+	currency: string;
+	title: string;
+}
+
+/** Runtime-only aggregate recomputed on every render. Never persisted. */
+export interface FiscalReportSummary {
+	rangeKey: string;
+	rangeLabel: string;
+	fromMs: number;
+	toMs: number;
+	accountBalances: ReportAccountBalance[];
+	remittances: ReportRemittance[];
+	remittanceTotal: number;
+	projectGroups: ReportProjectGroup[];
+	projectGrandTotal: number;
+	manualEntries: ReportManualEntry[];
+	monthlySalaryRows: ReportMonthlySalaryRow[];
+	warnings: string[];
+}
