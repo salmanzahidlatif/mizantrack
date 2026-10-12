@@ -29,7 +29,10 @@ export function HideAmountsToggle({
 		const next = !hideAmounts;
 		usePrivacyStore.getState().setHideAmounts(next);
 		haptics.selection();
-		void upsertDbConfig(userId, { hideAmounts: next });
+		// The store already updated, so a failed write only costs persistence.
+		void upsertDbConfig(userId, { hideAmounts: next }).catch((error) => {
+			console.error("Could not save the hide amounts preference.", error);
+		});
 	}
 
 	return (

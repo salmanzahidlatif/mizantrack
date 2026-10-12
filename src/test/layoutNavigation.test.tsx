@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AppShell, getPageTitle } from "@/components/layout/AppShell";
@@ -188,6 +188,42 @@ describe("mobile navigation", () => {
 		expect(screen.queryByRole("link", { name: /budgets/i })).not.toBeInTheDocument();
 		expect(screen.queryByRole("link", { name: /^me$/i })).not.toBeInTheDocument();
 		expect(BOTTOM_NAV_ROUTES.some((route) => String(route.href) === "/budgets")).toBe(false);
+	});
+
+	it("exposes the hide amounts toggle in the header and the avatar menu", () => {
+		mockPathname.value = "/dashboard";
+
+		render(
+			<AppShell
+				user={{
+					email: "test@example.com",
+					id: "user-1",
+					image: "",
+					name: "Test User",
+				}}>
+				<div>Dashboard content</div>
+			</AppShell>
+		);
+
+		// Header control: available on every screen, not just dashboard and accounts.
+		const headerToggle = screen.getByTestId("hide-amounts-toggle");
+		expect(headerToggle).toHaveAttribute("aria-pressed", "false");
+		expect(headerToggle).toHaveAccessibleName("Hide amounts");
+
+		// Mobile fallback, since the header control is hidden on small screens.
+		const menuContents = screen.getAllByTestId("dropdown-content");
+		const menuItem = menuContents
+			.flatMap((menu) => within(menu).queryAllByText(/hide amounts/i))
+			.at(0);
+		expect(menuItem).toBeDefined();
+
+		fireEvent.click(headerToggle);
+
+		expect(headerToggle).toHaveAttribute("aria-pressed", "true");
+		expect(headerToggle).toHaveAccessibleName("Show amounts");
+		expect(
+			menuContents.flatMap((menu) => within(menu).queryAllByText(/show amounts/i)).length
+		).toBeGreaterThan(0);
 	});
 
 	it("keeps Settings and Budgets reachable from the avatar menu", () => {

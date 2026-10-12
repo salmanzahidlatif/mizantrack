@@ -172,7 +172,10 @@ export function AppShell({ user, children }: AppShellProps) {
 		const next = !hideAmounts;
 		usePrivacyStore.getState().setHideAmounts(next);
 		haptics.selection();
-		void upsertDbConfig(user.id, { hideAmounts: next });
+		// The store already updated, so a failed write only costs persistence.
+		void upsertDbConfig(user.id, { hideAmounts: next }).catch((error) => {
+			console.error("Could not save the hide amounts preference.", error);
+		});
 	};
 	const renderSettingsMenuItem = () => (
 		<DropdownMenuItem asChild className="gap-2">
@@ -347,11 +350,7 @@ export function AppShell({ user, children }: AppShellProps) {
 												handleToggleHideAmounts();
 											}}
 											className="gap-2 sm:hidden">
-											{hideAmounts ? (
-												<EyeOff className="h-4 w-4" />
-											) : (
-												<Eye className="h-4 w-4" />
-											)}
+											{hideAmounts ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
 											{hideAmounts ? "Show amounts" : "Hide amounts"}
 										</DropdownMenuItem>
 									) : null}
