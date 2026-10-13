@@ -282,6 +282,66 @@ describe("detectReportTransactions", () => {
 		expect(detected[0]?.confirmed).toBe(false);
 	});
 
+	it("counts a bridged remittance once, not twice", () => {
+		// The owner's real flow: income arrives in a bridge account, then the same amount
+		// is moved on to the bank the same day. Only the income is new money.
+		const income = makeTransaction({
+			id: "remit-income",
+			date: inRangeDate,
+			type: "Income",
+			amount: 250000,
+			accountId: "pkr-bridge",
+			description: "3260 AED remittance",
+		});
+		const onwardTransfer = makeTransaction({
+			id: "remit-move",
+			date: inRangeDate,
+			type: "Transfer",
+			amount: 250000,
+			accountId: "pkr-bridge",
+			toAccountId: "pkr-bank",
+			description: "Transfer to Meezan - Saving",
+		});
+
+		const detected = detectReportTransactions({
+			transactions: [income, onwardTransfer],
+			accounts: [PKR_BRIDGE_ACCOUNT, PKR_ACCOUNT],
+			existingTags: [],
+			accountTags: [makeAccountTag("pkr-bridge"), makeAccountTag("pkr-bank")],
+			currency: "PKR",
+			fromMs: FY_FROM_MS,
+			toMs: FY_TO_MS,
+		});
+
+		expect(detected).toHaveLength(1);
+		expect(detected[0]?.transaction.id).toBe("remit-income");
+		expect(detected[0]?.suggestedRole).toBe("remittance");
+	});
+
+	it("ignores a transfer that only moves money between the owner's accounts", () => {
+		const detected = detectReportTransactions({
+			transactions: [
+				makeTransaction({
+					id: "kids-savings",
+					date: inRangeDate,
+					type: "Transfer",
+					amount: 5000,
+					accountId: "pkr-bank",
+					toAccountId: "pkr-bridge",
+					description: "Kids given by someone",
+				}),
+			],
+			accounts: [PKR_ACCOUNT, PKR_BRIDGE_ACCOUNT],
+			existingTags: [],
+			accountTags: [makeAccountTag("pkr-bank"), makeAccountTag("pkr-bridge")],
+			currency: "PKR",
+			fromMs: FY_FROM_MS,
+			toMs: FY_TO_MS,
+		});
+
+		expect(detected).toHaveLength(0);
+	});
+
 	it("never flags an expense such as 'metro nol card' as a plot payment", () => {
 		const detected = detectReportTransactions({
 			transactions: [
@@ -309,7 +369,7 @@ describe("detectReportTransactions", () => {
 		expect(detected).toHaveLength(0);
 	});
 
-	it("flags a same-currency incoming transfer into an included account", () => {
+	it("ignores a bridge transfer into an included account, which only moves money", () => {
 		const detected = detectReportTransactions({
 			transactions: [
 				makeTransaction({
@@ -327,9 +387,7 @@ describe("detectReportTransactions", () => {
 			toMs: FY_TO_MS,
 		});
 
-		expect(detected).toHaveLength(1);
-		expect(detected[0]?.suggestedRole).toBe("income");
-		expect(detected[0]?.reason).toBe("inflow");
+		expect(detected).toHaveLength(0);
 	});
 
 	it("ignores an outgoing transfer that matches no keyword", () => {
@@ -470,10 +528,10 @@ describe("detectReportTransactions", () => {
 		const detected = detectReportTransactions({
 			transactions: [
 				makeTransaction({
-					id: "bridge-transfer",
+					id: "untagged-income",
 					date: inRangeDate,
-					accountId: "pkr-bridge",
-					toAccountId: "pkr-bank",
+					type: "Income",
+					accountId: "pkr-bank",
 					description: "no keyword here",
 				}),
 			],

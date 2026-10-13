@@ -85,41 +85,26 @@ function matchKeywordRole(transaction: Transaction): KeywordMatch | undefined {
  * when nothing is ticked yet every account counts, so the review queue is never
  * mysteriously empty on a fresh report.
  */
-function resolveIncludedAccountIds(
-	accountTags: ReportAccountTag[] | undefined,
-	accountById: Map<string, Account>
-): Set<string> {
-	const included = new Set(
-		(accountTags ?? [])
-			.filter((tag) => !tag.deletedAt && tag.includeInReport)
-			.map((tag) => tag.accountId)
-	);
-
-	if (included.size === 0) return new Set(accountById.keys());
-	return included;
-}
-
 /**
  * Suggests report roles for transactions inside a range and inside the selected currency.
  * Detection is advisory only: a confirmed user tag always wins, and nothing here mutates
  * or persists anything.
  *
  * Per transaction type:
- * - Income            → ALWAYS a candidate. "remittance" on a remittance keyword, else "income".
- * - Incoming Transfer → ALWAYS a candidate (the destination is an included account).
- *                       Keyword role when one matches, else "income". A remittance can arrive
- *                       as a plain same-currency transfer off a bridge account, with no
- *                       telltale wording, so keyword-only matching would miss most of them.
- * - Outgoing Transfer → a candidate only when a remittance or plot keyword matches.
- * - Expense           → never a candidate.
+ * - Income   → ALWAYS a candidate. "remittance" on a remittance keyword, else "income".
+ *              Income is the only way money enters the reported wealth, so this is where
+ *              remittances are found, however they are worded.
+ * - Transfer → a candidate only when a remittance or plot keyword matches. A transfer moves
+ *              money between the owner's own accounts, so nothing was earned; suggesting
+ *              them as income double-counted the income that first brought the money in.
+ * - Expense  → never a candidate.
  */
 export function detectReportTransactions(
 	params: DetectReportTransactionsParams
 ): DetectedReportTransaction[] {
-	const { transactions, accounts, existingTags, fromMs, toMs, currency, accountTags } = params;
+	const { transactions, accounts, existingTags, fromMs, toMs, currency } = params;
 
 	const accountById = buildAccountCurrencyIndex(accounts);
-	const includedAccountIds = resolveIncludedAccountIds(accountTags, accountById);
 
 	const confirmedTagByTransactionId = new Map<string, ReportTransactionTag>();
 	for (const tag of existingTags) {
@@ -173,19 +158,14 @@ export function detectReportTransactions(
 				matchedKeyword: keywordMatch.matchedKeyword,
 				confirmed: false,
 			});
-			continue;
 		}
 
-		// An incoming transfer is money arriving in an account the user reports on — the other
-		// half of the manual bridge-account remittance flow — so it is always reviewable.
-		if (transaction.toAccountId && includedAccountIds.has(transaction.toAccountId)) {
-			detected.push({
-				transaction,
-				suggestedRole: "income",
-				reason: "inflow",
-				confirmed: false,
-			});
-		}
+		// A transfer is never suggested as income. In this app a transfer always moves money
+		// between the owner's own accounts, so nothing was earned: the reported wealth is
+		// unchanged, it only sits somewhere else. Suggesting them double-counted the income
+		// that first brought the money in — a remittance recorded as income into a bridge
+		// account and then paid onward to a bank was counted twice. Keyword matches above
+		// still surface plot payments and explicitly described remittances.
 	}
 
 	return detected.sort((first, second) => first.transaction.date - second.transaction.date);

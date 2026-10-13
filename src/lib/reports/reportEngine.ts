@@ -82,13 +82,24 @@ function resolveDominantCurrency(entries: Array<{ amount: number; currency: stri
 	return dominant;
 }
 
+/**
+ * Money is summed as floating point, so long runs of additions leave artefacts such as
+ * 0.0000000004365574569 where the true balance is zero. Every figure the report publishes
+ * is rounded to the minor unit it is actually denominated in.
+ */
+function toCurrencyPrecision(amount: number): number {
+	return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
 function sumInCurrency(
 	entries: Array<{ amount: number; currency: string }>,
 	currency: string
 ): number {
-	return entries.reduce(
-		(total, entry) => (entry.currency === currency ? total + entry.amount : total),
-		0
+	return toCurrencyPrecision(
+		entries.reduce(
+			(total, entry) => (entry.currency === currency ? total + entry.amount : total),
+			0
+		)
 	);
 }
 
@@ -156,7 +167,9 @@ export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReport
 			accountId: account.id,
 			title: account.title,
 			currency: account.currency,
-			closingBalance: computation.balances.get(account.id) ?? account.openingBalance,
+			closingBalance: toCurrencyPrecision(
+				computation.balances.get(account.id) ?? account.openingBalance
+			),
 			isArchived: account.isArchived,
 		}));
 
@@ -211,7 +224,9 @@ export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReport
 			`Remittances mix currencies (${remittanceCurrencies.join(", ")}). The total shows ${dominantCurrency} only; no exchange rate was applied.`
 		);
 	} else {
-		remittanceTotal = remittances.reduce((total, entry) => total + entry.amount, 0);
+		remittanceTotal = toCurrencyPrecision(
+			remittances.reduce((total, entry) => total + entry.amount, 0)
+		);
 	}
 
 	const incomes: ReportIncome[] = taggedInRange
@@ -233,7 +248,7 @@ export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReport
 			`Incomes mix currencies (${incomeCurrencies.join(", ")}). The total shows ${dominantCurrency} only; no exchange rate was applied.`
 		);
 	} else {
-		incomeTotal = incomes.reduce((total, entry) => total + entry.amount, 0);
+		incomeTotal = toCurrencyPrecision(incomes.reduce((total, entry) => total + entry.amount, 0));
 	}
 
 	const paymentsByProjectId = new Map<string, ReportProjectPayment[]>();
@@ -293,7 +308,7 @@ export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReport
 		return {
 			project,
 			payments,
-			total: payments.reduce((total, payment) => total + payment.amount, 0),
+			total: toCurrencyPrecision(payments.reduce((total, payment) => total + payment.amount, 0)),
 			currency: currencies[0] ?? "",
 		};
 	});
@@ -314,7 +329,9 @@ export function buildFiscalReport(params: BuildFiscalReportParams): FiscalReport
 			`Projects mix currencies (${projectCurrencies.join(", ")}). The grand total shows ${dominantCurrency} only; no exchange rate was applied.`
 		);
 	} else {
-		projectGrandTotal = projectGroups.reduce((total, group) => total + group.total, 0);
+		projectGrandTotal = toCurrencyPrecision(
+			projectGroups.reduce((total, group) => total + group.total, 0)
+		);
 	}
 
 	const scopedManualEntries = manualEntries
