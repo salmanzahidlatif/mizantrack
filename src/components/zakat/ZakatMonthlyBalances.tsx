@@ -17,6 +17,8 @@ interface ZakatMonthlyBalancesProps {
 	zakatableIds: Set<string>;
 	referenceCurrency: string;
 	exchangeRates: Record<string, number>;
+	/** Resolved months, so a user's saved Ramaḍān anchor is respected. */
+	months?: { month: IslamicMonth; year: number; endDate: Date }[];
 }
 
 export function ZakatMonthlyBalances({
@@ -26,6 +28,7 @@ export function ZakatMonthlyBalances({
 	zakatableIds,
 	referenceCurrency,
 	exchangeRates,
+	months,
 }: ZakatMonthlyBalancesProps) {
 	const allTransactions = useLiveQuery(
 		() =>
@@ -38,7 +41,7 @@ export function ZakatMonthlyBalances({
 	);
 
 	// Get the 12 Islamic months for this zakat year
-	const monthsData = useMemo(() => getZakatYearMonths(zakatYear), [zakatYear]);
+	const monthsData = useMemo(() => months ?? getZakatYearMonths(zakatYear), [months, zakatYear]);
 
 	// Calculate balances for each account at the end of each Islamic month
 	const monthlyBalances = useMemo(() => {

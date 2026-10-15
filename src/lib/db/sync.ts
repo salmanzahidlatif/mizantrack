@@ -41,6 +41,7 @@ import type {
 	Transaction,
 	ZakatCalculation,
 	ZakatPayment,
+	ZakatYearOverride,
 } from "@/types";
 import type { Table } from "dexie";
 
@@ -56,7 +57,8 @@ export type SyncableTable =
 	| "reportProjects"
 	| "reportTransactionTags"
 	| "reportManualEntries"
-	| "reportMonthlySalaryRows";
+	| "reportMonthlySalaryRows"
+	| "zakatYears";
 type SyncableRecord = (
 	| Account
 	| Category
@@ -70,6 +72,7 @@ type SyncableRecord = (
 	| ReportTransactionTag
 	| ReportManualEntry
 	| ReportMonthlySalaryRow
+	| ZakatYearOverride
 ) &
 	SyncDirtyFields;
 export type SyncScope = SyncableTable | "firebase" | "settings" | "dashboard";
@@ -86,6 +89,7 @@ type OptionalSyncFieldsByTable = {
 	reportTransactionTags: readonly (keyof ReportTransactionTag)[];
 	reportManualEntries: readonly (keyof ReportManualEntry)[];
 	reportMonthlySalaryRows: readonly (keyof ReportMonthlySalaryRow)[];
+	zakatYears: readonly (keyof ZakatYearOverride)[];
 };
 type NonClearingOptionalSyncFieldsByTable = {
 	accounts: readonly (keyof Account)[];
@@ -100,6 +104,7 @@ type NonClearingOptionalSyncFieldsByTable = {
 	reportTransactionTags: readonly (keyof ReportTransactionTag)[];
 	reportManualEntries: readonly (keyof ReportManualEntry)[];
 	reportMonthlySalaryRows: readonly (keyof ReportMonthlySalaryRow)[];
+	zakatYears: readonly (keyof ZakatYearOverride)[];
 };
 
 export const FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT = 20_000;
@@ -128,6 +133,8 @@ export const CORE_SYNC_TABLES = [
 	"reportTransactionTags",
 	"reportManualEntries",
 	"reportMonthlySalaryRows",
+	// The zakat calendar is a standalone anchor table; it references nothing else.
+	"zakatYears",
 ] as const;
 
 function formatFirestoreLimit(limit: number): string {
@@ -301,6 +308,8 @@ const OPTIONAL_SYNC_FIELDS = {
 		"providentFundRefund",
 		"deletedAt",
 	],
+	// Only the anchor and its provenance are stored; months are always recomputed.
+	zakatYears: ["deletedAt"],
 } as const satisfies OptionalSyncFieldsByTable;
 
 // sourceId is optional for legacy/manual records, but it is not null-written:
@@ -319,6 +328,7 @@ const NON_CLEARING_OPTIONAL_SYNC_FIELDS = {
 	reportTransactionTags: [],
 	reportManualEntries: [],
 	reportMonthlySalaryRows: [],
+	zakatYears: [],
 } as const satisfies NonClearingOptionalSyncFieldsByTable;
 
 const LOCAL_ONLY_SYNC_FIELDS = new Set(["pendingSync", "syncedAt"]);
@@ -484,6 +494,9 @@ async function putLocalRecord(tableName: SyncableTable, record: SyncableRecord):
 				break;
 			case "reportMonthlySalaryRows":
 				await localDb.reportMonthlySalaryRows.put(localRecord as ReportMonthlySalaryRow);
+				break;
+			case "zakatYears":
+				await localDb.zakatYears.put(localRecord as ZakatYearOverride);
 				break;
 		}
 	});

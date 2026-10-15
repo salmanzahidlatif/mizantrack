@@ -7,6 +7,8 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db/local";
+import { KNOWN_RAMADAN_DATES } from "@/lib/islamicCalendar";
+import { ZAKAT_YEAR_DEFINITIONS } from "@/lib/zakatEngine";
 
 const USER_ID = "user-zakat-test";
 
@@ -195,5 +197,82 @@ describe("Gold price cache (DbConfig)", () => {
 	it("goldApiKey defaults to undefined", async () => {
 		const config = await db.dbConfig.get(USER_ID);
 		expect(config?.goldApiKey).toBeUndefined();
+	});
+});
+
+describe("Pakistan Ramaḍān calendar", () => {
+	// Announced by the Ruet-e-Hilal committee. These are sightings, not calculations, so
+	// they are pinned here: a silent drift would move every month-end balance and change
+	// the zakat owed for that year.
+	const ANNOUNCED_RAMADAN_STARTS: Record<number, string> = {
+		1440: "2019-05-07",
+		1441: "2020-04-25",
+		1442: "2021-04-14",
+		1443: "2022-04-04",
+		1444: "2023-03-23",
+		1445: "2024-03-12",
+		1446: "2025-03-02",
+	};
+
+	function isoOf(date: Date): string {
+		return [
+			date.getFullYear(),
+			String(date.getMonth() + 1).padStart(2, "0"),
+			String(date.getDate()).padStart(2, "0"),
+		].join("-");
+	}
+
+	it("starts every announced zakat year on the announced Pakistan date", () => {
+		for (const definition of ZAKAT_YEAR_DEFINITIONS) {
+			const announced = ANNOUNCED_RAMADAN_STARTS[definition.islamicYear];
+			if (!announced) continue;
+
+			expect(isoOf(definition.months[0]!.startDate)).toBe(announced);
+			expect(definition.ramadanSource).toBe("announced");
+		}
+	});
+
+	it("agrees with the known Ramaḍān table", () => {
+		for (const definition of ZAKAT_YEAR_DEFINITIONS) {
+			const known = KNOWN_RAMADAN_DATES[definition.islamicYear];
+			if (!known) {
+				expect(definition.ramadanSource).toBe("computed");
+				continue;
+			}
+			expect(known).toBe(isoOf(definition.months[0]!.startDate));
+		}
+	});
+
+	it("covers each year with twelve gapless lunar months", () => {
+		for (const definition of ZAKAT_YEAR_DEFINITIONS) {
+			expect(definition.months).toHaveLength(12);
+
+			for (let index = 1; index < definition.months.length; index += 1) {
+				const previousEnd = definition.months[index - 1]!.endDate;
+				const currentStart = definition.months[index]!.startDate;
+				const gapDays = Math.round(
+					(currentStart.getTime() - previousEnd.getTime()) / (24 * 60 * 60 * 1000)
+				);
+				expect(gapDays, `gap before month ${index} of ${definition.sheetYear}`).toBe(1);
+			}
+
+			const first = definition.months[0]!.startDate;
+			const last = definition.months[11]!.endDate;
+			const totalDays = Math.round((last.getTime() - first.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+			expect(totalDays).toBeGreaterThanOrEqual(354);
+			expect(totalDays).toBeLessThanOrEqual(355);
+		}
+	});
+
+	it("starts at the owner's first recorded year and runs consecutively", () => {
+		const islamicYears = ZAKAT_YEAR_DEFINITIONS.map((definition) => definition.islamicYear);
+
+		// Records begin with AH1440 (the 2020 sheet); nothing exists before it.
+		expect(islamicYears[0]).toBe(1440);
+		expect(islamicYears.length).toBeGreaterThanOrEqual(7);
+
+		for (let index = 1; index < islamicYears.length; index += 1) {
+			expect(islamicYears[index]).toBe(islamicYears[index - 1]! + 1);
+		}
 	});
 });

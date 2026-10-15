@@ -16,6 +16,7 @@ import type {
 	ReportTransactionTag,
 	ReportManualEntry,
 	ReportMonthlySalaryRow,
+	ZakatYearOverride,
 } from "@/types";
 
 export interface SyncDirtyFields {
@@ -155,6 +156,13 @@ const STORES_V11: StoreSchema = {
 		"id, userId, fiscalYearKey, monthKey, [userId+fiscalYearKey], updatedAt, deletedAt, pendingSync",
 };
 
+// Version 12: Persist per-year Ramaḍān anchors so the zakat calendar is data, not code.
+// Only the anchor is stored — the twelve months are always recomputed from it.
+const STORES_V12: StoreSchema = {
+	...STORES_V11,
+	zakatYears: "id, userId, islamicYear, [userId+islamicYear], updatedAt, deletedAt, pendingSync",
+};
+
 export class MizanTrackDB extends Dexie {
 	accounts!: Table<Account>;
 	categories!: Table<Category>;
@@ -171,6 +179,7 @@ export class MizanTrackDB extends Dexie {
 	reportTransactionTags!: Table<ReportTransactionTag>;
 	reportManualEntries!: Table<ReportManualEntry>;
 	reportMonthlySalaryRows!: Table<ReportMonthlySalaryRow>;
+	zakatYears!: Table<ZakatYearOverride>;
 
 	constructor(databaseName = "mizantrack") {
 		super(databaseName);
@@ -202,6 +211,7 @@ export class MizanTrackDB extends Dexie {
 				await syncMeta.put({ id: ZAKAT_CURRENCY_BACKFILL_META_ID, timestamp: Date.now() });
 			});
 		this.version(11).stores(STORES_V11);
+		this.version(12).stores(STORES_V12);
 
 		installSyncDirtyHooks(this.accounts);
 		installSyncDirtyHooks(this.categories);
@@ -215,6 +225,7 @@ export class MizanTrackDB extends Dexie {
 		installSyncDirtyHooks(this.reportTransactionTags);
 		installSyncDirtyHooks(this.reportManualEntries);
 		installSyncDirtyHooks(this.reportMonthlySalaryRows);
+		installSyncDirtyHooks(this.zakatYears);
 
 		this.on("blocked", (event) => {
 			console.warn("MizanTrack IndexedDB upgrade is blocked by another open app instance.", event);

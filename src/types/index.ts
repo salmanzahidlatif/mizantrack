@@ -317,6 +317,31 @@ export interface ZakatPayment {
 	deletedAt?: number;
 }
 
+/**
+ * Where a zakat year's 1 Ramaḍān anchor came from.
+ * - "announced": a Ruet-e-Hilal sighting that actually happened
+ * - "computed": umalqura 1 Ramaḍān + 1 day, pending an announcement
+ * - "manual": the owner corrected the anchor by hand
+ */
+export type ZakatYearSource = "announced" | "computed" | "manual";
+
+/**
+ * A persisted 1 Ramaḍān anchor for one zakat year.
+ *
+ * Only the anchor and its provenance are stored — the twelve months are always
+ * recomputed from it, so a stored month can never contradict its own start date.
+ */
+export interface ZakatYearOverride {
+	id: string; // `${userId}:${islamicYear}`
+	userId: string;
+	islamicYear: number;
+	ramadanStart: number; // Unix ms at local midnight
+	source: ZakatYearSource;
+	updatedAt: number;
+	deletedAt?: number;
+	pendingSync?: boolean;
+}
+
 // Islamic calendar months in zakat year order (Ramadan → Sha'ban)
 export const ISLAMIC_MONTHS = [
 	"Ramaḍān",

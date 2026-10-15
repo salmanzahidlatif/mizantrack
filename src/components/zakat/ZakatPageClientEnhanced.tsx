@@ -24,6 +24,7 @@ import { GoldItemsManager } from "@/components/zakat/GoldItemsManager";
 import { ZakatHistory } from "@/components/zakat/ZakatHistory";
 import { ZakatMonthlyBalances } from "@/components/zakat/ZakatMonthlyBalances";
 import { ZakatPayments } from "@/components/zakat/ZakatPayments";
+import { ZakatYearCalendarControl } from "@/components/zakat/ZakatYearCalendarControl";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
@@ -34,8 +35,13 @@ import {
 } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import { fetchGoldPrice } from "@/lib/goldPrice";
-import { getZakatYear } from "@/lib/islamicCalendar";
+import {
+	getDefaultZakatIslamicYear,
+	getZakatYearDefinitionByIslamicYear,
+	getZakatYearDefinitions,
+} from "@/lib/zakatEngine";
 import { exportZakatSummary } from "@/lib/zakatExport";
+import { toRamadanStartMap } from "@/lib/zakatYearRepository";
 import { useFilterStore } from "@/store/filter-store";
 
 import type { Account, GoldItem, GoldPurity } from "@/types";
@@ -115,8 +121,40 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
 	const [activeTab, setActiveTab] = useState("calculator");
 
+	// ── Zakat calendar ──────────────────────────────────────────────────────
+	// Saved Ramaḍān anchors win over the announced/computed defaults. Only the anchor is
+	// stored; the twelve months are regenerated from it on every render.
+	const zakatYearOverrides = useLiveQuery(
+		() => db.zakatYears.where("userId").equals(userId).toArray(),
+		[userId]
+	);
+	const ramadanStarts = useMemo(
+		() => toRamadanStartMap(zakatYearOverrides ?? []),
+		[zakatYearOverrides]
+	);
+	const availableZakatYears = useMemo(
+		() => getZakatYearDefinitions({ ramadanStarts }),
+		[ramadanStarts]
+	);
+	const assessmentIslamicYear = useMemo(
+		() => getDefaultZakatIslamicYear(assessmentDate, { ramadanStarts }),
+		[assessmentDate, ramadanStarts]
+	);
+	// null means "follow the assessment date"; a number pins the Monthly View to one year.
+	const [pinnedIslamicYear, setPinnedIslamicYear] = useState<number | null>(null);
+	const selectedYear = useMemo(
+		() =>
+			getZakatYearDefinitionByIslamicYear(pinnedIslamicYear ?? assessmentIslamicYear, {
+				ramadanStarts,
+			}),
+		[assessmentIslamicYear, pinnedIslamicYear, ramadanStarts]
+	);
+
 	// Islamic year for current assessment date
-	const currentIslamicYear = useMemo(() => getZakatYear(assessmentDate), [assessmentDate]);
+	const currentIslamicYear = useMemo(
+		() => getZakatYearDefinitionByIslamicYear(assessmentIslamicYear, { ramadanStarts }).zakatYear,
+		[assessmentIslamicYear, ramadanStarts]
+	);
 
 	// Auto-fetch gold price on mount
 	useEffect(() => {
@@ -232,6 +270,16 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		// Switch to history tab to see the saved calculation
 		setActiveTab("history");
 	}
+
+	const monthlyViewMonths = useMemo(
+		() =>
+			selectedYear.months.map((month) => ({
+				month: month.month,
+				year: month.islamicYear,
+				endDate: month.endDate,
+			})),
+		[selectedYear]
+	);
 
 	// ── Export ──────────────────────────────────────────────────────────────
 	function handleExport() {
@@ -577,13 +625,20 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 				{/* MONTHLY VIEW TAB */}
 				<TabsContent value="monthly" className="space-y-5">
+					<ZakatYearCalendarControl
+						userId={userId}
+						years={availableZakatYears}
+						definition={selectedYear}
+						onSelectIslamicYear={setPinnedIslamicYear}
+					/>
 					<ZakatMonthlyBalances
 						userId={userId}
-						zakatYear={currentIslamicYear}
+						zakatYear={selectedYear.zakatYear}
 						accounts={zakatAccounts}
 						zakatableIds={zakatableIds}
 						referenceCurrency={referenceCurrency}
 						exchangeRates={exchangeRates}
+						months={monthlyViewMonths}
 					/>
 				</TabsContent>
 

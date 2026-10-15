@@ -53,6 +53,7 @@ const backupTableLabels: Record<string, string> = {
 	reportTransactionTags: "Report transaction tags",
 	reportManualEntries: "Report manual entries",
 	reportMonthlySalaryRows: "Report salary rows",
+	zakatYears: "Zakat calendar years",
 };
 
 const backupCountFormatter = new Intl.NumberFormat();
