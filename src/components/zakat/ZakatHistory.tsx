@@ -104,16 +104,6 @@ export function ZakatHistory({ userId, referenceCurrency }: ZakatHistoryProps) {
 								<div className="flex-1">
 									<div className="flex items-center gap-2">
 										<span className="font-medium">Islamic Year {calc.islamicYear}</span>
-										{calc.isLiable && (
-											<span className="rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-												Liable
-											</span>
-										)}
-										{!calc.isLiable && (
-											<span className="rounded bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-												Not Liable
-											</span>
-										)}
 									</div>
 									<p className="text-xs text-muted-foreground">
 										Assessment: {format(new Date(calc.assessmentDate), "d MMM yyyy")}
@@ -121,31 +111,30 @@ export function ZakatHistory({ userId, referenceCurrency }: ZakatHistoryProps) {
 								</div>
 
 								<div className="flex items-center gap-4">
-									{calc.isLiable && (
-										<div className="text-right">
-											<CurrencyAmount
-												amount={calc.zakatObligation}
-												currency={calc.referenceCurrency}
-												className="text-sm font-bold text-primary"
-											/>
-											{paidAmount > 0 && (
-												<p className="text-xs text-muted-foreground">
-													Paid:{" "}
-													<CurrencyAmount
-														amount={paidAmount}
-														currency={calc.referenceCurrency}
-														className="font-normal tracking-normal"
-													/>{" "}
-													• Remaining:{" "}
-													<CurrencyAmount
-														amount={remaining}
-														currency={calc.referenceCurrency}
-														className="font-normal tracking-normal"
-													/>
-												</p>
-											)}
-										</div>
-									)}
+									{/* Zakat is owed on the wealth held, so the amount always shows. */}
+									<div className="text-right">
+										<CurrencyAmount
+											amount={calc.zakatObligation}
+											currency={calc.referenceCurrency}
+											className="text-sm font-bold text-primary"
+										/>
+										{paidAmount > 0 && (
+											<p className="text-xs text-muted-foreground">
+												Paid:{" "}
+												<CurrencyAmount
+													amount={paidAmount}
+													currency={calc.referenceCurrency}
+													className="font-normal tracking-normal"
+												/>{" "}
+												• Remaining:{" "}
+												<CurrencyAmount
+													amount={remaining}
+													currency={calc.referenceCurrency}
+													className="font-normal tracking-normal"
+												/>
+											</p>
+										)}
+									</div>
 
 									{isExpanded ? (
 										<ChevronUp className="h-4 w-4 text-muted-foreground" />
@@ -163,10 +152,6 @@ export function ZakatHistory({ userId, referenceCurrency }: ZakatHistoryProps) {
 										<div className="space-y-2">
 											<h4 className="text-xs font-medium text-muted-foreground">Configuration</h4>
 											<div className="space-y-1 text-sm">
-												<div className="flex justify-between">
-													<span className="text-muted-foreground">Nisab Standard:</span>
-													<span className="capitalize">{calc.nisabStandard}</span>
-												</div>
 												<div className="flex justify-between">
 													<span className="text-muted-foreground">Gold Price/gram:</span>
 													<CurrencyAmount
@@ -196,14 +181,6 @@ export function ZakatHistory({ userId, referenceCurrency }: ZakatHistoryProps) {
 													<span className="text-muted-foreground">Total Zakatable:</span>
 													<CurrencyAmount
 														amount={calc.totalZakatable}
-														currency={calc.referenceCurrency}
-														className="font-normal tracking-normal"
-													/>
-												</div>
-												<div className="flex justify-between">
-													<span className="text-muted-foreground">Nisab Threshold:</span>
-													<CurrencyAmount
-														amount={calc.nisabThreshold}
 														currency={calc.referenceCurrency}
 														className="font-normal tracking-normal"
 													/>
