@@ -19,9 +19,11 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GoldItemsManager } from "@/components/zakat/GoldItemsManager";
 import { ZakatCarryForwardControl } from "@/components/zakat/ZakatCarryForwardControl";
+import { ZakatGoldYearPricing } from "@/components/zakat/ZakatGoldYearPricing";
 import { ZakatHistory } from "@/components/zakat/ZakatHistory";
 import { ZakatMonthlyBalances } from "@/components/zakat/ZakatMonthlyBalances";
 import { ZakatPayments } from "@/components/zakat/ZakatPayments";
@@ -49,6 +51,15 @@ import {
 	getZakatYearDefinitions,
 } from "@/lib/zakatEngine";
 import { exportZakat } from "@/lib/zakatExport";
+import {
+	getZakatGoldGramsByPurity,
+	getZakatGoldYearPrices,
+	hasZakatGoldYearGramsSnapshot,
+	resolveZakatGoldGramsByPurity,
+	sumZakatGoldGrams,
+	toZakatGoldItems,
+	toZakatGoldYearMap,
+} from "@/lib/zakatGoldYearRepository";
 import { toPastRemainingOverrideMap, toRamadanStartMap } from "@/lib/zakatYearRepository";
 import { useFilterStore } from "@/store/filter-store";
 
@@ -63,9 +74,6 @@ import type { Account, GoldItem, GoldPurity } from "@/types";
 /** The owner's workbook rate. Editable on screen; stored with every calculation. */
 export const DEFAULT_ZAKAT_RATE_PERCENT = 2.5;
 
-/** Gold is valued per karat, never converted to a pure-gold equivalent. */
-const GOLD_PURITIES: GoldPurity[] = ["21k", "22k", "24k"];
-
 export function getZakatAccountsForCurrency(accounts: Account[], currency: string): Account[] {
 	const normalizedCurrency = normalizeCurrencyCode(currency);
 	return accounts.filter(
@@ -76,15 +84,6 @@ export function getZakatAccountsForCurrency(accounts: Account[], currency: strin
 export function getZakatGoldItemsForCurrency(items: GoldItem[], currency: string): GoldItem[] {
 	const normalizedCurrency = normalizeCurrencyCode(currency);
 	return items.filter((item) => normalizeCurrencyCode(item.currency) === normalizedCurrency);
-}
-
-/** Itemised pieces rolled up to per-karat grams, the way the owner's sheet prices gold. */
-export function getZakatGoldGramsByPurity(items: GoldItem[]): Map<GoldPurity, number> {
-	const grams = new Map<GoldPurity, number>();
-	for (const item of items) {
-		grams.set(item.purity, (grams.get(item.purity) ?? 0) + item.weight);
-	}
-	return grams;
 }
 
 export function getZakatGoldGrams(items: GoldItem[]): number {
@@ -100,7 +99,10 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
 	const referenceCurrency = resolveCurrencyCode(activeCurrency, config?.currency);
-	const accounts = useAccounts(userId);
+	// Archived accounts are loaded as well: a closed account still held wealth during a
+	// past year, so it must be selectable and must reach the grid, the totals, MINIMUM
+	// and MAXIMUM. The toggle below only decides whether the picker lists them.
+	const accounts = useAccounts(userId, { showArchived: true });
 
 	const allTransactions = useLiveQuery(
 		() =>
@@ -126,7 +128,20 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		[accounts, referenceCurrency]
 	);
 
-	// Payments recorded for this currency; the export filters them down to the year.
+	// Gold priced per zakat year. The inventory is NOT duplicated per year: only the
+	// price the owner typed for a year — and the grams snapshot, when a year's holding
+	// genuinely differed — lives here.
+	const zakatGoldYearRecords = useLiveQuery(
+		() => db.zakatGoldYears.where("userId").equals(userId).toArray(),
+		[userId]
+	);
+	const zakatGoldYears = useMemo(
+		() => toZakatGoldYearMap(zakatGoldYearRecords ?? [], referenceCurrency),
+		[referenceCurrency, zakatGoldYearRecords]
+	);
+
+	// Payments recorded for this currency; the screen, the engine and the export all
+	// filter them down to the selected year.
 	const zakatPayments = useLiveQuery(
 		() =>
 			db.zakatPayments
@@ -141,9 +156,9 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const [assessmentDate, setAssessmentDate] = useState<Date>(new Date());
 	const [calOpen, setCalOpen] = useState(false);
 	const [zakatableIds, setZakatableIds] = useState<Set<string>>(new Set());
-	// Price per gram for each karat, in the selected currency. Decision 6: the owner
-	// prices each karat; nothing is scaled off a single pure-gold figure.
-	const [goldPrices, setGoldPrices] = useState<Partial<Record<GoldPurity, number>>>({});
+	// Spec section 5.14: archived accounts are listed by default, with a toggle to hide
+	// them. A selected one stays listed either way (5.15).
+	const [showArchivedAccounts, setShowArchivedAccounts] = useState(true);
 	const [basis, setBasis] = useState<ZakatBasis>("minimum");
 	const [ratePercent, setRatePercent] = useState<number>(DEFAULT_ZAKAT_RATE_PERCENT);
 	const [activeTab, setActiveTab] = useState("calculator");
@@ -189,10 +204,13 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		setBasis("minimum");
 	}, [selectedYear.islamicYear]);
 
-	// Pre-select all asset accounts as zakatable (not liabilities)
+	// Pre-select open asset accounts (not liabilities, not closed ones). A closed account
+	// is offered rather than assumed: only the owner knows which year it belonged to.
 	useEffect(() => {
 		if (zakatAccounts.length > 0 && zakatableIds.size === 0) {
-			const assetAccounts = zakatAccounts.filter((a) => a.accountType !== "liability");
+			const assetAccounts = zakatAccounts.filter(
+				(a) => a.accountType !== "liability" && !a.isArchived
+			);
 			setZakatableIds(new Set(assetAccounts.map((a) => a.id)));
 		}
 	}, [zakatAccounts, zakatableIds.size]);
@@ -214,9 +232,27 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 	// ── Gold ────────────────────────────────────────────────────────────────
 	// Pieces roll up to per-karat grams; each karat is valued at its own price per gram
-	// in the selected currency. No pure-gold conversion enters the calculation.
-	const goldGramsByPurity = useMemo(() => getZakatGoldGramsByPurity(goldItems ?? []), [goldItems]);
-	const totalGoldWeightGrams = useMemo(() => getZakatGoldGrams(goldItems ?? []), [goldItems]);
+	// for THE SELECTED YEAR, in the selected currency. The same 170.52g is worth a
+	// different amount every year because the price, not the weight, belongs to the year.
+	const inventoryGramsByPurity = useMemo(
+		() => getZakatGoldGramsByPurity(goldItems ?? []),
+		[goldItems]
+	);
+	const selectedGoldYear = zakatGoldYears.get(selectedYear.islamicYear);
+	const goldGramsByPurity = useMemo(
+		() => resolveZakatGoldGramsByPurity(selectedGoldYear, goldItems ?? []),
+		[goldItems, selectedGoldYear]
+	);
+	const goldPrices = useMemo(() => getZakatGoldYearPrices(selectedGoldYear), [selectedGoldYear]);
+	// The sheet prices gold at 1 Ramaḍān, so that is what an unpriced year opens on.
+	const goldPriceDate = useMemo(
+		() =>
+			selectedGoldYear?.priceDate !== undefined
+				? new Date(selectedGoldYear.priceDate)
+				: selectedYear.months[0]!.startDate,
+		[selectedGoldYear, selectedYear]
+	);
+	const totalGoldWeightGrams = sumZakatGoldGrams(goldGramsByPurity);
 
 	// ── Carry-forward ───────────────────────────────────────────────────────
 	// Past Remaining is DERIVED, never stored: a year's Balance/Excess becomes the next
@@ -237,6 +273,7 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 			number,
 			{ grid: ZakatYearGrid; input: ZakatAssessmentInput; assessment: ZakatAssessment }
 		>();
+		const goldItemsForYear = goldItems ?? [];
 		const firstIslamicYear = Math.max(
 			ZAKAT_EARLIEST_ISLAMIC_YEAR,
 			selectedYear.islamicYear - ZAKAT_CARRY_FORWARD_MAX_LOOKBACK_YEARS
@@ -263,16 +300,27 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 			// are only being settled to carry a balance forward, and decision 2 says a
 			// deliberate switch is never remembered or applied to another year.
 			const isSelectedYear = islamicYear === selectedYear.islamicYear;
+			// Each year is valued at ITS OWN price per gram, on its own grams. A year the
+			// owner never priced contributes no gold value rather than borrowing another
+			// year's price.
+			const goldYear = zakatGoldYears.get(islamicYear);
+			const gramsByPurity = resolveZakatGoldGramsByPurity(goldYear, goldItemsForYear);
+			const priceDate =
+				goldYear?.priceDate !== undefined
+					? new Date(goldYear.priceDate)
+					: definition.months[0]!.startDate;
 			const input: ZakatAssessmentInput = {
 				monthlyTotals: grid.monthlyTotals,
 				basis: isSelectedYear ? basis : "minimum",
-				goldItems: goldItems ?? [],
+				goldItems: toZakatGoldItems(gramsByPurity),
 				goldPrices: {
-					priceDate: format(assessmentDate, "yyyy-MM-dd"),
-					pricesByPurity: goldPrices,
+					priceDate: format(priceDate, "yyyy-MM-dd"),
+					pricesByPurity: getZakatGoldYearPrices(goldYear),
 				},
 				ratePercent: isSelectedYear ? ratePercent : DEFAULT_ZAKAT_RATE_PERCENT,
 				pastRemaining: 0,
+				// Paid is the sum of THIS year's payments, which is the same figure the
+				// carry-forward chain settles the year on.
 				payments: (zakatPayments ?? []).filter(
 					(payment) => payment.islamicYear === definition.zakatYear
 				),
@@ -285,14 +333,13 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	}, [
 		accounts,
 		allTransactions,
-		assessmentDate,
 		basis,
 		goldItems,
-		goldPrices,
 		ramadanStarts,
 		ratePercent,
 		selectedYear,
 		userId,
+		zakatGoldYears,
 		zakatPayments,
 		zakatableIds,
 	]);
@@ -387,12 +434,14 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 					currency: referenceCurrency,
 					basis,
 					ratePercent,
+					// The selected year's grams at the selected year's price, kept as two
+					// separate editable inputs so the workbook formula stays live.
 					goldRows: [...goldGramsByPurity.entries()].map(([purity, grams]) => ({
 						purity,
 						grams,
 						pricePerGram: goldPrices[purity] ?? 0,
 					})),
-					goldPriceDate: assessmentDate,
+					goldPriceDate,
 					pastRemaining: carryForward.pastRemaining,
 					payments: (zakatPayments ?? [])
 						.filter((payment) => payment.islamicYear === selectedYear.zakatYear)

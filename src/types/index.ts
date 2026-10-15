@@ -254,6 +254,32 @@ export interface GoldItem {
 	deletedAt?: number;
 }
 
+/**
+ * What one zakat year paid per gram for gold, in one currency.
+ *
+ * The inventory itself is NOT duplicated per year: the owner's pieces barely change
+ * while the price changes every year, so only the price — and, when a year's holding
+ * genuinely differed, a per-karat grams snapshot — belongs to the year. A year with no
+ * snapshot values today's inventory at that year's price, which is exactly how the
+ * owner's workbook carried 170.52 g from 2021 through 2024 at four different prices.
+ */
+export interface ZakatGoldYear {
+	id: string; // `${userId}:${currency}:${islamicYear}`
+	userId: string;
+	currency: string;
+	/** The Islamic year Ramaḍān falls in — the stable identity of a zakat year. */
+	islamicYear: number;
+	/** Price per gram for each karat, in `currency`, as of `priceDate`. */
+	pricesByPurity: Partial<Record<GoldPurity, number>>;
+	/** Grams held that year, per karat. Absent means "whatever the inventory holds now". */
+	gramsByPurity?: Partial<Record<GoldPurity, number>>;
+	/** Unix ms the prices were taken on; the sheet prices gold at 1 Ramaḍān. */
+	priceDate?: number;
+	updatedAt: number;
+	deletedAt?: number;
+	pendingSync?: boolean;
+}
+
 export interface ZakatCalculation {
 	id: string;
 	userId: string;

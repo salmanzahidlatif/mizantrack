@@ -17,6 +17,7 @@ import type {
 	ReportManualEntry,
 	ReportMonthlySalaryRow,
 	ZakatYearOverride,
+	ZakatGoldYear,
 } from "@/types";
 
 export interface SyncDirtyFields {
@@ -163,6 +164,14 @@ const STORES_V12: StoreSchema = {
 	zakatYears: "id, userId, islamicYear, [userId+islamicYear], updatedAt, deletedAt, pendingSync",
 };
 
+// Version 13: Per-year gold pricing. The inventory stays single — only the price per
+// gram the owner types for a year (and an optional grams snapshot) belongs to the year.
+const STORES_V13: StoreSchema = {
+	...STORES_V12,
+	zakatGoldYears:
+		"id, userId, currency, islamicYear, [userId+currency], [userId+islamicYear], updatedAt, deletedAt, pendingSync",
+};
+
 export class MizanTrackDB extends Dexie {
 	accounts!: Table<Account>;
 	categories!: Table<Category>;
@@ -180,6 +189,7 @@ export class MizanTrackDB extends Dexie {
 	reportManualEntries!: Table<ReportManualEntry>;
 	reportMonthlySalaryRows!: Table<ReportMonthlySalaryRow>;
 	zakatYears!: Table<ZakatYearOverride>;
+	zakatGoldYears!: Table<ZakatGoldYear>;
 
 	constructor(databaseName = "mizantrack") {
 		super(databaseName);
@@ -212,6 +222,7 @@ export class MizanTrackDB extends Dexie {
 			});
 		this.version(11).stores(STORES_V11);
 		this.version(12).stores(STORES_V12);
+		this.version(13).stores(STORES_V13);
 
 		installSyncDirtyHooks(this.accounts);
 		installSyncDirtyHooks(this.categories);
@@ -226,6 +237,7 @@ export class MizanTrackDB extends Dexie {
 		installSyncDirtyHooks(this.reportManualEntries);
 		installSyncDirtyHooks(this.reportMonthlySalaryRows);
 		installSyncDirtyHooks(this.zakatYears);
+		installSyncDirtyHooks(this.zakatGoldYears);
 
 		this.on("blocked", (event) => {
 			console.warn("MizanTrack IndexedDB upgrade is blocked by another open app instance.", event);

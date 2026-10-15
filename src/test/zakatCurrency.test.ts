@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-	getPureGoldWeightGrams,
 	getZakatAccountsForCurrency,
+	getZakatGoldGrams,
 	getZakatGoldItemsForCurrency,
 } from "@/components/zakat/ZakatPageClientEnhanced";
 import { computeAccountBalances } from "@/lib/analytics/balanceMath";
@@ -50,7 +50,7 @@ describe("zakat currency scoping", () => {
 		const pkrGoldItems = getZakatGoldItemsForCurrency(goldItems, "pkr");
 
 		expect(pkrAccounts.map((item) => item.id)).toEqual(["pkr-cash", "lower-pkr-cash"]);
-		expect(getPureGoldWeightGrams(pkrGoldItems)).toBe(15);
+		expect(getZakatGoldGrams(pkrGoldItems)).toBe(15);
 		expect(pkrAccounts.reduce((sum, item) => sum + item.openingBalance, 0)).toBe(125_000);
 	});
 
