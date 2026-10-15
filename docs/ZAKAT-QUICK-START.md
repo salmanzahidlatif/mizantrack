@@ -1,6 +1,6 @@
 # Zakat Calculator - Quick Start Guide
 
-> **Superseded note — October 2026:** The authoritative zakat requirements are now in [`zakat-requirements-2026-10.md`](zakat-requirements-2026-10.md). This quick-start remains useful only as a rough description of intended user-facing areas such as account selection, gold entry, yearly/monthly review, history, and payment recording. It is obsolete where it tells the user to choose a nisab standard, gates saving/calculation on being above nisab, uses pure-gold conversion as the main calculation model, or implies the existing screen matches the owner's spreadsheet. It also contradicts `zakat-enhancement-plan.md` about the Papa loan: this guide says "Papa owes you / you lent TO Papa", while the plan and the verified `2024` workbook sheet treat Papa as a negative liability. The Papa sign is an open question for the owner; do not guess from this guide.
+> **Superseded note — October 2026:** The authoritative zakat requirements are now in [`zakat-requirements-2026-10.md`](zakat-requirements-2026-10.md). This quick-start remains useful only as a rough description of intended user-facing areas such as account selection, gold entry, yearly/monthly review, history, and payment recording. It is obsolete where it tells the user to choose a nisab standard, gates saving/calculation on being above nisab, uses pure-gold conversion as the main calculation model, or implies the existing screen matches the owner's spreadsheet. It is also obsolete where it converts currencies: the owner has since confirmed that AED and PKR are assessed completely separately, one zakat result per currency, with no FX rate stored or applied. The Papa loan sign is **settled**: the owner **owes** Papa, so `Loan <-- (Papa)` is a liability that reduces zakatable wealth, matching the trusted `2024` sheet and `zakat-enhancement-plan.md`. Scenario 2 below has been corrected accordingly.
 
 ## 🚀 What's New?
 
@@ -223,26 +223,29 @@ Choose based on your school of thought.
 
 ### Scenario 2: You owe a loan AND gave a loan
 
-**Papa owes you**: (You lent TO Papa)
+**You owe Papa**: (You borrowed FROM Papa — this is the owner's actual case)
+- Type: Liability
+- Include in zakatable accounts
+- Reduces your wealth, as a negative row in the same total
+
+**Basit bhai owes you**: (You lent TO Basit bhai)
 - Type: Asset
 - Include in zakatable accounts
 - Adds to your wealth
 
-**You owe Papa**: (You borrowed FROM Papa)
-- Type: Liability
-- Include in zakatable accounts
-- Reduces your wealth
-
 ### Scenario 3: Foreign currency accounts
+
+> **Obsolete.** Currencies are no longer combined. AED and PKR are assessed
+> separately, one zakat result per currency, and no exchange rate is stored or
+> applied. Select the currency, and only that currency's accounts and gold feed
+> the calculation.
 
 Example: You have USD and AED accounts, reference is PKR
 
-1. Select USD and AED accounts as zakatable
-2. App shows "Exchange Rates" section
-3. Enter: 
-   - 1 USD = 278 PKR
-   - 1 AED = 75.7 PKR
-4. All accounts converted to PKR for calculation
+~~1. Select USD and AED accounts as zakatable~~
+~~2. App shows "Exchange Rates" section~~
+~~3. Enter: 1 USD = 278 PKR, 1 AED = 75.7 PKR~~
+~~4. All accounts converted to PKR for calculation~~
 
 ### Scenario 4: Monthly balances fluctuate
 

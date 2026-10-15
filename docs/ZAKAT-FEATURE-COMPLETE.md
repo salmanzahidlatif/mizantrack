@@ -1,6 +1,20 @@
 # Zakat Feature Enhancement - Complete Implementation
 
-> **Superseded note — October 2026:** The authoritative zakat requirements are now in [`zakat-requirements-2026-10.md`](zakat-requirements-2026-10.md). This document is historical and its "complete implementation" claim should not be trusted: its own 10-item testing checklist is still unticked. It remains useful as a map of attempted feature areas and files, but is obsolete where it claims the feature is complete, uses nisab or `isLiable`, relies on a single assessment-date calculation, treats approximate Islamic dates as acceptable, or describes gold as pure-weight conversion instead of the owner's spreadsheet model of grams × per-karat price in the selected currency.
+> **Superseded note — October 2026 (verified against the code).** The authoritative zakat requirements are in [`zakat-requirements-2026-10.md`](zakat-requirements-2026-10.md). **This document's "complete implementation" title and its ✅ marks are not accurate and must not be used as a statement of what exists.** It is kept only as history: a map of which feature areas were attempted and which files were touched in July 2026.
+>
+> Checked against the current code, the following claims below are now wrong:
+>
+> - **"Hardcoded accurate Ramadan dates"** — the calendar is no longer hardcoded. `src/lib/zakatCalendar.ts` derives month lengths from the built-in Umm al-Qura calendar (`Intl.DateTimeFormat("en-u-ca-islamic-umalqura")`, no dependency added) and anchors each year on the announced Pakistan 1 Ramaḍān, with a manual override taking priority. `src/lib/islamicCalendar.ts` now re-exports that module and holds no dates of its own. Two of the dates quoted below are also simply wrong: AH1444 began `2023-03-23` in Pakistan, not `2024-03-24`, and AH1446 began `2025-03-02`, not `2025-03-01`.
+> - **"Known Limitations → Islamic Calendar: uses approximate calculations"** — no longer true, and no `hijri-converter` dependency is needed or wanted.
+> - **Nisab, `isLiable`, and the gold/silver standard** — out of scope entirely. They still exist in `ZakatPageClientEnhanced.tsx` as leftovers to be removed, not as intended behaviour.
+> - **Single assessment-date calculation** — superseded by the Ramaḍān → Shaʿbān yearly grid with month-end balances, `MINIMUM`/`MAXIMUM` and a selectable basis (`computeZakatYearGrid` in `src/lib/zakatEngine.ts`).
+> - **Gold as pure-weight conversion** — superseded by the owner's model: grams × per-karat price per gram in the selected currency, on an effective date.
+> - **Multi-currency via exchange rates** — superseded. AED and PKR are assessed completely separately, one result per currency, with no FX rate stored or applied.
+> - **"Export to Excel" listed as a future enhancement** — it exists. `src/lib/zakatExport.ts` writes the owner's layout with live formulas, covered by `src/test/zakatExport.test.ts`.
+> - **Database "version 2"** — the schema is at v12; `zakatYears` was added there, and `goldItems`, `zakatCalculations`, `zakatPayments` and `zakatYears` are all Firebase-synced.
+> - **`ZakatPageClient.tsx`** — deleted in October 2026. It was unreachable: `src/app/(app)/zakat/page.tsx` renders `ZakatPageClientEnhanced`.
+>
+> The 10-item testing checklist at the bottom was never ticked, which is itself a sign of how far the "complete" framing should be trusted.
 
 ## 🎉 Summary
 
@@ -297,7 +311,7 @@ src/
 │   ├── ZakatMonthlyBalances.tsx       [NEW] Monthly balance table
 │   ├── ZakatHistory.tsx               [NEW] Calculation history
 │   ├── ZakatPayments.tsx              [NEW] Payment tracking
-│   ├── ZakatPageClient.tsx            [OLD] Original calculator
+│   ├── ZakatPageClient.tsx            [DELETED Oct 2026] Unreachable original calculator
 │   └── ZakatPageClientEnhanced.tsx    [NEW] Enhanced with tabs
 ├── lib/
 │   ├── islamicCalendar.ts             [NEW] Hijri date utilities

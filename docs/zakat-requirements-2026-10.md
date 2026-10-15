@@ -67,6 +67,31 @@ These ranges are copied from the trusted `2020`–`2024` sheets.
 
 Keep spelling/formatting differences visible when reconciling; do not silently normalise historical sheet text.
 
+### How month ranges are produced now
+
+The hardcoded year table is gone. `src/lib/zakatCalendar.ts` generates every zakat year from two independent inputs:
+
+- **Month shapes** come from the Umm al-Qura calendar through the built-in `Intl.DateTimeFormat("en-u-ca-islamic-umalqura")`. No dependency was added. These lengths reproduce the trusted `2020`–`2024` sheets month for month.
+- **Anchors** — the first day of Ramaḍān — cannot be computed. Pakistan's Ruet-e-Hilal committee announces them after an actual sighting. Pakistan usually falls one day after the Umm al-Qura date, but not always: AH1443 ran two days later and AH1444 landed on the same day. Resolution order is therefore **manual override → announced Pakistan date → umalqura + 1 day** for years not yet announced.
+
+Announced Pakistan 1 Ramaḍān dates currently in use (`PAKISTAN_RAMADAN_STARTS`):
+
+| Hijri year | 1 Ramaḍān (Pakistan) |
+| --- | --- |
+| 1440 | 2019-05-07 |
+| 1441 | 2020-04-25 |
+| 1442 | 2021-04-14 |
+| 1443 | 2022-04-04 |
+| 1444 | 2023-03-23 |
+| 1445 | 2024-03-12 |
+| 1446 | 2025-03-02 |
+
+Only the anchor and its provenance (`announced`, `manual`, or `computed`) are persisted, in the `zakatYears` table added at schema v12. The twelve months are always recomputed from the anchor, so a stored year can never hold stale boundaries.
+
+The generated window runs from **AH1440**, the owner's earliest records, to five years ahead of the current zakat year.
+
+**AH1445 and AH1446 month boundaries changed deliberately.** Their previously stored months were a placeholder 30/29 alternation rather than real lunar months, which is consistent with this document already treating the `2025` and `2026` sheets as untrusted. AH1440–1444 are pinned by `src/test/zakatCalendar.test.ts` to their exact previous boundaries, so the trusted years cannot move.
+
 ## 4. Calculation model
 
 ### 4.1 Account month-end balances
@@ -367,8 +392,8 @@ The owner has both AED and PKR books. The AED book begins part-way through the h
 - AED and PKR obligations were separate, with no FX model.
 - Payments did not reduce any obligation and did not create transactions.
 - The code embedded unstated jurisprudential choices: nisab, 85g gold standard, positive balances zakatable, and pure-gold valuation.
-- `goldItems`, `zakatCalculations`, and `zakatPayments` are not covered by Firebase sync, so zakat data has no cloud backup.
-- Islamic dates in the app may be approximate. The spreadsheet records exact Gregorian ranges; a wrong boundary shifts balances and changes zakat owed.
+- ~~`goldItems`, `zakatCalculations`, and `zakatPayments` are not covered by Firebase sync, so zakat data has no cloud backup.~~ **Fixed.** All three are registered in `CORE_SYNC_TABLES` in `src/lib/db/sync.ts`, alongside `zakatYears` (the calendar anchor table added at schema v12). Zakat data now pushes and pulls like every other table, and `src/test/zakatYearSync.test.ts` covers push, pull and tombstone propagation for the anchors.
+- ~~Islamic dates in the app may be approximate.~~ **Fixed.** Month boundaries are generated from the Umm al-Qura calendar and anchored on the announced Pakistan 1 Ramaḍān; see "How month ranges are produced now" in section 3. The trusted AH1440–1444 boundaries are pinned by regression tests.
 
 ## 11. Export requirement
 
@@ -385,43 +410,50 @@ Minimum export requirements:
 - payments with Person and Location;
 - enough visible inputs that the owner can audit or edit the workbook by hand.
 
-## 12. Open questions for the owner
+## 12. Owner decisions (previously open questions)
 
-1. Papa loan sign: `ZAKAT-QUICK-START.md:218-229` says the owner **lent to Papa**; `zakat-enhancement-plan.md:185-186` says the owner **owes Papa**. These are opposite signs. The trusted `2024` sheet treats `Loan <-- (Papa)` as a negative liability. Confirm the intended sign and label for each year.
-2. Basis default: should new years default to minimum, with maximum only as comparison, or remember the owner's last selected basis?
-3. Payment date: the workbook records amount/person/location; should the app also require payment date?
-4. Islamic month ranges: who is the authority for future exact Gregorian ranges, and should the owner be able to edit them manually?
-5. Multi-currency: how should AED and PKR be combined for zakat if both are selected? Which FX date/rate should be used?
-6. Gold inventory: should 21k/22k entries be entered as aggregate grams per karat, or itemised jewellery pieces that roll up to per-karat totals?
-7. Properties/investments: `2021` and `2022` include property/addition sections with special formulas. Should those be modelled as normal accounts, a separate asset type, or left as historical spreadsheet-only rows?
-8. Fresh 2025/2026 computation: are there any owner-approved manual corrections to apply before using MizanTrack transaction data as the source?
-9. Carry-forward editing: should the app auto-carry the prior balance/excess but let the owner override it before finalising the year?
+All nine questions below have been answered by the owner. They are decisions now, not questions; implement to them.
 
-## 13. Start here tomorrow
+1. **Papa loan sign — the owner OWES Papa.** `Loan <-- (Papa)` is a **liability**: a negative balance that reduces zakatable wealth, exactly as the trusted `2024` sheet treats it. `ZAKAT-QUICK-START.md` previously implied the owner had lent *to* Papa; that guide has been corrected. `zakat-enhancement-plan.md` was already right. The same shape applies to `Loan <-- (Basit bhai)` in reverse: that one is money lent out, so it stays an asset.
+2. **Basis default — always MINIMUM.** A new year opens on the minimum basis. The maximum is shown for comparison only and is never the default; the owner may still switch a year to it deliberately. Do not remember or restore a previous year's basis selection.
+3. **Payment date — optional.** No date is preselected, and past dates must be accepted. The owner records payments after the fact, so forcing today's date falsifies the record.
+4. **Islamic month ranges — generated, anchored, overridable.** See "How month ranges are produced now" in section 3: Umm al-Qura month lengths, announced Pakistan 1 Ramaḍān anchors, and a manual override that wins over both. Only the anchor is stored; the months are always recomputed.
+5. **Multi-currency — AED and PKR stay completely separate.** One zakat result per currency, never combined. No FX rate is stored and none is applied. A currency's zakat is computed from that currency's accounts and gold only.
+6. **Gold inventory — itemised pieces that roll up to per-karat totals.** The owner enters individual pieces; grams are summed per karat. Value is `grams × price per gram for that karat` in the selected currency, priced on an effective date (typically 1 Ramaḍān). No pure-gold conversion in the calculation model.
+7. **Properties/investments — historical spreadsheet rows only.** The `2021` and `2022` property and addition sections stay as history. They are not modelled as accounts and no new asset type is introduced for them.
+8. **Fresh 2025/2026 — computed, then reviewed.** Both years are computed fresh from MizanTrack data and then reviewed by the owner before being finalised. No manual corrections are pre-applied to the source data.
+9. **Carry-forward editing — auto-carry, overridable.** The previous year's balance/excess carries forward automatically into `Past Remaining`, stays visible, and can be overridden by the owner before the year is finalised.
 
-Current state:
+## 13. Current status
+
+Verified against the code at commit `839d243`. Another agent is actively working on the zakat screen, so the UI gaps below may close sooner than this file is updated; the engine, export and calendar facts are test-backed.
+
+### Settled
 
 - This file is the single zakat starting point.
-- `2020`–`2024` are the trusted history and test/reconciliation target.
-- `2025` and `2026` spreadsheet figures are known-bad and must be computed fresh.
-- Nisab is removed from scope.
-- Old zakat data tables are not synced to Firebase.
+- `2020`–`2024` are the trusted history and reconciliation target; `2025` and `2026` spreadsheet figures remain known-bad.
+- Nisab is out of scope.
+- The nine decisions in section 12 are no longer open.
 
-What the implementation agent is building:
+### Built and covered by tests
 
-1. A yearly Ramaḍān → Shaʿbān zakat screen.
-2. Exact Islamic month ranges and account month-end balances.
-3. Minimum/maximum yearly totals with selectable basis.
-4. Per-karat gold valuation in selected currency on an effective date.
-5. Editable zakat percentage defaulting to 2.5%.
-6. Payments and carry-forward that affect Total To Pay / Balance-Excess.
-7. Fresh computed 2025 and 2026 results from real MizanTrack data.
-8. `.xlsx` export matching the owner's workbook layout and formulas.
+1. **Generated zakat calendar** — `src/lib/zakatCalendar.ts` derives all twelve months from Umm al-Qura lengths and an announced or overridden Ramaḍān anchor. `src/lib/islamicCalendar.ts` is now a thin re-export over it and holds no dates of its own. AH1440–1444 boundaries are pinned verbatim in `src/test/zakatCalendar.test.ts`.
+2. **Anchor persistence and sync** — `zakatYears` (schema v12) stores the anchor and its provenance; `src/lib/zakatYearRepository.ts` saves, lists and resets overrides, and `src/test/zakatYearSync.test.ts` covers push, pull and tombstones. `goldItems`, `zakatCalculations` and `zakatPayments` are synced too.
+3. **Yearly grid engine** — `computeZakatYearGrid` in `src/lib/zakatEngine.ts` produces per-account month-end balances, monthly `TOTAL`s, `MINIMUM`, `MAXIMUM`, gold at grams × per-karat price, the editable rate, `Per Month`, `Past Remaining`, `Total To Pay`, `Paid` and `Balance/Excess`. Liabilities enter the same sum as negatives rather than being excluded.
+4. **Reconciliation against the owner's own numbers** — `src/test/zakatReconciliation.test.ts` reproduces the `2024` worked example in section 8 end to end, including the overpayment, and checks that switching to the maximum basis actually changes the result.
+5. **`.xlsx` export with live formulas** — `src/lib/zakatExport.ts` writes one sheet per Ramaḍān year with real `SUM`/`MIN`/`MAX`/`PRODUCT` formulas chaining TOTAL → MINIMUM/MAXIMUM → GOLD → ZAKAT → Total To Pay → Balance/Excess, payments with Person and Location, and no currency conversion anywhere. Covered by `src/test/zakatExport.test.ts`, including a write/read round trip that proves the formulas survive.
+6. **Year selection and calendar control in the UI** — `ZakatYearCalendarControl.tsx` shows the anchor, its source, and lets the owner override or reset it; the monthly view renders the twelve months with their Gregorian ranges and month-end balances.
 
-First decisions needed from the owner:
+### Still outstanding
 
-1. Confirm Papa loan sign and label.
-2. Confirm minimum/default basis behaviour.
-3. Confirm multi-currency FX rule.
-4. Confirm source/editing process for Islamic date ranges.
-5. Confirm whether payments need dates.
+The gap is concentrated in the screen, not the engine. The calculator tab has not yet been moved onto the yearly grid, so several decisions above are implemented in `zakatEngine`/`zakatExport` but not yet reachable from the UI:
+
+1. **Nisab is still live in the calculator tab.** `ZakatPageClientEnhanced.tsx` still computes a gold/silver nisab threshold and an `isLiable` flag, and refuses to save a calculation below it. Section 2 says nisab is dropped; this is the largest remaining contradiction.
+2. **Basis is not selectable on screen.** The export call hardcodes `basis: "minimum"` and the monthly view surfaces only the minimum. The engine and workbook already support both.
+3. **Carry-forward is not wired.** The export passes `pastRemaining: 0`; nothing carries the previous year's balance/excess forward or offers it for editing (decision 9).
+4. **Gold pricing is still pure-weight.** The screen derives each karat's price by scaling one gold price through a purity factor, instead of letting the owner enter an editable price per gram per karat as decision 6 and section 4.3 require.
+5. **The zakat rate is not editable in the UI.** It is a `2.5` constant, and the calculator tab multiplies by a hardcoded `0.025`.
+6. **The monthly view still converts currencies and drops signs.** `ZakatMonthlyBalances.tsx` applies an exchange rate and skips negative asset balances and positive liability balances. Decision 5 forbids conversion, and section 4.1 requires negative rows to stay inside the same sum.
+7. **Payment dates are still mandatory and preselected to today**, against decision 3.
+8. **`2025` and `2026` have not been computed fresh**, and the per-currency data-coverage statement required by section 9 has not been produced.
+9. **Legacy tests still assert nisab behaviour** (`src/test/zakat.test.ts`), so removing nisab will need that coverage retired alongside it.
