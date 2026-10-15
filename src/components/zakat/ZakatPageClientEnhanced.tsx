@@ -228,8 +228,7 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const visibleZakatAccounts = useMemo(
 		() =>
 			zakatAccounts.filter(
-				(account) =>
-					showArchivedAccounts || !account.isArchived || zakatableIds.has(account.id)
+				(account) => showArchivedAccounts || !account.isArchived || zakatableIds.has(account.id)
 			),
 		[showArchivedAccounts, zakatAccounts, zakatableIds]
 	);
@@ -559,8 +558,8 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 							</div>
 						</div>
 						<p className="text-xs text-muted-foreground">
-							A closed account still held wealth in the years it was open. Select it and it
-							counts towards this year&apos;s monthly totals, MINIMUM and MAXIMUM.
+							A closed account still held wealth in the years it was open. Select it and it counts
+							towards this year&apos;s monthly totals, MINIMUM and MAXIMUM.
 						</p>
 						<div className="space-y-2">
 							{visibleZakatAccounts.map((account) => {

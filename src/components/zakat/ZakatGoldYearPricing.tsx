@@ -50,17 +50,13 @@ function formatInputAmount(amount: number | undefined): string {
 	return String(Number(amount.toFixed(4)));
 }
 
-function toDraftPrices(
-	prices: Partial<Record<GoldPurity, number>>
-): Record<GoldPurity, string> {
+function toDraftPrices(prices: Partial<Record<GoldPurity, number>>): Record<GoldPurity, string> {
 	return Object.fromEntries(
 		ZAKAT_GOLD_PURITIES.map((purity) => [purity, formatInputAmount(prices[purity])])
 	) as Record<GoldPurity, string>;
 }
 
-function parseDraftPrices(
-	draft: Record<GoldPurity, string>
-): Partial<Record<GoldPurity, number>> {
+function parseDraftPrices(draft: Record<GoldPurity, string>): Partial<Record<GoldPurity, number>> {
 	const parsed: Partial<Record<GoldPurity, number>> = {};
 	for (const purity of ZAKAT_GOLD_PURITIES) {
 		const raw = draft[purity].trim();
@@ -174,8 +170,8 @@ export function ZakatGoldYearPricing({
 				<div>
 					<h3 className="text-sm font-medium">Gold Price per gram ({currency})</h3>
 					<p className="text-xs text-muted-foreground">
-						One price per karat for {yearLabel}, in {currency}. Each year keeps its own price —
-						the same weight is worth something different every year.
+						One price per karat for {yearLabel}, in {currency}. Each year keeps its own price — the
+						same weight is worth something different every year.
 					</p>
 				</div>
 				<Badge variant={isPriced ? "secondary" : "outline"}>
@@ -204,9 +200,7 @@ export function ZakatGoldYearPricing({
 								}
 								placeholder="0.00"
 							/>
-							<p className="text-xs text-muted-foreground tabular-nums">
-								{grams.toFixed(2)}g held
-							</p>
+							<p className="text-xs text-muted-foreground tabular-nums">{grams.toFixed(2)}g held</p>
 						</div>
 					);
 				})}
@@ -260,10 +254,7 @@ export function ZakatGoldYearPricing({
 				<Button variant="outline" disabled={saving || !isDirty} onClick={() => void handleSave()}>
 					Save
 				</Button>
-				<Button
-					variant="ghost"
-					disabled={saving}
-					onClick={() => void handleToggleGramsSnapshot()}>
+				<Button variant="ghost" disabled={saving} onClick={() => void handleToggleGramsSnapshot()}>
 					{hasGramsSnapshot ? (
 						<Unlock className="mr-1.5 h-3.5 w-3.5" />
 					) : (

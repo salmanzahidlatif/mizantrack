@@ -245,9 +245,7 @@ function PaymentForm({
 	const [amount, setAmount] = useState(initialData?.amount ?? 0);
 	// A payment belongs to the year that was selected when it was recorded, not to the
 	// year that happens to be running today.
-	const [islamicYear, setIslamicYear] = useState(
-		initialData?.islamicYear ?? selectedIslamicYear
-	);
+	const [islamicYear, setIslamicYear] = useState(initialData?.islamicYear ?? selectedIslamicYear);
 	const [calculationId, setCalculationId] = useState(initialData?.calculationId ?? "");
 	const [recipient, setRecipient] = useState(initialData?.recipient ?? "");
 	const [notes, setNotes] = useState(initialData?.notes ?? "");

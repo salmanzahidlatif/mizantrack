@@ -91,9 +91,7 @@ export function resolveZakatGoldGramsByPurity(
 	if (!hasZakatGoldYearGramsSnapshot(record)) return getZakatGoldGramsByPurity(items);
 
 	const snapshot = toUsableAmounts(record?.gramsByPurity);
-	return new Map(
-		Object.entries(snapshot).map(([purity, grams]) => [purity as GoldPurity, grams])
-	);
+	return new Map(Object.entries(snapshot).map(([purity, grams]) => [purity as GoldPurity, grams]));
 }
 
 /**
@@ -123,9 +121,7 @@ async function getLiveGoldYear(
 	currency: string,
 	islamicYear: number
 ): Promise<ZakatGoldYear | undefined> {
-	const existing = await db.zakatGoldYears.get(
-		buildZakatGoldYearId(userId, currency, islamicYear)
-	);
+	const existing = await db.zakatGoldYears.get(buildZakatGoldYearId(userId, currency, islamicYear));
 	return existing && !existing.deletedAt ? existing : undefined;
 }
 
@@ -229,9 +225,7 @@ export async function clearZakatGoldYear(
 	currency: string,
 	islamicYear: number
 ): Promise<void> {
-	const existing = await db.zakatGoldYears.get(
-		buildZakatGoldYearId(userId, currency, islamicYear)
-	);
+	const existing = await db.zakatGoldYears.get(buildZakatGoldYearId(userId, currency, islamicYear));
 	if (!existing || existing.deletedAt) return;
 
 	const now = Date.now();
