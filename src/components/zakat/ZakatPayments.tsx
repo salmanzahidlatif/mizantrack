@@ -19,16 +19,32 @@ import {
 } from "@/components/ui/select";
 import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
-import { getZakatYear } from "@/lib/islamicCalendar";
 
 import type { ZakatPayment } from "@/types";
 
 interface ZakatPaymentsProps {
 	userId: string;
 	referenceCurrency: string;
+	/** The selected zakat year, e.g. "1444-1445". Payments belong to exactly one. */
+	islamicYear: string;
+	/** Label for the sheet this year maps to, e.g. "2024 (1444–1445)". */
+	yearLabel: string;
 }
 
-export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps) {
+/**
+ * The payment list for ONE zakat year.
+ *
+ * A payment is attributed to the year that was selected when it was recorded, and the
+ * list and the Paid total show that year only — the same filter the engine applies when
+ * it settles the year, so the screen, the carry-forward chain and the export cannot
+ * disagree about what was paid.
+ */
+export function ZakatPayments({
+	userId,
+	referenceCurrency,
+	islamicYear,
+	yearLabel,
+}: ZakatPaymentsProps) {
 	const [isAdding, setIsAdding] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -40,11 +56,12 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 				.filter(
 					(p) =>
 						!p.deletedAt &&
+						p.islamicYear === islamicYear &&
 						normalizeCurrencyCode(p.currency) === normalizeCurrencyCode(referenceCurrency)
 				)
 				.reverse()
 				.sortBy("date"),
-		[userId, referenceCurrency]
+		[userId, referenceCurrency, islamicYear]
 	);
 
 	const calculations = useLiveQuery(
@@ -87,14 +104,18 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 		}
 	}
 
+	// The year's Paid, which is exactly what `calculateZakatAssessment` sums for it.
 	const totalPaid = payments?.reduce((sum, p) => sum + p.amount, 0) ?? 0;
 
 	return (
 		<div className="space-y-4">
 			<div className="flex items-center justify-between">
 				<div>
-					<h3 className="text-sm font-medium">Zakat Payments</h3>
-					<p className="text-xs text-muted-foreground">Track when and where you paid zakat</p>
+					<h3 className="text-sm font-medium">Zakat Payments • {yearLabel}</h3>
+					<p className="text-xs text-muted-foreground">
+						Payments recorded against this zakat year. Switch the year in Monthly View to record
+						against another one.
+					</p>
 				</div>
 				<Button size="sm" variant="outline" onClick={() => setIsAdding(true)}>
 					<Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -104,7 +125,7 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 
 			{/* Summary */}
 			<div className="rounded-lg border bg-card p-3">
-				<p className="text-xs text-muted-foreground">Total Paid (All Time)</p>
+				<p className="text-xs text-muted-foreground">Paid ({yearLabel})</p>
 				<p className="text-lg font-bold tabular-nums">
 					<CurrencyAmount
 						amount={totalPaid}
@@ -118,6 +139,7 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 			{isAdding && (
 				<PaymentForm
 					calculations={calculations ?? []}
+					islamicYear={islamicYear}
 					onSave={(data) => void handleAdd(data)}
 					onCancel={() => setIsAdding(false)}
 					referenceCurrency={referenceCurrency}
@@ -132,6 +154,7 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 							key={payment.id}
 							initialData={payment}
 							calculations={calculations ?? []}
+							islamicYear={islamicYear}
 							onSave={(data) => void handleUpdate(payment.id, data)}
 							onCancel={() => setEditingId(null)}
 							referenceCurrency={referenceCurrency}
@@ -181,7 +204,8 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 
 				{payments?.length === 0 && !isAdding && (
 					<p className="py-8 text-center text-sm text-muted-foreground">
-						No {referenceCurrency} payments recorded yet. Add your first payment above.
+						No {referenceCurrency} payments recorded for {yearLabel} yet. Add your first payment
+						above.
 					</p>
 				)}
 			</div>
@@ -196,6 +220,8 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 interface PaymentFormProps {
 	initialData?: Partial<ZakatPayment>;
 	calculations: Array<{ id: string; islamicYear: string; zakatObligation: number }>;
+	/** The selected zakat year a new payment is attributed to. */
+	islamicYear: string;
 	onSave: (
 		data: Omit<ZakatPayment, "id" | "userId" | "currency" | "createdAt" | "updatedAt">
 	) => void;
@@ -206,6 +232,7 @@ interface PaymentFormProps {
 function PaymentForm({
 	initialData,
 	calculations,
+	islamicYear: selectedIslamicYear,
 	onSave,
 	onCancel,
 	referenceCurrency,
@@ -216,20 +243,19 @@ function PaymentForm({
 		initialData?.date ? new Date(initialData.date).toISOString().split("T")[0] : ""
 	);
 	const [amount, setAmount] = useState(initialData?.amount ?? 0);
+	// A payment belongs to the year that was selected when it was recorded, not to the
+	// year that happens to be running today.
 	const [islamicYear, setIslamicYear] = useState(
-		initialData?.islamicYear ?? getZakatYear(new Date())
+		initialData?.islamicYear ?? selectedIslamicYear
 	);
 	const [calculationId, setCalculationId] = useState(initialData?.calculationId ?? "");
 	const [recipient, setRecipient] = useState(initialData?.recipient ?? "");
 	const [notes, setNotes] = useState(initialData?.notes ?? "");
 
-	// Get unique Islamic years from calculations
-	const uniqueYears = Array.from(new Set(calculations.map((c) => c.islamicYear)))
-		.sort()
-		.reverse();
-
-	// If no calculations, allow manual entry
-	const availableYears = uniqueYears.length > 0 ? uniqueYears : [islamicYear];
+	// The selected year always leads the list, so recording against it is the default.
+	const availableYears = Array.from(
+		new Set([islamicYear, selectedIslamicYear, ...calculations.map((c) => c.islamicYear)])
+	);
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();

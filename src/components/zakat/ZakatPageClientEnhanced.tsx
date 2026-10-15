@@ -223,6 +223,17 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		});
 	}, [zakatAccounts]);
 
+	// A selected account stays listed even when the toggle hides closed ones, so a year
+	// can never be assessed on an account the owner cannot see (spec section 5.15).
+	const visibleZakatAccounts = useMemo(
+		() =>
+			zakatAccounts.filter(
+				(account) =>
+					showArchivedAccounts || !account.isArchived || zakatableIds.has(account.id)
+			),
+		[showArchivedAccounts, zakatAccounts, zakatableIds]
+	);
+
 	// ── Balance at assessment date ──────────────────────────────────────────
 	const accountBalances = useMemo(() => {
 		if (!allTransactions || !accounts) return new Map<string, number>();
@@ -511,43 +522,19 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 						</Popover>
 					</div>
 
-					{/* Gold prices per karat */}
-					<div className="space-y-2">
-						<div>
-							<Label>Gold Price per gram ({referenceCurrency})</Label>
-							<p className="text-xs text-muted-foreground">
-								One price per karat, in {referenceCurrency}, as of{" "}
-								{format(assessmentDate, "d MMM yyyy")}. The owner&apos;s sheet prices gold on 1
-								Ramaḍān.
-							</p>
-						</div>
-						<div className="grid gap-3 sm:grid-cols-3">
-							{GOLD_PURITIES.map((purity) => (
-								<div key={purity} className="space-y-1">
-									<Label htmlFor={`gold-price-${purity}`} className="text-xs text-muted-foreground">
-										{purity} price per gram
-									</Label>
-									<Input
-										id={`gold-price-${purity}`}
-										type="number"
-										min={0}
-										step="any"
-										value={goldPrices[purity] ?? ""}
-										onChange={(e) =>
-											setGoldPrices((prev) => ({
-												...prev,
-												[purity]: parseFloat(e.target.value) || 0,
-											}))
-										}
-										placeholder="0.00"
-									/>
-									<p className="text-xs text-muted-foreground tabular-nums">
-										{(goldGramsByPurity.get(purity) ?? 0).toFixed(2)}g held
-									</p>
-								</div>
-							))}
-						</div>
-					</div>
+					{/* Gold price for the selected zakat year */}
+					<ZakatGoldYearPricing
+						userId={userId}
+						currency={referenceCurrency}
+						islamicYear={selectedYear.islamicYear}
+						yearLabel={selectedYear.label}
+						pricesByPurity={goldPrices}
+						gramsByPurity={goldGramsByPurity}
+						inventoryGramsByPurity={inventoryGramsByPurity}
+						hasGramsSnapshot={hasZakatGoldYearGramsSnapshot(selectedGoldYear)}
+						priceDate={goldPriceDate}
+						goldValue={selectedYearAssessment?.goldValue ?? 0}
+					/>
 
 					{/* Gold Items */}
 					<GoldItemsManager
@@ -558,9 +545,25 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 					{/* Account selection */}
 					<div className="space-y-2">
-						<Label>Zakatable Accounts</Label>
+						<div className="flex flex-wrap items-center justify-between gap-2">
+							<Label>Zakatable Accounts</Label>
+							<div className="flex items-center gap-2">
+								<Label htmlFor="zakat-show-archived" className="text-xs text-muted-foreground">
+									Show closed accounts
+								</Label>
+								<Switch
+									id="zakat-show-archived"
+									checked={showArchivedAccounts}
+									onCheckedChange={setShowArchivedAccounts}
+								/>
+							</div>
+						</div>
+						<p className="text-xs text-muted-foreground">
+							A closed account still held wealth in the years it was open. Select it and it
+							counts towards this year&apos;s monthly totals, MINIMUM and MAXIMUM.
+						</p>
 						<div className="space-y-2">
-							{zakatAccounts.map((account) => {
+							{visibleZakatAccounts.map((account) => {
 								const selected = zakatableIds.has(account.id);
 								const balance = accountBalances.get(account.id) ?? 0;
 								const isLiability = account.accountType === "liability";
@@ -596,6 +599,11 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 													Liability
 												</span>
 											)}
+											{account.isArchived && (
+												<span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+													Closed
+												</span>
+											)}
 										</div>
 										<span
 											className={`text-sm font-medium tabular-nums ${balance < 0 ? "text-destructive" : ""}`}>
@@ -608,7 +616,7 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 									</button>
 								);
 							})}
-							{zakatAccounts.length === 0 && (
+							{visibleZakatAccounts.length === 0 && (
 								<p className="text-sm text-muted-foreground">
 									No {referenceCurrency} accounts found.
 								</p>
@@ -853,7 +861,12 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 				{/* PAYMENTS TAB */}
 				<TabsContent value="payments" className="space-y-5">
-					<ZakatPayments userId={userId} referenceCurrency={referenceCurrency} />
+					<ZakatPayments
+						userId={userId}
+						referenceCurrency={referenceCurrency}
+						islamicYear={selectedYear.zakatYear}
+						yearLabel={selectedYear.label}
+					/>
 				</TabsContent>
 			</Tabs>
 		</div>

@@ -28,8 +28,9 @@ export function ZakatMonthlyBalances({ grid, currency, basis }: ZakatMonthlyBala
 
 	const { months } = grid.year;
 	// Every included account contributes its month-end balance as it stands — a negative
-	// asset genuinely reduces wealth, so nothing is dropped for having the "wrong" sign.
-	// The signs themselves come from `normalizeZakatAccountBalance` inside the engine.
+	// asset genuinely reduces wealth, so nothing is dropped for having the "wrong" sign,
+	// and a closed account still counts for the years it was open. The signs themselves
+	// come from `normalizeZakatAccountBalance` inside the engine.
 	const basisAmount = basis === "minimum" ? grid.minimum : grid.maximum;
 
 	return (
@@ -97,6 +98,11 @@ export function ZakatMonthlyBalances({ grid, currency, basis }: ZakatMonthlyBala
 										{account.accountType === "liability" && (
 											<span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
 												Liability
+											</span>
+										)}
+										{account.isArchived && (
+											<span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+												Closed
 											</span>
 										)}
 									</div>
