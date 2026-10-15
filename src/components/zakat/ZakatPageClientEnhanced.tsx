@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GoldItemsManager } from "@/components/zakat/GoldItemsManager";
+import { ZakatCarryForwardControl } from "@/components/zakat/ZakatCarryForwardControl";
 import { ZakatHistory } from "@/components/zakat/ZakatHistory";
 import { ZakatMonthlyBalances } from "@/components/zakat/ZakatMonthlyBalances";
 import { ZakatPayments } from "@/components/zakat/ZakatPayments";
@@ -35,16 +36,24 @@ import {
 } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import { fetchGoldPrice } from "@/lib/goldPrice";
+import { ZAKAT_EARLIEST_ISLAMIC_YEAR } from "@/lib/zakatCalendar";
 import {
+	resolveZakatCarryForward,
+	ZAKAT_CARRY_FORWARD_MAX_LOOKBACK_YEARS,
+	type ZakatYearSettlement,
+} from "@/lib/zakatCarryForward";
+import {
+	calculateZakatAssessment,
 	computeZakatYearGrid,
 	getDefaultZakatIslamicYear,
 	getZakatYearDefinitionByIslamicYear,
 	getZakatYearDefinitions,
 } from "@/lib/zakatEngine";
 import { exportZakat } from "@/lib/zakatExport";
-import { toRamadanStartMap } from "@/lib/zakatYearRepository";
+import { toPastRemainingOverrideMap, toRamadanStartMap } from "@/lib/zakatYearRepository";
 import { useFilterStore } from "@/store/filter-store";
 
+import type { ZakatAssessment, ZakatAssessmentInput, ZakatYearGrid } from "@/lib/zakatEngine";
 import type { Account, GoldItem, GoldPurity } from "@/types";
 
 const NISAB_GOLD_GRAMS = 85;
@@ -295,18 +304,125 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		[selectedYear]
 	);
 
+	// ── Carry-forward ───────────────────────────────────────────────────────
+	// Past Remaining is DERIVED, never stored: a year's Balance/Excess becomes the next
+	// year's opening figure, and an overpayment carries as a negative so it reduces what
+	// the following year owes. Only a figure the owner typed is persisted.
+	const pastRemainingOverrides = useMemo(
+		() => toPastRemainingOverrideMap(zakatYearOverrides ?? []),
+		[zakatYearOverrides]
+	);
+
+	const goldPricesByPurity = useMemo(() => {
+		const prices: Partial<Record<GoldPurity, number>> = {};
+		for (const purity of Object.keys(PURITY_TO_PURE_GOLD) as GoldPurity[]) {
+			prices[purity] = goldPrice * PURITY_TO_PURE_GOLD[purity];
+		}
+		return prices;
+	}, [goldPrice]);
+
+	/**
+	 * Every year the chain needs, assessed with nothing carried in. The window is walked
+	 * forward from the earliest year the app exposes and capped, so resolving one year can
+	 * never turn into an unbounded walk back through history.
+	 */
+	const zakatYearAssessments = useMemo(() => {
+		const byYear = new Map<
+			number,
+			{ grid: ZakatYearGrid; input: ZakatAssessmentInput; assessment: ZakatAssessment }
+		>();
+		const firstIslamicYear = Math.max(
+			ZAKAT_EARLIEST_ISLAMIC_YEAR,
+			selectedYear.islamicYear - ZAKAT_CARRY_FORWARD_MAX_LOOKBACK_YEARS
+		);
+
+		for (
+			let islamicYear = firstIslamicYear;
+			islamicYear <= selectedYear.islamicYear;
+			islamicYear += 1
+		) {
+			const definition =
+				islamicYear === selectedYear.islamicYear
+					? selectedYear
+					: getZakatYearDefinitionByIslamicYear(islamicYear, { ramadanStarts });
+			const grid = computeZakatYearGrid({
+				userId,
+				accounts: accounts ?? [],
+				transactions: allTransactions ?? [],
+				selectedAccountIds: zakatableIds,
+				sheetYear: definition.sheetYear,
+				yearDefinition: definition,
+			});
+			const input: ZakatAssessmentInput = {
+				monthlyTotals: grid.monthlyTotals,
+				basis: "minimum",
+				goldItems: goldItems ?? [],
+				goldPrices: {
+					priceDate: format(assessmentDate, "yyyy-MM-dd"),
+					pricesByPurity: goldPricesByPurity,
+				},
+				ratePercent: ZAKAT_RATE_PERCENT,
+				pastRemaining: 0,
+				payments: (zakatPayments ?? []).filter(
+					(payment) => payment.islamicYear === definition.zakatYear
+				),
+			};
+
+			byYear.set(islamicYear, { grid, input, assessment: calculateZakatAssessment(input) });
+		}
+
+		return byYear;
+	}, [
+		accounts,
+		allTransactions,
+		assessmentDate,
+		goldItems,
+		goldPricesByPurity,
+		ramadanStarts,
+		selectedYear,
+		userId,
+		zakatPayments,
+		zakatableIds,
+	]);
+
+	const zakatYearSettlements = useMemo<ZakatYearSettlement[]>(
+		() =>
+			[...zakatYearAssessments.entries()].map(([islamicYear, { assessment }]) => ({
+				islamicYear,
+				zakatObligation: assessment.zakatObligation,
+				paid: assessment.paid,
+				pastRemainingOverride: pastRemainingOverrides.get(islamicYear),
+			})),
+		[pastRemainingOverrides, zakatYearAssessments]
+	);
+
+	const carryForward = useMemo(
+		() => resolveZakatCarryForward(selectedYear.islamicYear, zakatYearSettlements),
+		[selectedYear.islamicYear, zakatYearSettlements]
+	);
+
+	const selectedYearAssessment = useMemo(() => {
+		const base = zakatYearAssessments.get(selectedYear.islamicYear);
+		if (!base) return undefined;
+		return calculateZakatAssessment({ ...base.input, pastRemaining: carryForward.pastRemaining });
+	}, [carryForward.pastRemaining, selectedYear.islamicYear, zakatYearAssessments]);
+
 	// ── Export ──────────────────────────────────────────────────────────────
 	// The workbook mirrors the owner's sheet: one tab per Ramaḍān year, month-end
 	// balances per account, and live formulas down to Balance/Excess.
 	function handleExport() {
-		const grid = computeZakatYearGrid({
-			userId,
-			accounts: accounts ?? [],
-			transactions: allTransactions ?? [],
-			selectedAccountIds: zakatableIds,
-			sheetYear: selectedYear.sheetYear,
-			yearDefinition: selectedYear,
-		});
+		// The same grid the on-screen summary was assessed from, so the workbook's
+		// Total To Pay and Balance/Excess cannot disagree with what the owner just read.
+		const grid =
+			zakatYearAssessments.get(selectedYear.islamicYear)?.grid ??
+			computeZakatYearGrid({
+				userId,
+				accounts: accounts ?? [],
+				transactions: allTransactions ?? [],
+				selectedAccountIds: zakatableIds,
+				sheetYear: selectedYear.sheetYear,
+				yearDefinition: selectedYear,
+			});
 
 		const gramsByPurity = new Map<GoldPurity, number>();
 		for (const item of goldItems ?? []) {
@@ -326,7 +442,7 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 						pricePerGram: goldPrice * PURITY_TO_PURE_GOLD[purity],
 					})),
 					goldPriceDate: assessmentDate,
-					pastRemaining: 0,
+					pastRemaining: carryForward.pastRemaining,
 					payments: (zakatPayments ?? [])
 						.filter((payment) => payment.islamicYear === selectedYear.zakatYear)
 						.map((payment) => ({
@@ -667,6 +783,16 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 						definition={selectedYear}
 						onSelectIslamicYear={setPinnedIslamicYear}
 					/>
+					{selectedYearAssessment && (
+						<ZakatCarryForwardControl
+							userId={userId}
+							islamicYear={selectedYear.islamicYear}
+							yearLabel={selectedYear.label}
+							currency={referenceCurrency}
+							carryForward={carryForward}
+							assessment={selectedYearAssessment}
+						/>
+					)}
 					<ZakatMonthlyBalances
 						userId={userId}
 						zakatYear={selectedYear.zakatYear}

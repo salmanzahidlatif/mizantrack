@@ -12,7 +12,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db/local";
 import { CORE_SYNC_TABLES, syncAll } from "@/lib/db/sync";
 import { buildZakatYearDefinition, toLocalDateKey } from "@/lib/zakatCalendar";
-import { saveZakatYearOverride } from "@/lib/zakatYearRepository";
+import {
+	clearZakatPastRemainingOverride,
+	saveZakatPastRemainingOverride,
+	saveZakatYearOverride,
+} from "@/lib/zakatYearRepository";
 
 import type * as FirestoreModule from "firebase/firestore";
 
@@ -215,5 +219,136 @@ describe("syncAll — zakat calendar anchors", () => {
 		expect(findWrite(mockSet, `users/${USER_ID}/zakatYears/${USER_ID}:1449`)).toMatchObject({
 			deletedAt: 61_000,
 		});
+	});
+});
+
+describe("syncAll — zakat carry-forward overrides", () => {
+	const USER_ID = "zakat-carry-forward-sync-user";
+
+	beforeEach(async () => {
+		await db.zakatYears.where("userId").equals(USER_ID).delete();
+		await db.syncMeta.bulkDelete(coreSyncMetaKeys());
+	});
+
+	it("pushes a typed Past Remaining and its provenance", async () => {
+		await markAllTableMigrationsDone();
+		await saveZakatPastRemainingOverride({
+			userId: USER_ID,
+			islamicYear: 1444,
+			pastRemaining: 88_058,
+		});
+
+		const { mockSet } = await configureEmptySyncMocks();
+
+		const result = await syncAll(USER_ID);
+
+		expect(result.status).toBe("success");
+		expect(findWrite(mockSet, `users/${USER_ID}/zakatYears/${USER_ID}:1444`)).toMatchObject({
+			islamicYear: 1444,
+			pastRemainingOverride: 88_058,
+			pastRemainingSource: "manual",
+		});
+	});
+
+	it("keeps an overpayment negative across a push", async () => {
+		await markAllTableMigrationsDone();
+		await saveZakatPastRemainingOverride({
+			userId: USER_ID,
+			islamicYear: 1445,
+			pastRemaining: -51_395.6061,
+		});
+
+		const { mockSet } = await configureEmptySyncMocks();
+
+		await syncAll(USER_ID);
+
+		expect(findWrite(mockSet, `users/${USER_ID}/zakatYears/${USER_ID}:1445`)).toMatchObject({
+			pastRemainingOverride: -51_395.6061,
+		});
+	});
+
+	/**
+	 * An optional field that is simply absent reads as "unchanged" on the other device, so
+	 * a reset has to travel as an explicit null. That only happens if the field is
+	 * registered in `OPTIONAL_SYNC_FIELDS`.
+	 */
+	it("writes a cleared Past Remaining as null rather than omitting it", async () => {
+		await markAllTableMigrationsDone();
+		await saveZakatYearOverride({
+			userId: USER_ID,
+			islamicYear: 1447,
+			ramadanStart: new Date(2026, 1, 21),
+		});
+		await saveZakatPastRemainingOverride({
+			userId: USER_ID,
+			islamicYear: 1447,
+			pastRemaining: 4_511,
+		});
+		await clearZakatPastRemainingOverride(USER_ID, 1447);
+
+		const { mockSet } = await configureEmptySyncMocks();
+
+		await syncAll(USER_ID);
+
+		expect(findWrite(mockSet, `users/${USER_ID}/zakatYears/${USER_ID}:1447`)).toMatchObject({
+			ramadanStart: new Date(2026, 1, 21).getTime(),
+			pastRemainingOverride: null,
+			pastRemainingSource: null,
+		});
+	});
+
+	it("pulls a remote Past Remaining, and a null one arrives as no override at all", async () => {
+		await markAllTableMigrationsDone();
+		const { firestore } = await configureEmptySyncMocks();
+
+		configureRemoteZakatYears(firestore, USER_ID, [
+			{
+				id: `${USER_ID}:1443`,
+				data: {
+					id: `${USER_ID}:1443`,
+					userId: USER_ID,
+					islamicYear: 1443,
+					ramadanStart: new Date(2022, 3, 4).getTime(),
+					source: "announced",
+					pastRemainingOverride: 4_511,
+					pastRemainingSource: "manual",
+					deletedAt: null,
+					updatedAt: 70_000,
+					syncedAt: firestoreTimestamp(7_000),
+				},
+			},
+			{
+				id: `${USER_ID}:1444`,
+				data: {
+					id: `${USER_ID}:1444`,
+					userId: USER_ID,
+					islamicYear: 1444,
+					ramadanStart: new Date(2023, 2, 23).getTime(),
+					source: "announced",
+					pastRemainingOverride: null,
+					pastRemainingSource: null,
+					deletedAt: null,
+					updatedAt: 70_000,
+					syncedAt: firestoreTimestamp(7_000),
+				},
+			},
+		]);
+
+		const result = await syncAll(USER_ID);
+
+		expect(result.status).toBe("success");
+		expect(result.tables?.zakatYears).toMatchObject({ pulled: 2 });
+
+		const withOverride = await db.zakatYears.get(`${USER_ID}:1443`);
+		expect(withOverride).toMatchObject({
+			pastRemainingOverride: 4_511,
+			pastRemainingSource: "manual",
+		});
+
+		const cleared = await db.zakatYears.get(`${USER_ID}:1444`);
+		expect(Object.prototype.hasOwnProperty.call(cleared ?? {}, "pastRemainingOverride")).toBe(
+			false
+		);
+		expect(Object.prototype.hasOwnProperty.call(cleared ?? {}, "pastRemainingSource")).toBe(false);
 	});
 });

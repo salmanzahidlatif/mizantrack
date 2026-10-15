@@ -308,8 +308,9 @@ const OPTIONAL_SYNC_FIELDS = {
 		"providentFundRefund",
 		"deletedAt",
 	],
-	// Only the anchor and its provenance are stored; months are always recomputed.
-	zakatYears: ["deletedAt"],
+	// Only inputs are stored: the anchor, the owner's typed carry-forward, and provenance.
+	// Months and the automatic carry-forward are always recomputed.
+	zakatYears: ["pastRemainingOverride", "pastRemainingSource", "deletedAt"],
 } as const satisfies OptionalSyncFieldsByTable;
 
 // sourceId is optional for legacy/manual records, but it is not null-written:

@@ -326,10 +326,20 @@ export interface ZakatPayment {
 export type ZakatYearSource = "announced" | "computed" | "manual";
 
 /**
- * A persisted 1 Ramaḍān anchor for one zakat year.
+ * Where a zakat year's Past Remaining came from.
+ * - "auto": carried from the previous year's Balance/Excess
+ * - "manual": the owner typed a figure in place of the carried one
+ */
+export type ZakatCarryForwardSource = "auto" | "manual";
+
+/**
+ * The per-year zakat inputs the owner can override: the 1 Ramaḍān anchor and the
+ * balance carried in from earlier years.
  *
- * Only the anchor and its provenance are stored — the twelve months are always
- * recomputed from it, so a stored month can never contradict its own start date.
+ * Only inputs are stored. The twelve months are always recomputed from the anchor, and
+ * the carried balance is always recomputed from the previous year unless
+ * `pastRemainingOverride` holds a figure the owner typed, so nothing stored here can
+ * contradict what the engine derives.
  */
 export interface ZakatYearOverride {
 	id: string; // `${userId}:${islamicYear}`
@@ -337,6 +347,9 @@ export interface ZakatYearOverride {
 	islamicYear: number;
 	ramadanStart: number; // Unix ms at local midnight
 	source: ZakatYearSource;
+	/** Past Remaining typed by the owner. Absent means carry the previous year's balance. */
+	pastRemainingOverride?: number;
+	pastRemainingSource?: ZakatCarryForwardSource;
 	updatedAt: number;
 	deletedAt?: number;
 	pendingSync?: boolean;
