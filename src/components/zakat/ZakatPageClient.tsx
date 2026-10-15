@@ -23,12 +23,19 @@ import { useDbConfig } from "@/hooks/useDbConfig";
 import { computeAccountBalances, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import { fetchGoldPrice } from "@/lib/goldPrice";
-import { exportZakatSummary } from "@/lib/zakatExport";
+import {
+	computeZakatYearGrid,
+	getDefaultZakatIslamicYear,
+	getZakatYearDefinitionByIslamicYear,
+} from "@/lib/zakatEngine";
+import { exportZakat } from "@/lib/zakatExport";
 import { useFilterStore } from "@/store/filter-store";
 
 const TOLA_TO_GRAMS = 11.664;
 const NISAB_GOLD_GRAMS = 85;
 const NISAB_SILVER_GRAMS = 595;
+/** Exported workbooks carry the editable rate the owner's sheet defaults to. */
+const ZAKAT_RATE_PERCENT = 2.5;
 
 interface ZakatPageClientProps {
 	userId: string;
@@ -115,27 +122,30 @@ export function ZakatPageClient({ userId }: ZakatPageClientProps) {
 	// ── Export ──────────────────────────────────────────────────────────────
 	function handleExport() {
 		if (!accounts) return;
-		exportZakatSummary({
-			assessmentDate,
-			nisabStandard: nisab,
-			goldPricePerGram: goldPrice,
-			silverPricePerGram: silverPrice,
-			goldWeightGrams,
-			nisabThreshold,
-			totalZakatable,
-			zakatObligation,
-			referenceCurrency,
-			accounts: accounts.map((a) => {
-				const balance = accountBalances.get(a.id) ?? 0;
-				return {
-					title: a.title,
-					currency: a.currency,
-					balance,
-					exchangeRate: 1,
-					balanceInRef: balance,
-					zakatable: zakatableIds.has(a.id),
-				};
-			}),
+		const yearDefinition = getZakatYearDefinitionByIslamicYear(
+			getDefaultZakatIslamicYear(assessmentDate)
+		);
+
+		exportZakat({
+			years: [
+				{
+					grid: computeZakatYearGrid({
+						userId,
+						accounts,
+						transactions: allTransactions ?? [],
+						selectedAccountIds: zakatableIds,
+						sheetYear: yearDefinition.sheetYear,
+						yearDefinition,
+					}),
+					currency: referenceCurrency,
+					basis: "minimum",
+					ratePercent: ZAKAT_RATE_PERCENT,
+					goldRows: [{ purity: "21k", grams: goldWeightGrams, pricePerGram: goldPrice }],
+					goldPriceDate: assessmentDate,
+					pastRemaining: 0,
+					payments: [],
+				},
+			],
 		});
 	}
 

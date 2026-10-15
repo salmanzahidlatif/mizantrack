@@ -36,11 +36,12 @@ import {
 import { db } from "@/lib/db/local";
 import { fetchGoldPrice } from "@/lib/goldPrice";
 import {
+	computeZakatYearGrid,
 	getDefaultZakatIslamicYear,
 	getZakatYearDefinitionByIslamicYear,
 	getZakatYearDefinitions,
 } from "@/lib/zakatEngine";
-import { exportZakatSummary } from "@/lib/zakatExport";
+import { exportZakat } from "@/lib/zakatExport";
 import { toRamadanStartMap } from "@/lib/zakatYearRepository";
 import { useFilterStore } from "@/store/filter-store";
 
@@ -48,6 +49,8 @@ import type { Account, GoldItem, GoldPurity } from "@/types";
 
 const NISAB_GOLD_GRAMS = 85;
 const NISAB_SILVER_GRAMS = 595;
+/** Exported workbooks carry the editable rate the owner's sheet defaults to. */
+const ZAKAT_RATE_PERCENT = 2.5;
 
 const PURITY_TO_PURE_GOLD: Record<GoldPurity, number> = {
 	"21k": 21 / 24,
@@ -107,6 +110,17 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const zakatAccounts = useMemo(
 		() => getZakatAccountsForCurrency(accounts ?? [], referenceCurrency),
 		[accounts, referenceCurrency]
+	);
+
+	// Payments recorded for this currency; the export filters them down to the year.
+	const zakatPayments = useLiveQuery(
+		() =>
+			db.zakatPayments
+				.where("userId")
+				.equals(userId)
+				.filter((p) => !p.deletedAt && normalizeCurrencyCode(p.currency) === referenceCurrency)
+				.sortBy("date"),
+		[userId, referenceCurrency]
 	);
 
 	// ── Form state ──────────────────────────────────────────────────────────
@@ -282,28 +296,50 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	);
 
 	// ── Export ──────────────────────────────────────────────────────────────
+	// The workbook mirrors the owner's sheet: one tab per Ramaḍān year, month-end
+	// balances per account, and live formulas down to Balance/Excess.
 	function handleExport() {
-		exportZakatSummary({
-			assessmentDate,
-			nisabStandard: nisab,
-			goldPricePerGram: goldPrice,
-			silverPricePerGram: silverPrice,
-			goldWeightGrams: totalGoldWeightGrams,
-			nisabThreshold,
-			totalZakatable,
-			zakatObligation,
-			referenceCurrency,
-			accounts: zakatAccounts.map((a) => {
-				const balance = accountBalances.get(a.id) ?? 0;
-				return {
-					title: a.title,
-					currency: a.currency,
-					balance,
-					exchangeRate: 1,
-					balanceInRef: balance,
-					zakatable: zakatableIds.has(a.id),
-				};
-			}),
+		const grid = computeZakatYearGrid({
+			userId,
+			accounts: accounts ?? [],
+			transactions: allTransactions ?? [],
+			selectedAccountIds: zakatableIds,
+			sheetYear: selectedYear.sheetYear,
+			yearDefinition: selectedYear,
+		});
+
+		const gramsByPurity = new Map<GoldPurity, number>();
+		for (const item of goldItems ?? []) {
+			gramsByPurity.set(item.purity, (gramsByPurity.get(item.purity) ?? 0) + item.weight);
+		}
+
+		exportZakat({
+			years: [
+				{
+					grid,
+					currency: referenceCurrency,
+					basis: "minimum",
+					ratePercent: ZAKAT_RATE_PERCENT,
+					goldRows: [...gramsByPurity.entries()].map(([purity, grams]) => ({
+						purity,
+						grams,
+						pricePerGram: goldPrice * PURITY_TO_PURE_GOLD[purity],
+					})),
+					goldPriceDate: assessmentDate,
+					pastRemaining: 0,
+					payments: (zakatPayments ?? [])
+						.filter((payment) => payment.islamicYear === selectedYear.zakatYear)
+						.map((payment) => ({
+							amount: payment.amount,
+							// The owner's Person/Location columns; the app stores them as
+							// recipient and notes.
+							person: payment.recipient,
+							location: payment.notes,
+							date: payment.date,
+							currency: payment.currency,
+						})),
+				},
+			],
 		});
 	}
 
