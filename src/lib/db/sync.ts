@@ -293,8 +293,20 @@ const OPTIONAL_SYNC_FIELDS = {
 	],
 	budgets: ["currency", "deletedAt"],
 	goldItems: ["purchaseDate", "purchasePrice", "notes", "deletedAt"],
-	zakatCalculations: ["silverPricePerGram", "monthlyBalances", "deletedAt"],
-	zakatPayments: ["calculationId", "recipient", "notes", "deletedAt"],
+	// The nisab fields are legacy: dropped from the screen, kept on the record so a
+	// calculation saved before the change still round-trips through sync untouched.
+	zakatCalculations: [
+		"nisabStandard",
+		"silverPricePerGram",
+		"goldPricesByPurity",
+		"basis",
+		"ratePercent",
+		"nisabThreshold",
+		"isLiable",
+		"monthlyBalances",
+		"deletedAt",
+	],
+	zakatPayments: ["calculationId", "date", "recipient", "notes", "deletedAt"],
 	// Report inputs only. No computed report output is ever persisted or synced.
 	reportAccountTags: ["isRemittanceSource", "deletedAt"],
 	reportProjects: ["note", "sortOrder", "deletedAt"],

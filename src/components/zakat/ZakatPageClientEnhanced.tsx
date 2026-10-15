@@ -2,7 +2,7 @@
 
 import { endOfDay, format } from "date-fns";
 import { useLiveQuery } from "dexie-react-hooks";
-import { CalendarIcon, Check, Download, Loader2, RefreshCw, Save } from "lucide-react";
+import { CalendarIcon, Check, Download, Save } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { v4 as uuid } from "uuid";
 
@@ -35,7 +35,6 @@ import {
 	resolveCurrencyCode,
 } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
-import { fetchGoldPrice } from "@/lib/goldPrice";
 import { ZAKAT_EARLIEST_ISLAMIC_YEAR } from "@/lib/zakatCalendar";
 import {
 	resolveZakatCarryForward,
@@ -53,19 +52,19 @@ import { exportZakat } from "@/lib/zakatExport";
 import { toPastRemainingOverrideMap, toRamadanStartMap } from "@/lib/zakatYearRepository";
 import { useFilterStore } from "@/store/filter-store";
 
-import type { ZakatAssessment, ZakatAssessmentInput, ZakatYearGrid } from "@/lib/zakatEngine";
+import type {
+	ZakatAssessment,
+	ZakatAssessmentInput,
+	ZakatBasis,
+	ZakatYearGrid,
+} from "@/lib/zakatEngine";
 import type { Account, GoldItem, GoldPurity } from "@/types";
 
-const NISAB_GOLD_GRAMS = 85;
-const NISAB_SILVER_GRAMS = 595;
-/** Exported workbooks carry the editable rate the owner's sheet defaults to. */
-const ZAKAT_RATE_PERCENT = 2.5;
+/** The owner's workbook rate. Editable on screen; stored with every calculation. */
+export const DEFAULT_ZAKAT_RATE_PERCENT = 2.5;
 
-const PURITY_TO_PURE_GOLD: Record<GoldPurity, number> = {
-	"21k": 21 / 24,
-	"22k": 22 / 24,
-	"24k": 1.0,
-};
+/** Gold is valued per karat, never converted to a pure-gold equivalent. */
+const GOLD_PURITIES: GoldPurity[] = ["21k", "22k", "24k"];
 
 export function getZakatAccountsForCurrency(accounts: Account[], currency: string): Account[] {
 	const normalizedCurrency = normalizeCurrencyCode(currency);
@@ -79,11 +78,17 @@ export function getZakatGoldItemsForCurrency(items: GoldItem[], currency: string
 	return items.filter((item) => normalizeCurrencyCode(item.currency) === normalizedCurrency);
 }
 
-export function getPureGoldWeightGrams(items: GoldItem[]): number {
-	return items.reduce((sum, item) => {
-		const pureWeight = item.weight * PURITY_TO_PURE_GOLD[item.purity];
-		return sum + pureWeight;
-	}, 0);
+/** Itemised pieces rolled up to per-karat grams, the way the owner's sheet prices gold. */
+export function getZakatGoldGramsByPurity(items: GoldItem[]): Map<GoldPurity, number> {
+	const grams = new Map<GoldPurity, number>();
+	for (const item of items) {
+		grams.set(item.purity, (grams.get(item.purity) ?? 0) + item.weight);
+	}
+	return grams;
+}
+
+export function getZakatGoldGrams(items: GoldItem[]): number {
+	return items.reduce((sum, item) => sum + item.weight, 0);
 }
 
 interface ZakatPageClientProps {
@@ -136,12 +141,11 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const [assessmentDate, setAssessmentDate] = useState<Date>(new Date());
 	const [calOpen, setCalOpen] = useState(false);
 	const [zakatableIds, setZakatableIds] = useState<Set<string>>(new Set());
-	const [goldPrice, setGoldPrice] = useState(0);
-	const [goldPriceLoading, setGoldPriceLoading] = useState(false);
-	const [goldPriceManual, setGoldPriceManual] = useState(false);
-	const [nisab, setNisab] = useState<"gold" | "silver">("gold");
-	const [silverPrice, setSilverPrice] = useState(0);
-	const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
+	// Price per gram for each karat, in the selected currency. Decision 6: the owner
+	// prices each karat; nothing is scaled off a single pure-gold figure.
+	const [goldPrices, setGoldPrices] = useState<Partial<Record<GoldPurity, number>>>({});
+	const [basis, setBasis] = useState<ZakatBasis>("minimum");
+	const [ratePercent, setRatePercent] = useState<number>(DEFAULT_ZAKAT_RATE_PERCENT);
 	const [activeTab, setActiveTab] = useState("calculator");
 
 	// ── Zakat calendar ──────────────────────────────────────────────────────
@@ -179,14 +183,11 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		[assessmentIslamicYear, ramadanStarts]
 	);
 
-	// Auto-fetch gold price on mount
+	// Decision 2: every year opens on MINIMUM. A deliberate switch to MAXIMUM belongs to
+	// the year it was made on and is never carried into another one.
 	useEffect(() => {
-		setGoldPriceLoading(true);
-		void fetchGoldPrice(userId).then((price) => {
-			if (price && !goldPriceManual) setGoldPrice(price);
-			setGoldPriceLoading(false);
-		});
-	}, [userId]);
+		setBasis("minimum");
+	}, [selectedYear.islamicYear]);
 
 	// Pre-select all asset accounts as zakatable (not liabilities)
 	useEffect(() => {
@@ -211,98 +212,11 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		return computeAccountBalances(userId, accounts, allTransactions, { asOfMs: asOf }).balances;
 	}, [accounts, allTransactions, assessmentDate, userId]);
 
-	// ── Gold calculation ────────────────────────────────────────────────────
-	const totalGoldWeightGrams = useMemo(() => {
-		if (!goldItems) return 0;
-		return getPureGoldWeightGrams(goldItems);
-	}, [goldItems]);
-
-	const goldValue = totalGoldWeightGrams * goldPrice;
-
-	// ── Unique non-reference currencies ────────────────────────────────────
-	const foreignCurrencies = useMemo(() => {
-		return [];
-	}, []);
-
-	// ── Zakat calculation ───────────────────────────────────────────────────
-	const { totalAssets, totalLiabilities, totalZakatable } = useMemo(() => {
-		let assets = goldValue;
-		let liabilities = 0;
-
-		for (const account of zakatAccounts) {
-			if (!zakatableIds.has(account.id)) continue;
-
-			const balance = accountBalances.get(account.id) ?? 0;
-			const isLiability = account.accountType === "liability";
-
-			if (isLiability) {
-				// Liabilities reduce zakatable wealth (negative values)
-				liabilities += Math.abs(balance);
-			} else if (balance > 0) {
-				// Only positive balances count as assets
-				assets += balance;
-			}
-		}
-
-		const zakatable = Math.max(0, assets - liabilities);
-
-		return { totalAssets: assets, totalLiabilities: liabilities, totalZakatable: zakatable };
-	}, [zakatAccounts, zakatableIds, accountBalances, goldValue]);
-
-	const nisabThreshold =
-		nisab === "gold" ? NISAB_GOLD_GRAMS * goldPrice : NISAB_SILVER_GRAMS * silverPrice;
-	const zakatObligation = totalZakatable >= nisabThreshold ? totalZakatable * 0.025 : 0;
-	const isLiable = totalZakatable >= nisabThreshold && nisabThreshold > 0;
-
-	// ── Save calculation ────────────────────────────────────────────────────
-	async function handleSaveCalculation() {
-		if (!isLiable) return;
-
-		await db.zakatCalculations.add({
-			id: uuid(),
-			userId,
-			currency: referenceCurrency,
-			islamicYear: currentIslamicYear,
-			assessmentDate: assessmentDate.getTime(),
-			nisabStandard: nisab,
-			goldPricePerGram: goldPrice,
-			silverPricePerGram: nisab === "silver" ? silverPrice : undefined,
-			referenceCurrency,
-			totalGoldWeightGrams,
-			totalGoldValue: goldValue,
-			accountBalances: zakatAccounts.map((a) => {
-				const balance = accountBalances.get(a.id) ?? 0;
-				return {
-					accountId: a.id,
-					accountTitle: a.title,
-					balance,
-					currency: a.currency,
-					exchangeRate: 1,
-					zakatable: zakatableIds.has(a.id),
-					accountType: a.accountType ?? "asset",
-				};
-			}),
-			totalZakatable,
-			nisabThreshold,
-			zakatObligation,
-			isLiable,
-			createdAt: Date.now(),
-			updatedAt: Date.now(),
-		});
-
-		// Switch to history tab to see the saved calculation
-		setActiveTab("history");
-	}
-
-	const monthlyViewMonths = useMemo(
-		() =>
-			selectedYear.months.map((month) => ({
-				month: month.month,
-				year: month.islamicYear,
-				endDate: month.endDate,
-			})),
-		[selectedYear]
-	);
+	// ── Gold ────────────────────────────────────────────────────────────────
+	// Pieces roll up to per-karat grams; each karat is valued at its own price per gram
+	// in the selected currency. No pure-gold conversion enters the calculation.
+	const goldGramsByPurity = useMemo(() => getZakatGoldGramsByPurity(goldItems ?? []), [goldItems]);
+	const totalGoldWeightGrams = useMemo(() => getZakatGoldGrams(goldItems ?? []), [goldItems]);
 
 	// ── Carry-forward ───────────────────────────────────────────────────────
 	// Past Remaining is DERIVED, never stored: a year's Balance/Excess becomes the next
@@ -312,14 +226,6 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		() => toPastRemainingOverrideMap(zakatYearOverrides ?? []),
 		[zakatYearOverrides]
 	);
-
-	const goldPricesByPurity = useMemo(() => {
-		const prices: Partial<Record<GoldPurity, number>> = {};
-		for (const purity of Object.keys(PURITY_TO_PURE_GOLD) as GoldPurity[]) {
-			prices[purity] = goldPrice * PURITY_TO_PURE_GOLD[purity];
-		}
-		return prices;
-	}, [goldPrice]);
 
 	/**
 	 * Every year the chain needs, assessed with nothing carried in. The window is walked
@@ -353,15 +259,19 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 				sheetYear: definition.sheetYear,
 				yearDefinition: definition,
 			});
+			// Only the year on screen follows the owner's basis and rate. Earlier years
+			// are only being settled to carry a balance forward, and decision 2 says a
+			// deliberate switch is never remembered or applied to another year.
+			const isSelectedYear = islamicYear === selectedYear.islamicYear;
 			const input: ZakatAssessmentInput = {
 				monthlyTotals: grid.monthlyTotals,
-				basis: "minimum",
+				basis: isSelectedYear ? basis : "minimum",
 				goldItems: goldItems ?? [],
 				goldPrices: {
 					priceDate: format(assessmentDate, "yyyy-MM-dd"),
-					pricesByPurity: goldPricesByPurity,
+					pricesByPurity: goldPrices,
 				},
-				ratePercent: ZAKAT_RATE_PERCENT,
+				ratePercent: isSelectedYear ? ratePercent : DEFAULT_ZAKAT_RATE_PERCENT,
 				pastRemaining: 0,
 				payments: (zakatPayments ?? []).filter(
 					(payment) => payment.islamicYear === definition.zakatYear
@@ -376,9 +286,11 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		accounts,
 		allTransactions,
 		assessmentDate,
+		basis,
 		goldItems,
-		goldPricesByPurity,
+		goldPrices,
 		ramadanStarts,
+		ratePercent,
 		selectedYear,
 		userId,
 		zakatPayments,
@@ -407,6 +319,50 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		return calculateZakatAssessment({ ...base.input, pastRemaining: carryForward.pastRemaining });
 	}, [carryForward.pastRemaining, selectedYear.islamicYear, zakatYearAssessments]);
 
+	// ── Save calculation ────────────────────────────────────────────────────
+	// Whatever the engine returned is what gets stored. There is no liability gate:
+	// zakat is owed on the chosen basis however small it is (spec section 2).
+	async function handleSaveCalculation() {
+		const assessment = selectedYearAssessment;
+		if (!assessment) return;
+
+		await db.zakatCalculations.add({
+			id: uuid(),
+			userId,
+			currency: referenceCurrency,
+			islamicYear: selectedYear.zakatYear,
+			assessmentDate: assessmentDate.getTime(),
+			// The blended figure the per-karat prices worked out to, kept for history.
+			goldPricePerGram: totalGoldWeightGrams > 0 ? assessment.goldValue / totalGoldWeightGrams : 0,
+			goldPricesByPurity: { ...goldPrices },
+			referenceCurrency,
+			basis,
+			ratePercent: assessment.ratePercent,
+			totalGoldWeightGrams,
+			totalGoldValue: assessment.goldValue,
+			accountBalances: zakatAccounts.map((a) => {
+				const balance = accountBalances.get(a.id) ?? 0;
+				return {
+					accountId: a.id,
+					accountTitle: a.title,
+					balance,
+					currency: a.currency,
+					// One currency per calculation, so nothing is ever converted.
+					exchangeRate: 1,
+					zakatable: zakatableIds.has(a.id),
+					accountType: a.accountType ?? "asset",
+				};
+			}),
+			totalZakatable: assessment.totalZakatable,
+			zakatObligation: assessment.zakatObligation,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+
+		// Switch to history tab to see the saved calculation
+		setActiveTab("history");
+	}
+
 	// ── Export ──────────────────────────────────────────────────────────────
 	// The workbook mirrors the owner's sheet: one tab per Ramaḍān year, month-end
 	// balances per account, and live formulas down to Balance/Excess.
@@ -424,22 +380,17 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 				yearDefinition: selectedYear,
 			});
 
-		const gramsByPurity = new Map<GoldPurity, number>();
-		for (const item of goldItems ?? []) {
-			gramsByPurity.set(item.purity, (gramsByPurity.get(item.purity) ?? 0) + item.weight);
-		}
-
 		exportZakat({
 			years: [
 				{
 					grid,
 					currency: referenceCurrency,
-					basis: "minimum",
-					ratePercent: ZAKAT_RATE_PERCENT,
-					goldRows: [...gramsByPurity.entries()].map(([purity, grams]) => ({
+					basis,
+					ratePercent,
+					goldRows: [...goldGramsByPurity.entries()].map(([purity, grams]) => ({
 						purity,
 						grams,
-						pricePerGram: goldPrice * PURITY_TO_PURE_GOLD[purity],
+						pricePerGram: goldPrices[purity] ?? 0,
 					})),
 					goldPriceDate: assessmentDate,
 					pastRemaining: carryForward.pastRemaining,
@@ -511,10 +462,48 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 						</Popover>
 					</div>
 
+					{/* Gold prices per karat */}
+					<div className="space-y-2">
+						<div>
+							<Label>Gold Price per gram ({referenceCurrency})</Label>
+							<p className="text-xs text-muted-foreground">
+								One price per karat, in {referenceCurrency}, as of{" "}
+								{format(assessmentDate, "d MMM yyyy")}. The owner&apos;s sheet prices gold on 1
+								Ramaḍān.
+							</p>
+						</div>
+						<div className="grid gap-3 sm:grid-cols-3">
+							{GOLD_PURITIES.map((purity) => (
+								<div key={purity} className="space-y-1">
+									<Label htmlFor={`gold-price-${purity}`} className="text-xs text-muted-foreground">
+										{purity} price per gram
+									</Label>
+									<Input
+										id={`gold-price-${purity}`}
+										type="number"
+										min={0}
+										step="any"
+										value={goldPrices[purity] ?? ""}
+										onChange={(e) =>
+											setGoldPrices((prev) => ({
+												...prev,
+												[purity]: parseFloat(e.target.value) || 0,
+											}))
+										}
+										placeholder="0.00"
+									/>
+									<p className="text-xs text-muted-foreground tabular-nums">
+										{(goldGramsByPurity.get(purity) ?? 0).toFixed(2)}g held
+									</p>
+								</div>
+							))}
+						</div>
+					</div>
+
 					{/* Gold Items */}
 					<GoldItemsManager
 						userId={userId}
-						goldPricePerGram={goldPrice}
+						pricesByPurity={goldPrices}
 						referenceCurrency={referenceCurrency}
 					/>
 
@@ -578,199 +567,207 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 						</div>
 					</div>
 
-					{/* Exchange rates */}
-					{foreignCurrencies.length > 0 && (
-						<div className="space-y-2">
-							<Label>Exchange Rates (to {referenceCurrency})</Label>
-							<div className="grid gap-3 sm:grid-cols-2">
-								{foreignCurrencies.map((cur) => (
-									<div key={cur} className="space-y-1">
-										<Label className="text-xs text-muted-foreground">
-											1 {cur} = ? {referenceCurrency}
-										</Label>
-										<Input
-											type="number"
-											min={0}
-											step="any"
-											value={exchangeRates[cur] ?? ""}
-											onChange={(e) =>
-												setExchangeRates((prev) => ({
-													...prev,
-													[cur]: parseFloat(e.target.value) || 0,
-												}))
-											}
-											placeholder="0.00"
-										/>
-									</div>
-								))}
-							</div>
+					{/* Basis and rate */}
+					<div className="grid gap-3 sm:grid-cols-2">
+						<div className="space-y-1.5">
+							<Label htmlFor="zakat-basis">Zakat Basis</Label>
+							<Select value={basis} onValueChange={(value) => setBasis(value as ZakatBasis)}>
+								<SelectTrigger id="zakat-basis">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="minimum">MINIMUM monthly total</SelectItem>
+									<SelectItem value="maximum">MAXIMUM monthly total</SelectItem>
+								</SelectContent>
+							</Select>
+							<p className="text-xs text-muted-foreground">
+								Defaults to the minimum, as the workbook does. The maximum is shown for comparison.
+							</p>
 						</div>
-					)}
-
-					{/* Gold price */}
-					<div className="space-y-2">
-						<div className="flex items-center justify-between">
-							<Label>Gold Price per gram (USD)</Label>
-							<button
-								type="button"
-								onClick={() => {
-									setGoldPriceManual(false);
-									setGoldPriceLoading(true);
-									void fetchGoldPrice(userId).then((p) => {
-										if (p) setGoldPrice(p);
-										setGoldPriceLoading(false);
-									});
-								}}
-								className="flex items-center gap-1 text-xs text-primary hover:underline">
-								{goldPriceLoading ? (
-									<Loader2 className="h-3 w-3 animate-spin" />
-								) : (
-									<RefreshCw className="h-3 w-3" />
-								)}
-								Refresh
-							</button>
+						<div className="space-y-1.5">
+							<Label htmlFor="zakat-rate">Zakat Percentage (%)</Label>
+							<Input
+								id="zakat-rate"
+								type="number"
+								min={0}
+								step="any"
+								value={ratePercent || ""}
+								onChange={(e) => setRatePercent(parseFloat(e.target.value) || 0)}
+								placeholder="2.5"
+							/>
+							<p className="text-xs text-muted-foreground">
+								2.5% by default. Whatever is used here is stored with the calculation.
+							</p>
 						</div>
-						<Input
-							type="number"
-							min={0}
-							step="any"
-							value={goldPrice || ""}
-							onChange={(e) => {
-								setGoldPriceManual(true);
-								setGoldPrice(parseFloat(e.target.value) || 0);
-							}}
-							placeholder="e.g. 85.00"
-						/>
-					</div>
-
-					{/* Nisab standard */}
-					<div className="space-y-2">
-						<Label>Nisab Standard</Label>
-						<Select value={nisab} onValueChange={(v) => setNisab(v as "gold" | "silver")}>
-							<SelectTrigger className="w-auto">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="gold">Gold (85g)</SelectItem>
-								<SelectItem value="silver">Silver (595g)</SelectItem>
-							</SelectContent>
-						</Select>
-						{nisab === "silver" && (
-							<div className="space-y-1">
-								<Label className="text-xs text-muted-foreground">Silver price per gram (USD)</Label>
-								<Input
-									type="number"
-									min={0}
-									step="any"
-									value={silverPrice || ""}
-									onChange={(e) => setSilverPrice(parseFloat(e.target.value) || 0)}
-									placeholder="e.g. 1.00"
-									className="max-w-35"
-								/>
-							</div>
-						)}
 					</div>
 
 					{/* Results */}
-					<div
-						className={`rounded-xl border-2 p-5 ${isLiable ? "border-primary bg-primary/5" : "border-border bg-card"}`}>
-						<h2 className="mb-4 text-lg font-bold">Calculation Results</h2>
-						<div className="space-y-2 text-sm">
-							{[
-								{
-									label: "Total Assets",
-									value: (
-										<CurrencyAmount
-											amount={totalAssets}
-											currency={referenceCurrency}
-											className="font-medium"
-										/>
-									),
-								},
-								totalLiabilities > 0 && {
-									label: "Total Liabilities",
-									value: (
-										<CurrencyAmount
-											amount={-totalLiabilities}
-											currency={referenceCurrency}
-											showNegativeSign
-											className="font-medium"
-										/>
-									),
-									isNegative: true,
-								},
-								{
-									label: "Net Zakatable Wealth",
-									value: (
-										<CurrencyAmount
-											amount={totalZakatable}
-											currency={referenceCurrency}
-											className="font-medium"
-										/>
-									),
-								},
-								{
-									label: `Nisab Threshold (${nisab === "gold" ? "85g gold" : "595g silver"})`,
-									value:
-										nisabThreshold > 0 ? (
-											<CurrencyAmount
-												amount={nisabThreshold}
-												currency={referenceCurrency}
-												className="font-medium"
-											/>
-										) : (
-											"—"
-										),
-								},
-							]
-								.filter(Boolean)
-								.map((item) => {
-									const { label, value, isNegative } = item as {
-										label: string;
-										value: ReactNode;
-										isNegative?: boolean;
-									};
-									return (
-										<div key={label} className="flex justify-between">
-											<span className="text-muted-foreground">{label}</span>
-											<span
-												className={`font-medium tabular-nums ${isNegative ? "text-destructive" : ""}`}>
-												{value}
-											</span>
-										</div>
-									);
-								})}
-						</div>
+					<div className="rounded-xl border-2 border-primary bg-primary/5 p-5">
+						<h2 className="text-lg font-bold">Calculation Results</h2>
+						<p className="mb-4 text-xs text-muted-foreground">
+							{selectedYear.label} • {referenceCurrency} only, never combined with another currency
+						</p>
+						{selectedYearAssessment ? (
+							<>
+								<div className="space-y-2 text-sm">
+									{[
+										{
+											label: "MINIMUM monthly total",
+											value: (
+												<CurrencyAmount
+													amount={selectedYearAssessment.minimum}
+													currency={referenceCurrency}
+													showNegativeSign
+													className="font-medium"
+												/>
+											),
+											isNegative: selectedYearAssessment.minimum < 0,
+										},
+										{
+											label: "MAXIMUM monthly total",
+											value: (
+												<CurrencyAmount
+													amount={selectedYearAssessment.maximum}
+													currency={referenceCurrency}
+													showNegativeSign
+													className="font-medium"
+												/>
+											),
+											isNegative: selectedYearAssessment.maximum < 0,
+										},
+										{
+											label: `Basis used (${basis === "minimum" ? "MINIMUM" : "MAXIMUM"})`,
+											value: (
+												<CurrencyAmount
+													amount={selectedYearAssessment.basisAmount}
+													currency={referenceCurrency}
+													showNegativeSign
+													className="font-medium"
+												/>
+											),
+											isNegative: selectedYearAssessment.basisAmount < 0,
+										},
+										{
+											label: "Gold value",
+											value: (
+												<CurrencyAmount
+													amount={selectedYearAssessment.goldValue}
+													currency={referenceCurrency}
+													className="font-medium"
+												/>
+											),
+										},
+										{
+											label: "TOTAL (basis + gold)",
+											value: (
+												<CurrencyAmount
+													amount={selectedYearAssessment.totalZakatable}
+													currency={referenceCurrency}
+													showNegativeSign
+													className="font-medium"
+												/>
+											),
+											isNegative: selectedYearAssessment.totalZakatable < 0,
+										},
+										{
+											label: "Past Remaining",
+											value: (
+												<CurrencyAmount
+													amount={selectedYearAssessment.pastRemaining}
+													currency={referenceCurrency}
+													showNegativeSign
+													className="font-medium"
+												/>
+											),
+											isNegative: selectedYearAssessment.pastRemaining < 0,
+										},
+										{
+											label: "Total To Pay",
+											value: (
+												<CurrencyAmount
+													amount={selectedYearAssessment.totalToPay}
+													currency={referenceCurrency}
+													showNegativeSign
+													className="font-medium"
+												/>
+											),
+											isNegative: selectedYearAssessment.totalToPay < 0,
+										},
+										{
+											label: "Paid",
+											value: (
+												<CurrencyAmount
+													amount={selectedYearAssessment.paid}
+													currency={referenceCurrency}
+													className="font-medium"
+												/>
+											),
+										},
+										{
+											label:
+												selectedYearAssessment.balanceOrExcess < 0
+													? "Balance/Excess (overpaid)"
+													: "Balance/Excess",
+											value: (
+												<CurrencyAmount
+													amount={selectedYearAssessment.balanceOrExcess}
+													currency={referenceCurrency}
+													showNegativeSign
+													className="font-medium"
+												/>
+											),
+											isNegative: selectedYearAssessment.balanceOrExcess < 0,
+										},
+									].map((item) => {
+										const { label, value, isNegative } = item as {
+											label: string;
+											value: ReactNode;
+											isNegative?: boolean;
+										};
+										return (
+											<div key={label} className="flex justify-between">
+												<span className="text-muted-foreground">{label}</span>
+												<span
+													className={`font-medium tabular-nums ${isNegative ? "text-destructive" : ""}`}>
+													{value}
+												</span>
+											</div>
+										);
+									})}
+								</div>
 
-						<div className="mt-4 rounded-lg bg-background p-3 text-center">
-							{nisabThreshold === 0 ? (
-								<p className="text-sm text-muted-foreground">Enter gold price to calculate</p>
-							) : isLiable ? (
-								<>
-									<p className="text-xs text-muted-foreground">Zakat Obligation (2.5%)</p>
+								<div className="mt-4 rounded-lg bg-background p-3 text-center">
+									<p className="text-xs text-muted-foreground">
+										Zakat Obligation ({selectedYearAssessment.ratePercent}%)
+									</p>
 									<p className="mt-1 text-2xl font-bold text-primary">
 										<CurrencyAmount
-											amount={zakatObligation}
+											amount={selectedYearAssessment.zakatObligation}
 											currency={referenceCurrency}
+											showNegativeSign
 											className="text-2xl font-bold text-primary"
 										/>
 									</p>
-								</>
-							) : (
-								<>
-									<p className="text-lg font-semibold text-muted-foreground">Not yet liable</p>
-									<p className="text-xs text-muted-foreground">Wealth is below nisab threshold</p>
-								</>
-							)}
-						</div>
+									<p className="mt-1 text-xs text-muted-foreground">
+										Per month:{" "}
+										<CurrencyAmount
+											amount={selectedYearAssessment.perMonth}
+											currency={referenceCurrency}
+											showNegativeSign
+											className="font-normal tracking-normal"
+										/>
+									</p>
+								</div>
 
-						{isLiable && (
-							<div className="mt-4 flex justify-center">
-								<Button onClick={() => void handleSaveCalculation()}>
-									<Save className="mr-2 h-4 w-4" />
-									Save This Calculation
-								</Button>
-							</div>
+								<div className="mt-4 flex justify-center">
+									<Button onClick={() => void handleSaveCalculation()}>
+										<Save className="mr-2 h-4 w-4" />
+										Save This Calculation
+									</Button>
+								</div>
+							</>
+						) : (
+							<p className="text-sm text-muted-foreground">Loading this year&apos;s balances...</p>
 						)}
 					</div>
 				</TabsContent>
@@ -794,13 +791,9 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 						/>
 					)}
 					<ZakatMonthlyBalances
-						userId={userId}
-						zakatYear={selectedYear.zakatYear}
-						accounts={zakatAccounts}
-						zakatableIds={zakatableIds}
-						referenceCurrency={referenceCurrency}
-						exchangeRates={exchangeRates}
-						months={monthlyViewMonths}
+						grid={zakatYearAssessments.get(selectedYear.islamicYear)?.grid}
+						currency={referenceCurrency}
+						basis={basis}
 					/>
 				</TabsContent>
 

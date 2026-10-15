@@ -262,10 +262,22 @@ export interface ZakatCalculation {
 	assessmentDate: number; // Unix ms - typically end of Sha'ban
 
 	// Configuration used
-	nisabStandard: "gold" | "silver";
+	/**
+	 * @deprecated Nisab was dropped; zakat is owed on the chosen basis whatever its size.
+	 * Kept, unwritten, so calculations saved before the change still read back intact.
+	 */
+	nisabStandard?: "gold" | "silver";
+	/** Blended price per gram actually used: total gold value ÷ total grams. */
 	goldPricePerGram: number;
+	/** @deprecated Only the silver nisab ever used this. Never written now. */
 	silverPricePerGram?: number;
+	/** Price per gram for each karat, in `referenceCurrency`, as of `assessmentDate`. */
+	goldPricesByPurity?: Partial<Record<GoldPurity, number>>;
 	referenceCurrency: string;
+	/** Which monthly TOTAL fed the calculation: the year's minimum or its maximum. */
+	basis?: "minimum" | "maximum";
+	/** The editable zakat percentage this calculation used, 2.5 by default. */
+	ratePercent?: number;
 
 	// Gold holdings
 	totalGoldWeightGrams: number;
@@ -284,9 +296,11 @@ export interface ZakatCalculation {
 
 	// Results
 	totalZakatable: number;
-	nisabThreshold: number;
+	/** @deprecated Nisab was dropped. Kept so older calculations still read back. */
+	nisabThreshold?: number;
 	zakatObligation: number;
-	isLiable: boolean;
+	/** @deprecated Zakat is owed on any amount; there is no liability threshold. */
+	isLiable?: boolean;
 
 	// Monthly minimum tracking (for the 12 Islamic months)
 	monthlyBalances?: {
@@ -306,7 +320,8 @@ export interface ZakatPayment {
 	calculationId?: string; // Link to ZakatCalculation
 	islamicYear: string; // e.g., "1446-1447"
 
-	date: number; // Unix ms - when paid
+	/** Unix ms. Optional: zakat is often recorded long after it was handed over. */
+	date?: number;
 	amount: number;
 	currency: string;
 	recipient?: string; // e.g., "Local Masjid", "Charity X"

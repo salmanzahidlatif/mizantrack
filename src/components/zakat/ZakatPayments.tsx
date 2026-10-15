@@ -76,7 +76,8 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 	}
 
 	async function handleUpdate(id: string, updates: Partial<ZakatPayment>) {
-		await db.zakatPayments.update(id, { ...updates, updatedAt: Date.now() });
+		// `date` is passed through even when undefined so clearing it actually clears it.
+		await db.zakatPayments.update(id, { ...updates, date: updates.date, updatedAt: Date.now() });
 		setEditingId(null);
 	}
 
@@ -151,7 +152,7 @@ export function ZakatPayments({ userId, referenceCurrency }: ZakatPaymentsProps)
 									</span>
 								</div>
 								<p className="text-xs text-muted-foreground">
-									{format(new Date(payment.date), "d MMM yyyy")}
+									{payment.date ? format(new Date(payment.date), "d MMM yyyy") : "No date recorded"}
 									{payment.recipient && ` • ${payment.recipient}`}
 								</p>
 								{payment.notes && (
@@ -209,10 +210,10 @@ function PaymentForm({
 	onCancel,
 	referenceCurrency,
 }: PaymentFormProps) {
+	// Decision 3: the date is optional and nothing is preselected. Zakat is usually
+	// recorded after it was paid, so a past date is normal and must be accepted.
 	const [date, setDate] = useState(
-		initialData?.date
-			? new Date(initialData.date).toISOString().split("T")[0]
-			: new Date().toISOString().split("T")[0]
+		initialData?.date ? new Date(initialData.date).toISOString().split("T")[0] : ""
 	);
 	const [amount, setAmount] = useState(initialData?.amount ?? 0);
 	const [islamicYear, setIslamicYear] = useState(
@@ -232,10 +233,10 @@ function PaymentForm({
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
-		if (!date || amount <= 0) return;
+		if (amount <= 0) return;
 
 		onSave({
-			date: new Date(date).getTime(),
+			date: date ? new Date(date).getTime() : undefined,
 			amount,
 			islamicYear,
 			calculationId: calculationId || undefined,
@@ -249,8 +250,18 @@ function PaymentForm({
 			<div className="grid gap-3 sm:grid-cols-2">
 				{/* Date */}
 				<div className="space-y-1">
-					<Label className="text-xs">Payment Date *</Label>
-					<Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+					<Label htmlFor="zakat-payment-date" className="text-xs">
+						Payment Date
+					</Label>
+					<Input
+						id="zakat-payment-date"
+						type="date"
+						value={date}
+						onChange={(e) => setDate(e.target.value)}
+					/>
+					<p className="text-xs text-muted-foreground">
+						Optional. Past dates are fine — record it whenever it was paid.
+					</p>
 				</div>
 
 				{/* Amount */}

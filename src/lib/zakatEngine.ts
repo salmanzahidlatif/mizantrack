@@ -176,14 +176,40 @@ export function computeZakatYearGrid({
 		])
 	);
 
+	// When each account was first used, so months before it are reported as empty rather
+	// than as the account's present-day opening balance.
+	const firstActivityMs = new Map<string, number>();
+	for (const transaction of transactions) {
+		if (transaction.userId !== userId || transaction.deletedAt) continue;
+		for (const accountId of [transaction.accountId, transaction.toAccountId]) {
+			if (!accountId) continue;
+			const existing = firstActivityMs.get(accountId);
+			if (existing === undefined || transaction.date < existing) {
+				firstActivityMs.set(accountId, transaction.date);
+			}
+		}
+	}
+
+	function hasActivityBy(accountId: string, cutoffMs: number): boolean {
+		const firstMs = firstActivityMs.get(accountId);
+		return firstMs !== undefined && firstMs <= cutoffMs;
+	}
+
 	const monthlyTotals = year.months.map((month) => {
+		const cutoffMs = endOfDay(month.endDate).getTime();
 		const computed = computeAccountBalances(userId, accounts, transactions, {
-			asOfMs: endOfDay(month.endDate).getTime(),
+			asOfMs: cutoffMs,
 		}).balances;
 
 		let total = 0;
 		for (const account of selectedAccounts) {
-			const balance = normalizeZakatAccountBalance(account, computed.get(account.id) ?? 0);
+			// An account only counts once it has actually been used. Opening balances apply
+			// from the beginning of time, so without this an account opened years later still
+			// shows its present balance in every earlier month — a bridge account opened in
+			// 2024 appeared to hold millions throughout 2019.
+			const balance = hasActivityBy(account.id, cutoffMs)
+				? normalizeZakatAccountBalance(account, computed.get(account.id) ?? 0)
+				: 0;
 			accountRows.get(account.id)?.balances.push(balance);
 			total += balance;
 		}

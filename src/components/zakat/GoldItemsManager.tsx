@@ -18,24 +18,20 @@ import {
 } from "@/components/ui/select";
 import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
+import { calculateGoldValue } from "@/lib/zakatEngine";
 
 import type { GoldItem, GoldPurity } from "@/types";
 
 interface GoldItemsManagerProps {
 	userId: string;
-	goldPricePerGram: number; // Current market price
+	/** Price per gram for each karat, in `referenceCurrency`. No purity scaling. */
+	pricesByPurity: Partial<Record<GoldPurity, number>>;
 	referenceCurrency: string;
 }
 
-const PURITY_TO_PURE_GOLD: Record<GoldPurity, number> = {
-	"21k": 21 / 24,
-	"22k": 22 / 24,
-	"24k": 1.0,
-};
-
 export function GoldItemsManager({
 	userId,
-	goldPricePerGram,
+	pricesByPurity,
 	referenceCurrency,
 }: GoldItemsManagerProps) {
 	const [isAdding, setIsAdding] = useState(false);
@@ -55,13 +51,13 @@ export function GoldItemsManager({
 		[userId, referenceCurrency]
 	);
 
-	const totalPureGold =
-		goldItems?.reduce((sum, item) => {
-			const pureWeight = item.weight * PURITY_TO_PURE_GOLD[item.purity];
-			return sum + pureWeight;
-		}, 0) ?? 0;
-
-	const totalValue = totalPureGold * goldPricePerGram;
+	// Pieces roll up to per-karat grams; each karat is valued at its own price per gram.
+	const gramsByPurity = new Map<GoldPurity, number>();
+	for (const item of goldItems ?? []) {
+		gramsByPurity.set(item.purity, (gramsByPurity.get(item.purity) ?? 0) + item.weight);
+	}
+	const totalGrams = goldItems?.reduce((sum, item) => sum + item.weight, 0) ?? 0;
+	const totalValue = calculateGoldValue(goldItems ?? [], pricesByPurity);
 
 	async function handleAdd(item: Omit<GoldItem, "id" | "userId" | "currency" | "updatedAt">) {
 		await db.goldItems.add({
@@ -99,21 +95,39 @@ export function GoldItemsManager({
 			</div>
 
 			{/* Summary */}
-			<div className="grid grid-cols-2 gap-3 rounded-lg border bg-card p-3">
-				<div>
-					<p className="text-xs text-muted-foreground">Total Pure Gold</p>
-					<p className="text-lg font-bold tabular-nums">{totalPureGold.toFixed(2)}g</p>
+			<div className="space-y-3 rounded-lg border bg-card p-3">
+				<div className="grid grid-cols-2 gap-3">
+					<div>
+						<p className="text-xs text-muted-foreground">Total Gold</p>
+						<p className="text-lg font-bold tabular-nums">{totalGrams.toFixed(2)}g</p>
+					</div>
+					<div>
+						<p className="text-xs text-muted-foreground">Total Value</p>
+						<p className="text-lg font-bold tabular-nums">
+							<CurrencyAmount
+								amount={totalValue}
+								currency={referenceCurrency}
+								className="text-lg font-bold"
+							/>
+						</p>
+					</div>
 				</div>
-				<div>
-					<p className="text-xs text-muted-foreground">Total Value</p>
-					<p className="text-lg font-bold tabular-nums">
-						<CurrencyAmount
-							amount={totalValue}
-							currency={referenceCurrency}
-							className="text-lg font-bold"
-						/>
-					</p>
-				</div>
+				{gramsByPurity.size > 0 && (
+					<div className="space-y-1 border-t pt-2 text-xs">
+						{[...gramsByPurity.entries()].map(([purity, grams]) => (
+							<div key={purity} className="flex justify-between">
+								<span className="text-muted-foreground">
+									{purity} • {grams.toFixed(2)}g × {(pricesByPurity[purity] ?? 0).toLocaleString()}
+								</span>
+								<CurrencyAmount
+									amount={grams * (pricesByPurity[purity] ?? 0)}
+									currency={referenceCurrency}
+									className="font-medium tracking-normal"
+								/>
+							</div>
+						))}
+					</div>
+				)}
 			</div>
 
 			{/* Add Form */}
@@ -148,8 +162,12 @@ export function GoldItemsManager({
 									</span>
 								</div>
 								<p className="text-xs text-muted-foreground">
-									{item.weight}g → {(item.weight * PURITY_TO_PURE_GOLD[item.purity]).toFixed(2)}g
-									pure
+									{item.weight}g {item.purity} ={" "}
+									<CurrencyAmount
+										amount={item.weight * (pricesByPurity[item.purity] ?? 0)}
+										currency={referenceCurrency}
+										className="font-normal tracking-normal"
+									/>
 								</p>
 								{item.purchaseDate && (
 									<p className="text-xs text-muted-foreground">
@@ -274,11 +292,6 @@ function GoldItemForm({ initialData, onSave, onCancel, referenceCurrency }: Gold
 						placeholder="0.00"
 						required
 					/>
-					{weight > 0 && (
-						<p className="text-xs text-muted-foreground">
-							Pure gold: {(weight * PURITY_TO_PURE_GOLD[purity]).toFixed(2)}g
-						</p>
-					)}
 				</div>
 
 				{/* Purchase Date */}
