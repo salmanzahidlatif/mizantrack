@@ -94,9 +94,9 @@ describe("payments are attributed to the selected zakat year", () => {
 		await recordPayment({ islamicYear: 1444, amount: 85_500 });
 
 		expect((await paymentsForYear(1443)).map((payment) => payment.amount)).toEqual([66_000]);
-		expect((await paymentsForYear(1444)).map((payment) => payment.amount).sort()).toEqual([
-			85_500, 200_000,
-		]);
+		expect(
+			(await paymentsForYear(1444)).map((payment) => payment.amount).sort((a, b) => a - b)
+		).toEqual([85_500, 200_000]);
 		expect(await paymentsForYear(1442)).toEqual([]);
 	});
 
