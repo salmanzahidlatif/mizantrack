@@ -391,6 +391,15 @@ export interface ZakatYearOverride {
 	/** Past Remaining typed by the owner. Absent means carry the previous year's balance. */
 	pastRemainingOverride?: number;
 	pastRemainingSource?: ZakatCarryForwardSource;
+	/**
+	 * Accounts the owner chose for THIS year. Accounts open and close, so the set differs
+	 * year to year — the `2020` sheet includes a closed Alfalah account the `2024` sheet
+	 * has no row for. Absent means the year was never touched and the screen may
+	 * pre-select for it; an empty array is a deliberate "none of them" and wins.
+	 */
+	selectedAccountIds?: string[];
+	/** Whether the account picker lists closed accounts for this year. */
+	showArchivedAccounts?: boolean;
 	updatedAt: number;
 	deletedAt?: number;
 	pendingSync?: boolean;

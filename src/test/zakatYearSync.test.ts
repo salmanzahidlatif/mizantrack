@@ -14,8 +14,12 @@ import { CORE_SYNC_TABLES, syncAll } from "@/lib/db/sync";
 import { buildZakatYearDefinition, toLocalDateKey } from "@/lib/zakatCalendar";
 import {
 	clearZakatPastRemainingOverride,
+	clearZakatYearAccountSelection,
 	saveZakatPastRemainingOverride,
+	saveZakatYearAccountSelection,
 	saveZakatYearOverride,
+	saveZakatYearShowArchivedAccounts,
+	toZakatAccountSelectionMap,
 } from "@/lib/zakatYearRepository";
 
 import type * as FirestoreModule from "firebase/firestore";
@@ -350,5 +354,119 @@ describe("syncAll — zakat carry-forward overrides", () => {
 			false
 		);
 		expect(Object.prototype.hasOwnProperty.call(cleared ?? {}, "pastRemainingSource")).toBe(false);
+	});
+});
+
+/**
+ * The accounts chosen for a year are an input like any other, and they travel on the
+ * same row as the anchor and the Past Remaining. An emptied selection has to arrive as
+ * an explicit null, or the other device reads its absence as "unchanged" and keeps
+ * counting accounts the owner dropped.
+ */
+describe("syncAll — per-year account selection", () => {
+	const USER_ID = "zakat-account-selection-sync-user";
+
+	beforeEach(async () => {
+		await db.zakatYears.where("userId").equals(USER_ID).delete();
+		await db.syncMeta.bulkDelete(coreSyncMetaKeys());
+	});
+
+	it("pushes the year's accounts and its closed-accounts setting", async () => {
+		await markAllTableMigrationsDone();
+		await saveZakatYearAccountSelection({
+			userId: USER_ID,
+			islamicYear: 1444,
+			selectedAccountIds: ["meezan", "alfalah"],
+		});
+		await saveZakatYearShowArchivedAccounts({
+			userId: USER_ID,
+			islamicYear: 1444,
+			showArchivedAccounts: false,
+		});
+
+		const { mockSet } = await configureEmptySyncMocks();
+
+		const result = await syncAll(USER_ID);
+
+		expect(result.status).toBe("success");
+		expect(findWrite(mockSet, `users/${USER_ID}/zakatYears/${USER_ID}:1444`)).toMatchObject({
+			islamicYear: 1444,
+			selectedAccountIds: ["meezan", "alfalah"],
+			showArchivedAccounts: false,
+		});
+	});
+
+	it("writes a cleared selection as null rather than omitting it", async () => {
+		await markAllTableMigrationsDone();
+		await saveZakatYearOverride({
+			userId: USER_ID,
+			islamicYear: 1445,
+			ramadanStart: new Date(2024, 2, 12),
+		});
+		await saveZakatYearAccountSelection({
+			userId: USER_ID,
+			islamicYear: 1445,
+			selectedAccountIds: ["meezan"],
+		});
+		await clearZakatYearAccountSelection(USER_ID, 1445);
+
+		const { mockSet } = await configureEmptySyncMocks();
+
+		await syncAll(USER_ID);
+
+		expect(findWrite(mockSet, `users/${USER_ID}/zakatYears/${USER_ID}:1445`)).toMatchObject({
+			selectedAccountIds: null,
+			showArchivedAccounts: null,
+		});
+	});
+
+	it("pulls a remote selection, and an empty one stays empty instead of re-selecting all", async () => {
+		await markAllTableMigrationsDone();
+		const { firestore } = await configureEmptySyncMocks();
+
+		configureRemoteZakatYears(firestore, USER_ID, [
+			{
+				id: `${USER_ID}:1443`,
+				data: {
+					id: `${USER_ID}:1443`,
+					userId: USER_ID,
+					islamicYear: 1443,
+					ramadanStart: new Date(2022, 3, 4).getTime(),
+					source: "announced",
+					selectedAccountIds: ["meezan", "alfalah"],
+					showArchivedAccounts: true,
+					deletedAt: null,
+					updatedAt: 80_000,
+					syncedAt: firestoreTimestamp(8_000),
+				},
+			},
+			{
+				id: `${USER_ID}:1444`,
+				data: {
+					id: `${USER_ID}:1444`,
+					userId: USER_ID,
+					islamicYear: 1444,
+					ramadanStart: new Date(2023, 2, 23).getTime(),
+					source: "announced",
+					selectedAccountIds: [],
+					showArchivedAccounts: null,
+					deletedAt: null,
+					updatedAt: 80_000,
+					syncedAt: firestoreTimestamp(8_000),
+				},
+			},
+		]);
+
+		const result = await syncAll(USER_ID);
+
+		expect(result.status).toBe("success");
+		expect(result.tables?.zakatYears).toMatchObject({ pulled: 2 });
+
+		const selections = toZakatAccountSelectionMap(
+			await db.zakatYears.where("userId").equals(USER_ID).toArray()
+		);
+		expect(selections.get(1443)).toEqual(["meezan", "alfalah"]);
+		// An explicit "none of them" survives the pull as an empty list, not as absence.
+		expect(selections.get(1444)).toEqual([]);
 	});
 });

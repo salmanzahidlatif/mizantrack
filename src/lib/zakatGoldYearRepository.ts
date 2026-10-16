@@ -209,7 +209,7 @@ export async function clearZakatGoldYearGrams(
 	islamicYear: number
 ): Promise<void> {
 	const existing = await getLiveGoldYear(userId, currency, islamicYear);
-	if (!existing || existing.gramsByPurity === undefined) return;
+	if (existing?.gramsByPurity === undefined) return;
 
 	const kept: ZakatGoldYear = { ...existing, updatedAt: Date.now() };
 	delete kept.gramsByPurity;

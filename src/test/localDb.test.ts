@@ -74,8 +74,10 @@ describe("local Dexie database events", () => {
 		try {
 			await upgradedDb.open();
 
-			expect(upgradedDb.verno).toBe(12);
+			expect(upgradedDb.verno).toBe(13);
 			expect(upgradedDb.tables.map((table) => table.name)).toContain("zakatYears");
+			// v13 adds the per-year gold prices; the inventory itself is not duplicated.
+			expect(upgradedDb.tables.map((table) => table.name)).toContain("zakatGoldYears");
 			expect(await upgradedDb.accounts.get("acc-v7")).toMatchObject({
 				title: "Legacy Cash",
 				openingBalance: 123,
@@ -170,7 +172,7 @@ describe("local Dexie database events", () => {
 		try {
 			await upgradedDb.open();
 
-			expect(upgradedDb.verno).toBe(12);
+			expect(upgradedDb.verno).toBe(13);
 			expect(upgradedDb.tables.map((table) => table.name)).not.toContain(
 				"categoryCurrencyBackfillDecisions"
 			);
@@ -273,7 +275,7 @@ describe("local Dexie database events", () => {
 		try {
 			await upgradedDb.open();
 
-			expect(upgradedDb.verno).toBe(12);
+			expect(upgradedDb.verno).toBe(13);
 			expect(await upgradedDb.goldItems.get("gold-legacy")).toMatchObject({
 				title: "Legacy Ring",
 				currency: LEGACY_ZAKAT_CURRENCY,

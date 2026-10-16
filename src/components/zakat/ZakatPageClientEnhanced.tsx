@@ -2,16 +2,15 @@
 
 import { endOfDay, format } from "date-fns";
 import { useLiveQuery } from "dexie-react-hooks";
-import { CalendarIcon, Check, Download, Save } from "lucide-react";
+import { Check, Download, Minus, Save } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { v4 as uuid } from "uuid";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
 	Select,
 	SelectContent,
@@ -60,7 +59,14 @@ import {
 	toZakatGoldItems,
 	toZakatGoldYearMap,
 } from "@/lib/zakatGoldYearRepository";
-import { toPastRemainingOverrideMap, toRamadanStartMap } from "@/lib/zakatYearRepository";
+import {
+	saveZakatYearAccountSelection,
+	saveZakatYearShowArchivedAccounts,
+	toPastRemainingOverrideMap,
+	toRamadanStartMap,
+	toZakatAccountSelectionMap,
+	toZakatShowArchivedAccountsMap,
+} from "@/lib/zakatYearRepository";
 import { useFilterStore } from "@/store/filter-store";
 
 import type {
@@ -69,10 +75,104 @@ import type {
 	ZakatBasis,
 	ZakatYearGrid,
 } from "@/lib/zakatEngine";
-import type { Account, GoldItem, GoldPurity } from "@/types";
+import type { Account, GoldItem } from "@/types";
 
 /** The owner's workbook rate. Editable on screen; stored with every calculation. */
 export const DEFAULT_ZAKAT_RATE_PERCENT = 2.5;
+
+/** Closed accounts are listed, and counted, until the owner says otherwise. */
+export const ZAKAT_SHOW_ARCHIVED_ACCOUNTS_DEFAULT = true;
+
+/**
+ * The accounts a year is assessed on.
+ *
+ * A stored selection — including an empty one — is the owner's own answer and always
+ * wins. Only a year he has never touched falls back to pre-selecting the open asset
+ * accounts, which is a convenience, not a decision. Ids of accounts that no longer exist
+ * are dropped so a deleted account cannot haunt a year.
+ */
+export function resolveZakatAccountSelection({
+	storedAccountIds,
+	currencyAccounts,
+}: {
+	storedAccountIds?: readonly string[];
+	currencyAccounts: Account[];
+}): Set<string> {
+	if (storedAccountIds) {
+		const known = new Set(currencyAccounts.map((account) => account.id));
+		return new Set(storedAccountIds.filter((id) => known.has(id)));
+	}
+
+	return new Set(
+		currencyAccounts
+			.filter((account) => account.accountType !== "liability" && !account.isArchived)
+			.map((account) => account.id)
+	);
+}
+
+/**
+ * The accounts that actually count: selected AND, for a closed one, only while the year
+ * counts closed accounts.
+ *
+ * The "show closed accounts" toggle is an INCLUSION filter, not a view preference. With
+ * it off an archived account is excluded from the grid, the monthly totals, MINIMUM,
+ * MAXIMUM, the assessment and the export alike — hiding it must never leave it quietly
+ * inflating a figure the owner can no longer see. The stored selection underneath is
+ * kept, so switching the toggle back on restores the account as selected.
+ */
+export function getZakatCountedAccountIds({
+	selectedAccountIds,
+	currencyAccounts,
+	showArchivedAccounts,
+}: {
+	selectedAccountIds: Set<string>;
+	currencyAccounts: Account[];
+	showArchivedAccounts: boolean;
+}): Set<string> {
+	if (showArchivedAccounts) return new Set(selectedAccountIds);
+
+	const archived = new Set(
+		currencyAccounts.filter((account) => account.isArchived).map((account) => account.id)
+	);
+	return new Set([...selectedAccountIds].filter((id) => !archived.has(id)));
+}
+
+export type ZakatSelectAllState = "checked" | "mixed" | "unchecked";
+
+/** Checkbox state for "Select all shown", measured against the visible rows only. */
+export function getZakatSelectAllState(
+	selectedAccountIds: Set<string>,
+	visibleAccountIds: readonly string[]
+): ZakatSelectAllState {
+	if (visibleAccountIds.length === 0) return "unchecked";
+
+	const selectedCount = visibleAccountIds.filter((id) => selectedAccountIds.has(id)).length;
+	if (selectedCount === 0) return "unchecked";
+	return selectedCount === visibleAccountIds.length ? "checked" : "mixed";
+}
+
+/**
+ * Applies "Select all shown" to the VISIBLE rows in both directions: ticking selects
+ * only what is on screen and unticking clears only what is on screen.
+ *
+ * Accounts that are not visible are left exactly as they were — neither selected nor
+ * deselected. A closed account the owner picked for the year keeps its stored selection
+ * while the closed-accounts toggle is off (it simply does not count meanwhile), so
+ * switching the toggle back on returns it already ticked. Do not "simplify" this into
+ * selecting or clearing every account: that would rewrite choices the owner cannot see.
+ */
+export function applyZakatSelectAll(
+	selectedAccountIds: Set<string>,
+	visibleAccountIds: readonly string[],
+	checked: boolean
+): Set<string> {
+	const next = new Set(selectedAccountIds);
+	for (const id of visibleAccountIds) {
+		if (checked) next.add(id);
+		else next.delete(id);
+	}
+	return next;
+}
 
 export function getZakatAccountsForCurrency(accounts: Account[], currency: string): Account[] {
 	const normalizedCurrency = normalizeCurrencyCode(currency);
@@ -153,15 +253,15 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	);
 
 	// ── Form state ──────────────────────────────────────────────────────────
-	const [assessmentDate, setAssessmentDate] = useState<Date>(new Date());
-	const [calOpen, setCalOpen] = useState(false);
-	const [zakatableIds, setZakatableIds] = useState<Set<string>>(new Set());
-	// Spec section 5.14: archived accounts are listed by default, with a toggle to hide
-	// them. A selected one stays listed either way (5.15).
-	const [showArchivedAccounts, setShowArchivedAccounts] = useState(true);
+	// There is no assessment-date picker: the selected zakat year IS the period, and a
+	// second free-floating date beside the year dropdown could only disagree with it
+	// (spec section 10, "a single assessment-date snapshot"). Picker balances are read
+	// as of today, which is what spec section 5.13 asks for.
+	const todayMs = useMemo(() => endOfDay(new Date()).getTime(), []);
 	const [basis, setBasis] = useState<ZakatBasis>("minimum");
 	const [ratePercent, setRatePercent] = useState<number>(DEFAULT_ZAKAT_RATE_PERCENT);
 	const [activeTab, setActiveTab] = useState("calculator");
+	const [savingSelection, setSavingSelection] = useState(false);
 
 	// ── Zakat calendar ──────────────────────────────────────────────────────
 	// Saved Ramaḍān anchors win over the announced/computed defaults. Only the anchor is
@@ -179,10 +279,10 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		[ramadanStarts]
 	);
 	const assessmentIslamicYear = useMemo(
-		() => getDefaultZakatIslamicYear(assessmentDate, { ramadanStarts }),
-		[assessmentDate, ramadanStarts]
+		() => getDefaultZakatIslamicYear(new Date(todayMs), { ramadanStarts }),
+		[ramadanStarts, todayMs]
 	);
-	// null means "follow the assessment date"; a number pins the Monthly View to one year.
+	// null means "the zakat year we are in"; a number pins the screen to one year.
 	const [pinnedIslamicYear, setPinnedIslamicYear] = useState<number | null>(null);
 	const selectedYear = useMemo(
 		() =>
@@ -192,7 +292,7 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		[assessmentIslamicYear, pinnedIslamicYear, ramadanStarts]
 	);
 
-	// Islamic year for current assessment date
+	// The zakat year we are in right now, shown in the header.
 	const currentIslamicYear = useMemo(
 		() => getZakatYearDefinitionByIslamicYear(assessmentIslamicYear, { ramadanStarts }).zakatYear,
 		[assessmentIslamicYear, ramadanStarts]
@@ -204,41 +304,113 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		setBasis("minimum");
 	}, [selectedYear.islamicYear]);
 
-	// Pre-select open asset accounts (not liabilities, not closed ones). A closed account
-	// is offered rather than assumed: only the owner knows which year it belonged to.
-	useEffect(() => {
-		if (zakatAccounts.length > 0 && zakatableIds.size === 0) {
-			const assetAccounts = zakatAccounts.filter(
-				(a) => a.accountType !== "liability" && !a.isArchived
-			);
-			setZakatableIds(new Set(assetAccounts.map((a) => a.id)));
-		}
-	}, [zakatAccounts, zakatableIds.size]);
+	// ── Account selection, per zakat year ───────────────────────────────────
+	// Accounts open and close, so the set belongs to the year: the owner's 2020 sheet
+	// includes a closed Alfalah row that 2024 has no row for. The selection is read
+	// straight out of Dexie rather than held in component state, so it survives a reload
+	// and reaches his other devices.
+	const accountSelections = useMemo(
+		() => toZakatAccountSelectionMap(zakatYearOverrides ?? []),
+		[zakatYearOverrides]
+	);
+	const showArchivedByYear = useMemo(
+		() => toZakatShowArchivedAccountsMap(zakatYearOverrides ?? []),
+		[zakatYearOverrides]
+	);
+	const showArchivedAccounts =
+		showArchivedByYear.get(selectedYear.islamicYear) ?? ZAKAT_SHOW_ARCHIVED_ACCOUNTS_DEFAULT;
 
-	useEffect(() => {
-		setZakatableIds((prev) => {
-			const accountIds = new Set(zakatAccounts.map((account) => account.id));
-			const next = new Set([...prev].filter((id) => accountIds.has(id)));
-			return next.size === prev.size ? prev : next;
-		});
-	}, [zakatAccounts]);
-
-	// A selected account stays listed even when the toggle hides closed ones, so a year
-	// can never be assessed on an account the owner cannot see (spec section 5.15).
-	const visibleZakatAccounts = useMemo(
+	const selectedAccountIds = useMemo(
 		() =>
-			zakatAccounts.filter(
-				(account) => showArchivedAccounts || !account.isArchived || zakatableIds.has(account.id)
-			),
-		[showArchivedAccounts, zakatAccounts, zakatableIds]
+			resolveZakatAccountSelection({
+				storedAccountIds: accountSelections.get(selectedYear.islamicYear),
+				currencyAccounts: zakatAccounts,
+			}),
+		[accountSelections, selectedYear.islamicYear, zakatAccounts]
+	);
+	// What actually counts, after the closed-accounts filter.
+	const zakatableIds = useMemo(
+		() =>
+			getZakatCountedAccountIds({
+				selectedAccountIds,
+				currencyAccounts: zakatAccounts,
+				showArchivedAccounts,
+			}),
+		[selectedAccountIds, showArchivedAccounts, zakatAccounts]
 	);
 
-	// ── Balance at assessment date ──────────────────────────────────────────
+	const visibleZakatAccounts = useMemo(
+		() => zakatAccounts.filter((account) => showArchivedAccounts || !account.isArchived),
+		[showArchivedAccounts, zakatAccounts]
+	);
+	const visibleAccountIds = useMemo(
+		() => visibleZakatAccounts.map((account) => account.id),
+		[visibleZakatAccounts]
+	);
+	const selectAllState = getZakatSelectAllState(selectedAccountIds, visibleAccountIds);
+
+	/**
+	 * Writes a year's selection. Ids belonging to another currency's accounts are carried
+	 * through untouched: one zakat year can be settled in PKR and in AED, and saving one
+	 * book must not wipe the other's choices.
+	 */
+	async function persistAccountSelection(next: Set<string>) {
+		const currencyAccountIds = new Set(zakatAccounts.map((account) => account.id));
+		const preserved = (accountSelections.get(selectedYear.islamicYear) ?? []).filter(
+			(id) => !currencyAccountIds.has(id)
+		);
+
+		setSavingSelection(true);
+		try {
+			await saveZakatYearAccountSelection({
+				userId,
+				islamicYear: selectedYear.islamicYear,
+				selectedAccountIds: [...preserved, ...next],
+			});
+		} catch (error) {
+			console.error("Failed to save the zakat account selection", error);
+			toast.error("Could not save the account selection.");
+		} finally {
+			setSavingSelection(false);
+		}
+	}
+
+	async function handleToggleAccount(accountId: string) {
+		const next = new Set(selectedAccountIds);
+		if (next.has(accountId)) next.delete(accountId);
+		else next.add(accountId);
+		await persistAccountSelection(next);
+	}
+
+	async function handleSelectAllShown(checked: boolean) {
+		await persistAccountSelection(
+			applyZakatSelectAll(selectedAccountIds, visibleAccountIds, checked)
+		);
+	}
+
+	async function handleShowArchivedAccounts(showArchived: boolean) {
+		setSavingSelection(true);
+		try {
+			await saveZakatYearShowArchivedAccounts({
+				userId,
+				islamicYear: selectedYear.islamicYear,
+				showArchivedAccounts: showArchived,
+			});
+		} catch (error) {
+			console.error("Failed to save the closed-accounts setting", error);
+			toast.error("Could not save the closed-accounts setting.");
+		} finally {
+			setSavingSelection(false);
+		}
+	}
+
+	// ── Balances shown beside each account ──────────────────────────────────
+	// As of today, never a future-inclusive figure (spec section 5.13). The year's own
+	// month-end balances come from the engine's grid, not from here.
 	const accountBalances = useMemo(() => {
 		if (!allTransactions || !accounts) return new Map<string, number>();
-		const asOf = endOfDay(assessmentDate).getTime();
-		return computeAccountBalances(userId, accounts, allTransactions, { asOfMs: asOf }).balances;
-	}, [accounts, allTransactions, assessmentDate, userId]);
+		return computeAccountBalances(userId, accounts, allTransactions, { asOfMs: todayMs }).balances;
+	}, [accounts, allTransactions, todayMs, userId]);
 
 	// ── Gold ────────────────────────────────────────────────────────────────
 	// Pieces roll up to per-karat grams; each karat is valued at its own price per gram
@@ -298,11 +470,23 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 				islamicYear === selectedYear.islamicYear
 					? selectedYear
 					: getZakatYearDefinitionByIslamicYear(islamicYear, { ramadanStarts });
+			// Every year is assessed on ITS OWN accounts and its own closed-accounts rule,
+			// so settling an earlier year to carry its balance forward cannot be distorted
+			// by the accounts the owner happens to have chosen for the year on screen.
+			const yearSelection = getZakatCountedAccountIds({
+				selectedAccountIds: resolveZakatAccountSelection({
+					storedAccountIds: accountSelections.get(islamicYear),
+					currencyAccounts: zakatAccounts,
+				}),
+				currencyAccounts: zakatAccounts,
+				showArchivedAccounts:
+					showArchivedByYear.get(islamicYear) ?? ZAKAT_SHOW_ARCHIVED_ACCOUNTS_DEFAULT,
+			});
 			const grid = computeZakatYearGrid({
 				userId,
 				accounts: accounts ?? [],
 				transactions: allTransactions ?? [],
-				selectedAccountIds: zakatableIds,
+				selectedAccountIds: yearSelection,
 				sheetYear: definition.sheetYear,
 				yearDefinition: definition,
 			});
@@ -341,6 +525,7 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 		return byYear;
 	}, [
+		accountSelections,
 		accounts,
 		allTransactions,
 		basis,
@@ -348,10 +533,11 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		ramadanStarts,
 		ratePercent,
 		selectedYear,
+		showArchivedByYear,
 		userId,
+		zakatAccounts,
 		zakatGoldYears,
 		zakatPayments,
-		zakatableIds,
 	]);
 
 	const zakatYearSettlements = useMemo<ZakatYearSettlement[]>(
@@ -388,7 +574,9 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 			userId,
 			currency: referenceCurrency,
 			islamicYear: selectedYear.zakatYear,
-			assessmentDate: assessmentDate.getTime(),
+			// The year IS the period now, so the stored date is the year's closing day
+			// rather than a figure picked from a control that no longer exists.
+			assessmentDate: selectedYear.months[11]!.endDate.getTime(),
 			// The blended figure the per-karat prices worked out to, kept for history.
 			goldPricePerGram: totalGoldWeightGrams > 0 ? assessment.goldValue / totalGoldWeightGrams : 0,
 			goldPricesByPurity: { ...goldPrices },
@@ -496,30 +684,13 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 				{/* CALCULATOR TAB */}
 				<TabsContent value="calculator" className="space-y-5">
-					{/* Assessment date */}
-					<div className="space-y-1.5">
-						<Label>Assessment Date</Label>
-						<Popover open={calOpen} onOpenChange={setCalOpen}>
-							<PopoverTrigger asChild>
-								<Button variant="outline" className="w-auto justify-start font-normal">
-									<CalendarIcon className="mr-2 h-4 w-4" />
-									{format(assessmentDate, "d MMMM yyyy")}
-								</Button>
-							</PopoverTrigger>
-							<PopoverContent className="w-auto p-0" align="start">
-								<Calendar
-									mode="single"
-									selected={assessmentDate}
-									onSelect={(d) => {
-										if (d) {
-											setAssessmentDate(d);
-											setCalOpen(false);
-										}
-									}}
-								/>
-							</PopoverContent>
-						</Popover>
-					</div>
+					{/* The zakat year IS the period: one control, not two. */}
+					<ZakatYearCalendarControl
+						userId={userId}
+						years={availableZakatYears}
+						definition={selectedYear}
+						onSelectIslamicYear={setPinnedIslamicYear}
+					/>
 
 					{/* Gold price for the selected zakat year */}
 					<ZakatGoldYearPricing
@@ -542,28 +713,56 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 						referenceCurrency={referenceCurrency}
 					/>
 
-					{/* Account selection */}
+					{/* Account selection, saved against this zakat year */}
 					<div className="space-y-2">
 						<div className="flex flex-wrap items-center justify-between gap-2">
-							<Label>Zakatable Accounts</Label>
+							<Label>Zakatable Accounts • {selectedYear.label}</Label>
 							<div className="flex items-center gap-2">
 								<Label htmlFor="zakat-show-archived" className="text-xs text-muted-foreground">
-									Show closed accounts
+									Include closed accounts
 								</Label>
 								<Switch
 									id="zakat-show-archived"
 									checked={showArchivedAccounts}
-									onCheckedChange={setShowArchivedAccounts}
+									disabled={savingSelection}
+									onCheckedChange={(checked) => void handleShowArchivedAccounts(checked)}
 								/>
 							</div>
 						</div>
 						<p className="text-xs text-muted-foreground">
-							A closed account still held wealth in the years it was open. Select it and it counts
-							towards this year&apos;s monthly totals, MINIMUM and MAXIMUM.
+							A closed account still held wealth in the years it was open. With closed accounts
+							included, a selected one counts towards this year&apos;s monthly totals, MINIMUM and
+							MAXIMUM; switch them off and they stop counting, but stay selected underneath.
 						</p>
+
+						<button
+							type="button"
+							role="checkbox"
+							aria-checked={selectAllState === "mixed" ? "mixed" : selectAllState === "checked"}
+							data-state={selectAllState}
+							disabled={savingSelection || visibleAccountIds.length === 0}
+							onClick={() => void handleSelectAllShown(selectAllState !== "checked")}
+							className="flex w-full items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-left text-sm transition-colors hover:bg-accent/50 disabled:opacity-50">
+							<span
+								className={`flex h-5 w-5 items-center justify-center rounded border-2 ${
+									selectAllState === "unchecked" ? "border-border" : "border-primary bg-primary"
+								}`}>
+								{selectAllState === "checked" && (
+									<Check className="h-3 w-3 text-primary-foreground" />
+								)}
+								{selectAllState === "mixed" && (
+									<Minus className="h-3 w-3 text-primary-foreground" />
+								)}
+							</span>
+							<span className="font-medium">Select all shown</span>
+							<span className="text-xs text-muted-foreground">
+								{showArchivedAccounts ? "open and closed accounts" : "open accounts only"}
+							</span>
+						</button>
+
 						<div className="space-y-2">
 							{visibleZakatAccounts.map((account) => {
-								const selected = zakatableIds.has(account.id);
+								const selected = selectedAccountIds.has(account.id);
 								const balance = accountBalances.get(account.id) ?? 0;
 								const isLiability = account.accountType === "liability";
 
@@ -571,14 +770,10 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 									<button
 										key={account.id}
 										type="button"
-										onClick={() => {
-											setZakatableIds((prev) => {
-												const next = new Set(prev);
-												if (next.has(account.id)) next.delete(account.id);
-												else next.add(account.id);
-												return next;
-											});
-										}}
+										role="checkbox"
+										aria-checked={selected}
+										disabled={savingSelection}
+										onClick={() => void handleToggleAccount(account.id)}
 										className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${
 											selected
 												? "border-primary bg-primary/5"

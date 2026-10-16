@@ -15,7 +15,6 @@
 import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it } from "vitest";
-import * as XLSX from "xlsx";
 
 import { db } from "@/lib/db/local";
 import { calculateZakatAssessment, getZakatYearDefinitionByIslamicYear } from "@/lib/zakatEngine";
@@ -38,6 +37,7 @@ import {
 
 import type { ZakatAccountMonthBalance, ZakatYearGrid } from "@/lib/zakatEngine";
 import type { GoldItem, GoldPurity, ZakatGoldYear } from "@/types";
+import type * as XLSX from "xlsx";
 
 const USER_ID = "zakat-gold-year-user";
 const CURRENCY = "PKR";
@@ -97,8 +97,9 @@ describe("per-year gold pricing", () => {
 
 		// Weight is identical in all three years; only the price moved.
 		for (const islamicYear of [1442, 1443, 1444]) {
-			expect(sumZakatGoldGrams(resolveZakatGoldGramsByPurity(byYear.get(islamicYear), INVENTORY)))
-				.toBeCloseTo(170.52, 6);
+			expect(
+				sumZakatGoldGrams(resolveZakatGoldGramsByPurity(byYear.get(islamicYear), INVENTORY))
+			).toBeCloseTo(170.52, 6);
 		}
 
 		expect(goldValueFor(byYear.get(1442))).toBeCloseTo(1_828_827, 4);

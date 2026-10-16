@@ -11,7 +11,12 @@ function Calendar({
 	className,
 	classNames,
 	showOutsideDays = true,
-	captionLayout = "label",
+	// Dropdowns by default: a plain label forces month-by-month clicking, which makes
+	// reaching an earlier year — a zakat year from 2019, or a payment recorded long ago —
+	// unreasonably slow.
+	captionLayout = "dropdown",
+	startMonth = new Date(1990, 0),
+	endMonth = new Date(new Date().getFullYear() + 10, 11),
 	buttonVariant = "ghost",
 	locale,
 	formatters,
@@ -25,6 +30,8 @@ function Calendar({
 	return (
 		<DayPicker
 			showOutsideDays={showOutsideDays}
+			startMonth={startMonth}
+			endMonth={endMonth}
 			className={cn(
 				"group/calendar bg-background p-2 [--cell-radius:var(--radius-lg)] [--cell-size:--spacing(11)] in-data-[slot=card-content]:bg-transparent in-data-[slot=popover-content]:bg-transparent",
 				String.raw`rtl:**:[.rdp-button\_next>svg]:rotate-180`,

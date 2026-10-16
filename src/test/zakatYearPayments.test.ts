@@ -11,8 +11,8 @@
  */
 import "fake-indexeddb/auto";
 
-import { beforeEach, describe, expect, it } from "vitest";
 import { v4 as uuid } from "uuid";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
@@ -142,10 +142,7 @@ describe("Paid on screen is the figure the carry-forward chain settles on", () =
 					async (islamicYear) =>
 						[
 							islamicYear,
-							await assessYear(
-								islamicYear,
-								islamicYear === 1443 ? [3_120_855.86] : [2_628_184.68]
-							),
+							await assessYear(islamicYear, islamicYear === 1443 ? [3_120_855.86] : [2_628_184.68]),
 						] as const
 				)
 			)

@@ -329,7 +329,16 @@ const OPTIONAL_SYNC_FIELDS = {
 	],
 	// Only inputs are stored: the anchor, the owner's typed carry-forward, and provenance.
 	// Months and the automatic carry-forward are always recomputed.
-	zakatYears: ["pastRemainingOverride", "pastRemainingSource", "deletedAt"],
+	zakatYears: [
+		"pastRemainingOverride",
+		"pastRemainingSource",
+		// The accounts chosen for the year and whether closed ones count towards it. An
+		// emptied selection has to travel as an explicit null, or the other device reads
+		// the absence as "unchanged" and keeps counting accounts the owner dropped.
+		"selectedAccountIds",
+		"showArchivedAccounts",
+		"deletedAt",
+	],
 	// The prices are always written; the grams snapshot and price date are only present
 	// when the owner pinned them, so clearing either must merge as null.
 	zakatGoldYears: ["gramsByPurity", "priceDate", "deletedAt"],
