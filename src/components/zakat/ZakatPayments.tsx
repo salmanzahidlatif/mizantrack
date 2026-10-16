@@ -39,6 +39,13 @@ interface ZakatPaymentsProps {
  * it settles the year, so the screen, the carry-forward chain and the export cannot
  * disagree about what was paid.
  */
+
+/**
+ * Radix reserves the empty string for clearing a Select, so "no calculation linked"
+ * needs its own sentinel. It is mapped back to an empty string before saving.
+ */
+const NO_CALCULATION_VALUE = "__none__";
+
 export function ZakatPayments({
 	userId,
 	referenceCurrency,
@@ -331,12 +338,16 @@ function PaymentForm({
 				{calculations.length > 0 && (
 					<div className="space-y-1 sm:col-span-2">
 						<Label className="text-xs">Link to Calculation (Optional)</Label>
-						<Select value={calculationId} onValueChange={setCalculationId}>
+						<Select
+							value={calculationId || NO_CALCULATION_VALUE}
+							onValueChange={(value) =>
+								setCalculationId(value === NO_CALCULATION_VALUE ? "" : value)
+							}>
 							<SelectTrigger>
 								<SelectValue placeholder="Select a calculation..." />
 							</SelectTrigger>
 							<SelectContent>
-								<SelectItem value="">None</SelectItem>
+								<SelectItem value={NO_CALCULATION_VALUE}>None</SelectItem>
 								{calculations.map((calc) => (
 									<SelectItem key={calc.id} value={calc.id}>
 										{calc.islamicYear} - {calc.zakatObligation.toFixed(2)}
