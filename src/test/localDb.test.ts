@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
 	LEGACY_ZAKAT_CURRENCY,
+	MIZAN_TRACK_DEXIE_VERSION,
 	ZAKAT_CURRENCY_BACKFILL_META_ID,
 	db,
 	MizanTrackDB,
@@ -74,7 +75,7 @@ describe("local Dexie database events", () => {
 		try {
 			await upgradedDb.open();
 
-			expect(upgradedDb.verno).toBe(13);
+			expect(upgradedDb.verno).toBe(MIZAN_TRACK_DEXIE_VERSION);
 			expect(upgradedDb.tables.map((table) => table.name)).toContain("zakatYears");
 			// v13 adds the per-year gold prices; the inventory itself is not duplicated.
 			expect(upgradedDb.tables.map((table) => table.name)).toContain("zakatGoldYears");
@@ -172,7 +173,7 @@ describe("local Dexie database events", () => {
 		try {
 			await upgradedDb.open();
 
-			expect(upgradedDb.verno).toBe(13);
+			expect(upgradedDb.verno).toBe(MIZAN_TRACK_DEXIE_VERSION);
 			expect(upgradedDb.tables.map((table) => table.name)).not.toContain(
 				"categoryCurrencyBackfillDecisions"
 			);
@@ -275,7 +276,7 @@ describe("local Dexie database events", () => {
 		try {
 			await upgradedDb.open();
 
-			expect(upgradedDb.verno).toBe(13);
+			expect(upgradedDb.verno).toBe(MIZAN_TRACK_DEXIE_VERSION);
 			expect(await upgradedDb.goldItems.get("gold-legacy")).toMatchObject({
 				title: "Legacy Ring",
 				currency: LEGACY_ZAKAT_CURRENCY,

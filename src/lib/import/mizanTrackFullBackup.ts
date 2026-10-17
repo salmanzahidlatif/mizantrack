@@ -29,6 +29,7 @@ import {
 	MIZAN_TRACK_FULL_BACKUP_REFERENCES,
 	MIZAN_TRACK_FULL_BACKUP_TABLES,
 } from "@/lib/export/mizanTrackFullBackup";
+import { buildZakatGoldYearItemId } from "@/lib/zakatGoldYearItems";
 import { buildZakatGoldYearId } from "@/lib/zakatGoldYearRepository";
 import { buildZakatYearOverrideId } from "@/lib/zakatYearRepository";
 
@@ -109,6 +110,13 @@ const DERIVED_ID_BUILDERS: Partial<
 	zakatYears: (record, userId) => buildZakatYearOverrideId(userId, Number(record.islamicYear)),
 	zakatGoldYears: (record, userId) =>
 		buildZakatGoldYearId(userId, String(record.currency ?? ""), Number(record.islamicYear)),
+	zakatGoldYearItems: (record, userId) =>
+		buildZakatGoldYearItemId(
+			userId,
+			String(record.currency ?? ""),
+			Number(record.islamicYear),
+			String(record.lineageId ?? "")
+		),
 };
 
 function yieldToEventLoop(): Promise<void> {

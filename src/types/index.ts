@@ -257,11 +257,10 @@ export interface GoldItem {
 /**
  * What one zakat year paid per gram for gold, in one currency.
  *
- * The inventory itself is NOT duplicated per year: the owner's pieces barely change
- * while the price changes every year, so only the price — and, when a year's holding
- * genuinely differed, a per-karat grams snapshot — belongs to the year. A year with no
- * snapshot values today's inventory at that year's price, which is exactly how the
- * owner's workbook carried 170.52 g from 2021 through 2024 at four different prices.
+ * Only the PRICE belongs here now. The holding a year was assessed on is itemised in
+ * `ZakatGoldYearItem`, one list per year, because pieces are sold and bought one at a
+ * time: the owner's 168.4 g of 21k lost a 10 g piece and gained a 14 g 22k piece years
+ * later, and the years before that must keep reporting what was actually held then.
  */
 export interface ZakatGoldYear {
 	id: string; // `${userId}:${currency}:${islamicYear}`
@@ -271,10 +270,49 @@ export interface ZakatGoldYear {
 	islamicYear: number;
 	/** Price per gram for each karat, in `currency`, as of `priceDate`. */
 	pricesByPurity: Partial<Record<GoldPurity, number>>;
-	/** Grams held that year, per karat. Absent means "whatever the inventory holds now". */
+	/**
+	 * @deprecated Superseded by `ZakatGoldYearItem`, which records the pieces themselves.
+	 * Kept, and still honoured below an itemised list, so a year pinned before the change
+	 * reads back exactly as it did. Never written for a year that has items.
+	 */
 	gramsByPurity?: Partial<Record<GoldPurity, number>>;
 	/** Unix ms the prices were taken on; the sheet prices gold at 1 Ramaḍān. */
 	priceDate?: number;
+	updatedAt: number;
+	deletedAt?: number;
+	pendingSync?: boolean;
+}
+
+/**
+ * ONE piece of gold, as it was held in ONE zakat year.
+ *
+ * Holdings drift gradually: most pieces carry over untouched year to year while the odd
+ * one is sold or added, and both the total and the karat mix move with them. A single
+ * current inventory cannot express that — recording today's sale would rewrite every
+ * past year as though the piece had never been owned — so each zakat year owns its own
+ * list and editing one year can never reach another.
+ *
+ * `lineageId` is the piece's identity ACROSS years: the same necklace carries the same
+ * lineage in 1440 and 1446, so the owner can see when it left, and the row id is derived
+ * from it so two devices copying the same year forward converge on one row instead of
+ * minting duplicates.
+ */
+export interface ZakatGoldYearItem {
+	id: string; // `${userId}:${currency}:${islamicYear}:${lineageId}`
+	userId: string;
+	currency: string;
+	/** The Islamic year Ramaḍān falls in — the stable identity of a zakat year. */
+	islamicYear: number;
+	/** The piece's identity across years, preserved by every copy-forward. */
+	lineageId: string;
+	title: string; // e.g., "Wedding Set", "Necklace"
+	weight: number; // in grams
+	purity: GoldPurity;
+	notes?: string;
+	/** The `goldItems` row this piece was first seeded from, when it came from there. */
+	sourceGoldItemId?: string;
+	/** Unix ms the piece first entered the record; stable across years, so order is too. */
+	createdAt: number;
 	updatedAt: number;
 	deletedAt?: number;
 	pendingSync?: boolean;

@@ -41,6 +41,7 @@ import type {
 	Transaction,
 	ZakatCalculation,
 	ZakatGoldYear,
+	ZakatGoldYearItem,
 	ZakatPayment,
 	ZakatYearOverride,
 } from "@/types";
@@ -60,7 +61,8 @@ export type SyncableTable =
 	| "reportManualEntries"
 	| "reportMonthlySalaryRows"
 	| "zakatYears"
-	| "zakatGoldYears";
+	| "zakatGoldYears"
+	| "zakatGoldYearItems";
 type SyncableRecord = (
 	| Account
 	| Category
@@ -76,6 +78,7 @@ type SyncableRecord = (
 	| ReportMonthlySalaryRow
 	| ZakatYearOverride
 	| ZakatGoldYear
+	| ZakatGoldYearItem
 ) &
 	SyncDirtyFields;
 /** A record carrying the last-write-wins clock every synced and backed-up table shares. */
@@ -112,6 +115,7 @@ type OptionalSyncFieldsByTable = {
 	reportMonthlySalaryRows: readonly (keyof ReportMonthlySalaryRow)[];
 	zakatYears: readonly (keyof ZakatYearOverride)[];
 	zakatGoldYears: readonly (keyof ZakatGoldYear)[];
+	zakatGoldYearItems: readonly (keyof ZakatGoldYearItem)[];
 };
 type NonClearingOptionalSyncFieldsByTable = {
 	accounts: readonly (keyof Account)[];
@@ -128,6 +132,7 @@ type NonClearingOptionalSyncFieldsByTable = {
 	reportMonthlySalaryRows: readonly (keyof ReportMonthlySalaryRow)[];
 	zakatYears: readonly (keyof ZakatYearOverride)[];
 	zakatGoldYears: readonly (keyof ZakatGoldYear)[];
+	zakatGoldYearItems: readonly (keyof ZakatGoldYearItem)[];
 };
 
 export const FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT = 20_000;
@@ -158,8 +163,11 @@ export const CORE_SYNC_TABLES = [
 	"reportMonthlySalaryRows",
 	// The zakat calendar is a standalone anchor table; it references nothing else.
 	"zakatYears",
-	// Per-year gold prices stand alone too: the inventory lives in `goldItems`.
+	// Per-year gold prices stand alone: they reference nothing else.
 	"zakatGoldYears",
+	// The gold a year was actually held on. It points at no other table — a piece's
+	// lineage is its own identity across years, not a reference to `goldItems`.
+	"zakatGoldYearItems",
 ] as const;
 
 function formatFirestoreLimit(limit: number): string {
@@ -360,6 +368,10 @@ const OPTIONAL_SYNC_FIELDS = {
 	// The prices are always written; the grams snapshot and price date are only present
 	// when the owner pinned them, so clearing either must merge as null.
 	zakatGoldYears: ["gramsByPurity", "priceDate", "deletedAt"],
+	// A piece's note is the only field that can be emptied, and a sold piece has to
+	// travel as an explicit tombstone — absence would read as "unchanged" and leave the
+	// gold on the other device's books.
+	zakatGoldYearItems: ["notes", "deletedAt"],
 } as const satisfies OptionalSyncFieldsByTable;
 
 // sourceId is optional for legacy/manual records, but it is not null-written:
@@ -380,6 +392,9 @@ const NON_CLEARING_OPTIONAL_SYNC_FIELDS = {
 	reportMonthlySalaryRows: [],
 	zakatYears: [],
 	zakatGoldYears: [],
+	// Like sourceId: the inventory row a piece was seeded from is provenance, and
+	// clearing it during a merge would cut a piece loose from where it came from.
+	zakatGoldYearItems: ["sourceGoldItemId"],
 } as const satisfies NonClearingOptionalSyncFieldsByTable;
 
 const LOCAL_ONLY_SYNC_FIELDS = new Set(["pendingSync", "syncedAt"]);
@@ -568,6 +583,9 @@ async function putLocalRecord(tableName: SyncableTable, record: SyncableRecord):
 				break;
 			case "zakatGoldYears":
 				await localDb.zakatGoldYears.put(localRecord as ZakatGoldYear);
+				break;
+			case "zakatGoldYearItems":
+				await localDb.zakatGoldYearItems.put(localRecord as ZakatGoldYearItem);
 				break;
 		}
 	});

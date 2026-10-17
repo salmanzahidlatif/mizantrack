@@ -1,5 +1,7 @@
 import Dexie, { type Table } from "dexie";
 
+import { buildZakatGoldYearItemBackfill } from "@/lib/zakatGoldYearItems";
+
 import type {
 	Account,
 	Category,
@@ -18,6 +20,7 @@ import type {
 	ReportMonthlySalaryRow,
 	ZakatYearOverride,
 	ZakatGoldYear,
+	ZakatGoldYearItem,
 } from "@/types";
 
 export interface SyncDirtyFields {
@@ -26,6 +29,12 @@ export interface SyncDirtyFields {
 
 export const LEGACY_ZAKAT_CURRENCY = "PKR";
 export const ZAKAT_CURRENCY_BACKFILL_META_ID = "zakatCurrencyBackfill:PKR:v1";
+/**
+ * Marks the one-time move of the shared gold inventory into the per-year holdings table.
+ * Recorded like the currency backfill so a later upgrade never runs it twice and
+ * re-seeds years the owner has since edited.
+ */
+export const ZAKAT_GOLD_YEAR_ITEMS_BACKFILL_META_ID = "zakatGoldYearItemsBackfill:v1";
 
 /**
  * The highest schema version declared below. Full backups record it so a file written
@@ -33,7 +42,7 @@ export const ZAKAT_CURRENCY_BACKFILL_META_ID = "zakatCurrencyBackfill:PKR:v1";
  * A test pins this to the opened database's `verno`, so bumping one without the other
  * fails loudly.
  */
-export const MIZAN_TRACK_DEXIE_VERSION = 13;
+export const MIZAN_TRACK_DEXIE_VERSION = 14;
 
 let suppressSyncDirtyTracking = 0;
 
@@ -180,6 +189,16 @@ const STORES_V13: StoreSchema = {
 		"id, userId, currency, islamicYear, [userId+currency], [userId+islamicYear], updatedAt, deletedAt, pendingSync",
 };
 
+// Version 14: Per-year gold HOLDINGS. Pieces are sold and bought one at a time, so each
+// zakat year owns its own itemised list and editing one year can never reach another.
+// `goldItems` stays exactly as it is — the current holding, and what the sheet exports
+// read — while `lineageId` carries a piece's identity across the years it was held in.
+const STORES_V14: StoreSchema = {
+	...STORES_V13,
+	zakatGoldYearItems:
+		"id, userId, currency, islamicYear, lineageId, [userId+currency], [userId+currency+islamicYear], updatedAt, deletedAt, pendingSync",
+};
+
 export class MizanTrackDB extends Dexie {
 	accounts!: Table<Account>;
 	categories!: Table<Category>;
@@ -198,6 +217,7 @@ export class MizanTrackDB extends Dexie {
 	reportMonthlySalaryRows!: Table<ReportMonthlySalaryRow>;
 	zakatYears!: Table<ZakatYearOverride>;
 	zakatGoldYears!: Table<ZakatGoldYear>;
+	zakatGoldYearItems!: Table<ZakatGoldYearItem>;
 
 	constructor(databaseName = "mizantrack") {
 		super(databaseName);
@@ -231,6 +251,38 @@ export class MizanTrackDB extends Dexie {
 		this.version(11).stores(STORES_V11);
 		this.version(12).stores(STORES_V12);
 		this.version(13).stores(STORES_V13);
+		this.version(14)
+			.stores(STORES_V14)
+			.upgrade(async (tx) => {
+				const syncMeta = tx.table<SyncMeta, string>("syncMeta");
+				const alreadyBackfilled = await syncMeta.get(ZAKAT_GOLD_YEAR_ITEMS_BACKFILL_META_ID);
+				if (alreadyBackfilled) return;
+
+				// Every year the owner already settled keeps the holding it was assessed
+				// on. `goldItems` is left untouched: it is still the current holding and
+				// still what the sheet exports read.
+				const [goldItems, goldYears, calculations] = await Promise.all([
+					tx.table<GoldItem, string>("goldItems").toArray(),
+					tx.table<ZakatGoldYear, string>("zakatGoldYears").toArray(),
+					tx.table<ZakatCalculation, string>("zakatCalculations").toArray(),
+				]);
+				const rows = buildZakatGoldYearItemBackfill({
+					goldItems,
+					goldYears,
+					calculations,
+					now: Date.now(),
+				});
+
+				if (rows.length > 0) {
+					await tx
+						.table<ZakatGoldYearItem, string>("zakatGoldYearItems")
+						.bulkPut(rows.map((row) => ({ ...row, pendingSync: true })));
+				}
+				await syncMeta.put({
+					id: ZAKAT_GOLD_YEAR_ITEMS_BACKFILL_META_ID,
+					timestamp: Date.now(),
+				});
+			});
 
 		installSyncDirtyHooks(this.accounts);
 		installSyncDirtyHooks(this.categories);
@@ -246,6 +298,7 @@ export class MizanTrackDB extends Dexie {
 		installSyncDirtyHooks(this.reportMonthlySalaryRows);
 		installSyncDirtyHooks(this.zakatYears);
 		installSyncDirtyHooks(this.zakatGoldYears);
+		installSyncDirtyHooks(this.zakatGoldYearItems);
 
 		this.on("blocked", (event) => {
 			console.warn("MizanTrack IndexedDB upgrade is blocked by another open app instance.", event);

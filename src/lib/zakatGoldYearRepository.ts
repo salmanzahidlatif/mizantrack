@@ -2,21 +2,26 @@
  * Persistence for the gold inputs that belong to ONE zakat year.
  *
  * The owner's workbook carried the same 170.52 g of 21k gold from `2021` to `2024` and
- * repriced it every year: 8,427 → 10,725 → 16,778.12 → 18,846.3 per gram. The weight is
- * the thing that persists; the price is the thing that belongs to the year. So the
- * inventory is NOT duplicated per year — `goldItems` stays one list — and only the price
- * per gram the owner typed is stored here, per user, per currency, per Islamic year.
+ * repriced it every year: 8,427 → 10,725 → 16,778.12 → 18,846.3 per gram. The price is
+ * the thing that belongs to the year, and it still lives here, per user, per currency,
+ * per Islamic year.
  *
- * A per-karat grams snapshot is optional, for the year whose holding genuinely differed
- * (a piece sold, a piece bought). Absent, a year values today's inventory at that year's
- * price, which is how the sheet behaved. Present, it wins outright so a year the owner
- * pinned can never drift when the inventory is edited later.
+ * The HOLDING now belongs to the year as well, itemised in `zakatGoldYearItems`, because
+ * pieces are sold and bought one at a time: a 10 g piece of the 21k left and a 14 g 22k
+ * piece arrived years later, and the years before that must keep reporting what was
+ * actually held then. See `@/lib/zakatGoldYearItemRepository`.
+ *
+ * `gramsByPurity` is what pinned a year before items existed. It is kept — never written
+ * for a year that has items — so a year the owner pinned under the old model reads back
+ * exactly as it did, and is honoured below an itemised list and above the shared
+ * inventory.
  */
 
 import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
+import { getZakatGoldYearItems, hasZakatGoldYearItemInventory } from "@/lib/zakatGoldYearItems";
 
-import type { GoldItem, GoldPurity, ZakatGoldYear } from "@/types";
+import type { GoldItem, GoldPurity, ZakatGoldYear, ZakatGoldYearItem } from "@/types";
 
 /** The karats the screen prices. 21k and 22k are the two the owner actually holds. */
 export const ZAKAT_GOLD_PURITIES: GoldPurity[] = ["21k", "22k", "24k"];
@@ -95,6 +100,37 @@ export function resolveZakatGoldGramsByPurity(
 }
 
 /**
+ * The grams ONE zakat year is assessed on, in order of what the owner actually said:
+ *
+ * 1. the pieces recorded for THAT year — the holding he itemised, and the only answer
+ *    that can describe a 10 g piece leaving while the rest carried on;
+ * 2. the per-karat snapshot pinned for the year before items existed, so a year settled
+ *    under the old model still reads back exactly as it did;
+ * 3. the shared `goldItems` holding, but ONLY while no year in this currency has an
+ *    itemised holding at all — that is the pre-per-year world, and it is what every year
+ *    showed in it;
+ * 4. otherwise nothing. Once holdings belong to years, a year with no gold recorded is
+ *    worth zero rather than borrowing another year's gold.
+ */
+export function resolveZakatGoldGramsForYear({
+	islamicYear,
+	record,
+	itemsByYear,
+	inventoryItems,
+}: {
+	islamicYear: number;
+	record: ZakatGoldYear | undefined;
+	itemsByYear: Map<number, ZakatGoldYearItem[]>;
+	inventoryItems: Pick<GoldItem, "weight" | "purity">[];
+}): Map<GoldPurity, number> {
+	const yearItems = getZakatGoldYearItems(itemsByYear, islamicYear);
+	if (yearItems.length > 0) return getZakatGoldGramsByPurity(yearItems);
+	if (hasZakatGoldYearGramsSnapshot(record)) return resolveZakatGoldGramsByPurity(record, []);
+	if (hasZakatGoldYearItemInventory(itemsByYear)) return new Map<GoldPurity, number>();
+	return getZakatGoldGramsByPurity(inventoryItems);
+}
+
+/**
  * Per-karat grams as the engine's gold items: one synthetic piece per karat, which is
  * exactly what `calculateGoldValue` multiplies by that karat's price.
  */
@@ -167,8 +203,11 @@ export async function saveZakatGoldYearPrices({
 }
 
 /**
- * Pins the grams a year actually held, so later edits to the inventory cannot rewrite a
- * year the owner already settled.
+ * Pins the grams a year actually held, per karat.
+ *
+ * @deprecated Superseded by `setZakatGoldYearItems`, which records the pieces rather
+ * than a karat total. Kept so a year pinned this way still round-trips and so nothing
+ * already stored breaks; new pins materialise the year's items instead.
  */
 export async function saveZakatGoldYearGrams({
 	userId,

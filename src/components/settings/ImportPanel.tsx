@@ -73,6 +73,7 @@ const RESTORE_TABLE_LABELS: Record<string, string> = {
 	reportMonthlySalaryRows: "Report salary rows",
 	zakatYears: "Zakat years (Ramaḍān anchors)",
 	zakatGoldYears: "Zakat gold prices by year",
+	zakatGoldYearItems: "Zakat gold held by year",
 };
 
 function formatMoney(value: number): string {

@@ -26,9 +26,10 @@ import {
 	computeZakatYearGrid,
 	getZakatYearDefinitionByIslamicYear,
 } from "@/lib/zakatEngine";
+import { getZakatGoldYearItems, toZakatGoldYearItemMap } from "@/lib/zakatGoldYearItems";
 import {
 	getZakatGoldYearPrices,
-	resolveZakatGoldGramsByPurity,
+	resolveZakatGoldGramsForYear,
 	sumZakatGoldGrams,
 	toZakatGoldItems,
 	toZakatGoldYearMap,
@@ -53,6 +54,7 @@ import type {
 	GoldPurity,
 	Transaction,
 	ZakatGoldYear,
+	ZakatGoldYearItem,
 	ZakatPayment,
 	ZakatYearOverride,
 } from "@/types";
@@ -140,8 +142,11 @@ export interface ZakatYearAssessmentSource {
 	/** Every account, archived included: a closed account still held wealth back then. */
 	accounts: Account[];
 	transactions: Transaction[];
+	/** The shared, current holding. Only a year with no holding of its own reads it. */
 	goldItems: GoldItem[];
 	goldYears: ZakatGoldYear[];
+	/** The pieces recorded against each zakat year, across every year and currency. */
+	goldYearItems?: ZakatGoldYearItem[];
 	yearOverrides: ZakatYearOverride[];
 	payments: ZakatPayment[];
 }
@@ -161,6 +166,8 @@ export interface ZakatYearAssessmentContext {
 	currencyAccounts: Account[];
 	goldItems: GoldItem[];
 	goldYears: Map<number, ZakatGoldYear>;
+	/** The pieces each year was held on, keyed by Islamic year. */
+	goldYearItems: Map<number, ZakatGoldYearItem[]>;
 	ramadanStarts: Map<number, Date>;
 	accountSelections: Map<number, string[]>;
 	showArchivedByYear: Map<number, boolean>;
@@ -187,6 +194,8 @@ export interface ZakatYearAssessment {
 	/** The accounts this year was actually assessed on, after the closed-accounts rule. */
 	countedAccountIds: Set<string>;
 	goldGramsByPurity: Map<GoldPurity, number>;
+	/** The pieces recorded for this year, empty when the year records none. */
+	goldItems: ZakatGoldYearItem[];
 	goldPricesByPurity: Partial<Record<GoldPurity, number>>;
 	goldPriceDate: Date;
 	totalGoldWeightGrams: number;
@@ -208,6 +217,7 @@ export function prepareZakatYearAssessmentContext(
 		currencyAccounts: getZakatAccountsForCurrency(source.accounts, referenceCurrency),
 		goldItems: getZakatGoldItemsForCurrency(source.goldItems, referenceCurrency),
 		goldYears: toZakatGoldYearMap(source.goldYears, referenceCurrency),
+		goldYearItems: toZakatGoldYearItemMap(source.goldYearItems ?? [], referenceCurrency),
 		ramadanStarts: toRamadanStartMap(liveOverrides),
 		accountSelections: toZakatAccountSelectionMap(liveOverrides),
 		showArchivedByYear: toZakatShowArchivedAccountsMap(liveOverrides),
@@ -282,10 +292,16 @@ export function buildZakatYearAssessment(
 		yearDefinition: definition,
 	});
 
-	// Each year is valued at ITS OWN price per gram, on its own grams. A year the owner
-	// never priced contributes no gold value rather than borrowing another year's price.
+	// Each year is valued at ITS OWN price per gram, on the pieces IT held. A year the
+	// owner never priced contributes no gold value rather than borrowing another year's
+	// price, and a year with no holding of its own borrows no other year's gold.
 	const goldYear = context.goldYears.get(islamicYear);
-	const goldGramsByPurity = resolveZakatGoldGramsByPurity(goldYear, context.goldItems);
+	const goldGramsByPurity = resolveZakatGoldGramsForYear({
+		islamicYear,
+		record: goldYear,
+		itemsByYear: context.goldYearItems,
+		inventoryItems: context.goldItems,
+	});
 	const goldPricesByPurity = getZakatGoldYearPrices(goldYear);
 	// The sheet prices gold at 1 Ramaḍān, so that is what an unpriced year falls back to.
 	const goldPriceDate =
@@ -314,6 +330,7 @@ export function buildZakatYearAssessment(
 		assessment: calculateZakatAssessment(input),
 		countedAccountIds,
 		goldGramsByPurity,
+		goldItems: getZakatGoldYearItems(context.goldYearItems, islamicYear),
 		goldPricesByPurity,
 		goldPriceDate,
 		totalGoldWeightGrams: sumZakatGoldGrams(goldGramsByPurity),

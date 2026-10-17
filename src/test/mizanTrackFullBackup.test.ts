@@ -49,6 +49,7 @@ import type {
 	Transaction,
 	ZakatCalculation,
 	ZakatGoldYear,
+	ZakatGoldYearItem,
 	ZakatPayment,
 	ZakatYearOverride,
 } from "@/types";
@@ -215,6 +216,27 @@ function zakatGoldYear(islamicYear: number, patch: Partial<ZakatGoldYear> = {}):
 	};
 }
 
+function zakatGoldYearItem(
+	islamicYear: number,
+	lineageId: string,
+	patch: Partial<ZakatGoldYearItem> = {}
+): ZakatGoldYearItem {
+	return {
+		id: `${USER_ID}:PKR:${islamicYear}:${lineageId}`,
+		userId: USER_ID,
+		currency: "PKR",
+		islamicYear,
+		lineageId,
+		title: "Wedding Set",
+		weight: 100,
+		purity: "21k",
+		sourceGoldItemId: "gold-1",
+		createdAt: BASE,
+		updatedAt: BASE,
+		...patch,
+	};
+}
+
 function reportAccountTag(id: string, patch: Partial<ReportAccountTag> = {}): ReportAccountTag {
 	return {
 		id,
@@ -346,6 +368,24 @@ async function seedEverything(): Promise<void> {
 		await db.reportMonthlySalaryRows.bulkPut([reportMonthlySalaryRow("rms-1")]);
 		await db.zakatYears.bulkPut([zakatYear(1445), zakatYear(1446)]);
 		await db.zakatGoldYears.bulkPut([zakatGoldYear(1445), zakatGoldYear(1446)]);
+		// Two years holding different gold: a piece carried forward keeps its lineage,
+		// and the piece sold in 1446 is still in the record for 1445.
+		await db.zakatGoldYearItems.bulkPut([
+			zakatGoldYearItem(1445, "wedding-set"),
+			zakatGoldYearItem(1445, "chain", {
+				title: "Chain",
+				weight: 10,
+				sourceGoldItemId: undefined,
+			}),
+			zakatGoldYearItem(1446, "wedding-set"),
+			zakatGoldYearItem(1446, "new-bangle", {
+				title: "New Bangle",
+				weight: 14,
+				purity: "22k",
+				sourceGoldItemId: undefined,
+				notes: "bought instead of the chain",
+			}),
+		]);
 		// Derived caches and sync bookkeeping exist, and must never reach the file.
 		await db.dashboardStats.put({
 			id: USER_ID,
@@ -703,6 +743,13 @@ describe("MizanTrack full backup — restore", () => {
 			userId: OTHER_USER_ID,
 			pricesByPurity: { "21k": 16_778.12, "22k": 17_500 },
 		});
+		expect(await db.zakatGoldYearItems.get(`${OTHER_USER_ID}:PKR:1446:new-bangle`)).toMatchObject({
+			userId: OTHER_USER_ID,
+			islamicYear: 1446,
+			lineageId: "new-bangle",
+			weight: 14,
+			purity: "22k",
+		});
 	});
 
 	it("reports rows whose references are missing rather than discarding them", async () => {
@@ -775,6 +822,26 @@ describe("MizanTrack full backup — zakat and report fidelity", () => {
 		const gold = await db.goldItems.get("gold-1");
 		expect(gold?.weight).toBe(170.52);
 		expect(gold?.notes).toBe("inherited");
+
+		// Each year's own holding survives, and the years still differ from each other.
+		const held1445 = await db.zakatGoldYearItems
+			.where("[userId+currency+islamicYear]")
+			.equals([USER_ID, "PKR", 1445])
+			.toArray();
+		const held1446 = await db.zakatGoldYearItems
+			.where("[userId+currency+islamicYear]")
+			.equals([USER_ID, "PKR", 1446])
+			.toArray();
+		expect(held1445.map((item) => item.lineageId).sort()).toEqual(["chain", "wedding-set"]);
+		expect(held1446.map((item) => item.lineageId).sort()).toEqual(["new-bangle", "wedding-set"]);
+		// The same piece, recognisably the same piece, in both years.
+		expect(held1445.find((item) => item.lineageId === "wedding-set")?.title).toBe("Wedding Set");
+		expect(held1446.find((item) => item.lineageId === "wedding-set")?.title).toBe("Wedding Set");
+		expect(held1446.find((item) => item.lineageId === "new-bangle")).toMatchObject({
+			weight: 14,
+			purity: "22k",
+			notes: "bought instead of the chain",
+		});
 	});
 
 	it("restores report tag decisions, projects, manual entries and the salary grid", async () => {

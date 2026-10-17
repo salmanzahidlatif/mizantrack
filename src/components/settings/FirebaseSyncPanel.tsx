@@ -55,6 +55,7 @@ const backupTableLabels: Record<string, string> = {
 	reportMonthlySalaryRows: "Report salary rows",
 	zakatYears: "Zakat calendar years",
 	zakatGoldYears: "Zakat gold prices by year",
+	zakatGoldYearItems: "Zakat gold held by year",
 };
 
 const backupCountFormatter = new Intl.NumberFormat();

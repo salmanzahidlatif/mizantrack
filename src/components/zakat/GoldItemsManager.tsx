@@ -83,9 +83,11 @@ export function GoldItemsManager({
 		<div className="space-y-4">
 			<div className="flex items-center justify-between">
 				<div>
-					<h3 className="text-sm font-medium">Gold Inventory</h3>
+					<h3 className="text-sm font-medium">Current holding (all years)</h3>
 					<p className="text-xs text-muted-foreground">
-						Track your gold holdings with different purities
+						What you hold today. No zakat year is valued from this list — a year is valued on the
+						pieces recorded against it above. This seeds a year that has nothing recorded and no
+						earlier year to inherit from.
 					</p>
 				</div>
 				<Button size="sm" variant="outline" onClick={() => setIsAdding(true)}>

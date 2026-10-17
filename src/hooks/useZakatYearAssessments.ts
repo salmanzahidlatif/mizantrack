@@ -2,7 +2,7 @@
  * The data a zakat year is assessed from, loaded once.
  *
  * Every screen that quotes a year's figure — the calculator, the carry-forward chain, the
- * History audit — needs the same six tables. Loading them here, and handing them to
+ * History audit — needs the same seven tables. Loading them here, and handing them to
  * `prepareZakatYearAssessmentContext`, is what keeps those screens from drifting apart:
  * there is one loader and one assembly, so a year cannot mean one thing on one tab and
  * something else on another.
@@ -70,6 +70,13 @@ export function useZakatYearAssessmentContext(
 		[userId]
 	);
 
+	// The pieces each year was held on. Read whole, like the rest: a year's holding is
+	// an input the calculator, the carry-forward chain and History all read the same way.
+	const goldYearItems = useLiveQuery(
+		() => db.zakatGoldYearItems.where("userId").equals(userId).toArray(),
+		[userId]
+	);
+
 	const yearOverrides = useLiveQuery(
 		() => db.zakatYears.where("userId").equals(userId).toArray(),
 		[userId]
@@ -81,7 +88,15 @@ export function useZakatYearAssessmentContext(
 	);
 
 	return useMemo(() => {
-		if (!accounts || !transactions || !goldItems || !goldYears || !yearOverrides || !payments) {
+		if (
+			!accounts ||
+			!transactions ||
+			!goldItems ||
+			!goldYears ||
+			!goldYearItems ||
+			!yearOverrides ||
+			!payments
+		) {
 			return undefined;
 		}
 
@@ -92,8 +107,19 @@ export function useZakatYearAssessmentContext(
 			transactions,
 			goldItems,
 			goldYears,
+			goldYearItems,
 			yearOverrides,
 			payments,
 		});
-	}, [accounts, currency, goldItems, goldYears, payments, transactions, userId, yearOverrides]);
+	}, [
+		accounts,
+		currency,
+		goldItems,
+		goldYearItems,
+		goldYears,
+		payments,
+		transactions,
+		userId,
+		yearOverrides,
+	]);
 }

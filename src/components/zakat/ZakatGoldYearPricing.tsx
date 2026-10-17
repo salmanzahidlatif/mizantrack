@@ -1,7 +1,7 @@
 "use client";
 
 import { format } from "date-fns";
-import { CalendarIcon, Lock, RotateCcw, Unlock } from "lucide-react";
+import { CalendarIcon, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -16,8 +16,6 @@ import { CARD_SURFACE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import {
 	clearZakatGoldYear,
-	clearZakatGoldYearGrams,
-	saveZakatGoldYearGrams,
 	saveZakatGoldYearPrices,
 	ZAKAT_GOLD_PURITIES,
 } from "@/lib/zakatGoldYearRepository";
@@ -33,12 +31,8 @@ interface ZakatGoldYearPricingProps {
 	yearLabel: string;
 	/** Prices saved for THIS year. Empty until the owner types them. */
 	pricesByPurity: Partial<Record<GoldPurity, number>>;
-	/** Grams this year is assessed on: the pinned snapshot, else today's inventory. */
+	/** Grams this year is assessed on, rolled up from the pieces IT held. */
 	gramsByPurity: Map<GoldPurity, number>;
-	/** Grams the inventory holds today, for comparison against a pinned snapshot. */
-	inventoryGramsByPurity: Map<GoldPurity, number>;
-	/** True when the year's grams were pinned rather than read from the inventory. */
-	hasGramsSnapshot: boolean;
 	/** Date the prices were taken on; the sheet prices gold at 1 Ramaḍān. */
 	priceDate: Date;
 	/** `grams × price per gram`, summed over the karats, for this year. */
@@ -71,10 +65,9 @@ function parseDraftPrices(draft: Record<GoldPurity, string>): Partial<Record<Gol
 /**
  * The gold price for ONE zakat year, in the selected currency.
  *
- * The weight barely moves between years while the price always does — the owner's sheet
- * carried 170.52 g of 21k from 2021 to 2024 at four different prices — so the inventory
- * is shared and only the price belongs to the year. A year whose holding genuinely
- * differed can pin its own grams, after which editing the inventory no longer rewrites it.
+ * The price always belongs to the year — the owner's sheet carried 170.52 g of 21k from
+ * 2021 to 2024 at four different prices — and so does the holding it is multiplied by,
+ * which is edited piece by piece just below in `ZakatGoldYearInventory`.
  */
 export function ZakatGoldYearPricing({
 	userId,
@@ -83,8 +76,6 @@ export function ZakatGoldYearPricing({
 	yearLabel,
 	pricesByPurity,
 	gramsByPurity,
-	inventoryGramsByPurity,
-	hasGramsSnapshot,
 	priceDate,
 	goldValue,
 }: ZakatGoldYearPricingProps) {
@@ -136,29 +127,6 @@ export function ZakatGoldYearPricing({
 		} catch (error) {
 			console.error("Failed to clear the year's gold price", error);
 			toast.error("Could not clear the gold price.");
-		} finally {
-			setSaving(false);
-		}
-	}
-
-	async function handleToggleGramsSnapshot() {
-		setSaving(true);
-		try {
-			if (hasGramsSnapshot) {
-				await clearZakatGoldYearGrams(userId, currency, islamicYear);
-				toast.success(`${yearLabel} follows the gold inventory again.`);
-			} else {
-				await saveZakatGoldYearGrams({
-					userId,
-					currency,
-					islamicYear,
-					gramsByPurity: inventoryGramsByPurity,
-				});
-				toast.success(`Weight pinned for ${yearLabel}.`);
-			}
-		} catch (error) {
-			console.error("Failed to change the year's gold weight", error);
-			toast.error("Could not change the gold weight for this year.");
 		} finally {
 			setSaving(false);
 		}
@@ -243,9 +211,7 @@ export function ZakatGoldYearPricing({
 						<CurrencyAmount amount={goldValue} currency={currency} className="text-lg font-bold" />
 					</p>
 					<p className="text-xs text-muted-foreground">
-						{hasGramsSnapshot
-							? "Weight pinned to this year; the inventory no longer changes it."
-							: "Weight follows the gold inventory below."}
+						The pieces listed below, at the price typed above. Both belong to this year alone.
 					</p>
 				</div>
 			</div>
@@ -253,14 +219,6 @@ export function ZakatGoldYearPricing({
 			<div className="flex flex-wrap items-center gap-2 border-t pt-3">
 				<Button variant="outline" disabled={saving || !isDirty} onClick={() => void handleSave()}>
 					Save
-				</Button>
-				<Button variant="ghost" disabled={saving} onClick={() => void handleToggleGramsSnapshot()}>
-					{hasGramsSnapshot ? (
-						<Unlock className="mr-1.5 h-3.5 w-3.5" />
-					) : (
-						<Lock className="mr-1.5 h-3.5 w-3.5" />
-					)}
-					{hasGramsSnapshot ? "Follow inventory" : "Pin this year's weight"}
 				</Button>
 				{isPriced && (
 					<Button

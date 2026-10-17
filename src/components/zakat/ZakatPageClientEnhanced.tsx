@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GoldItemsManager } from "@/components/zakat/GoldItemsManager";
 import { ZakatCarryForwardControl } from "@/components/zakat/ZakatCarryForwardControl";
+import { ZakatGoldYearInventory } from "@/components/zakat/ZakatGoldYearInventory";
 import { ZakatGoldYearPricing } from "@/components/zakat/ZakatGoldYearPricing";
 import { ZakatHistory } from "@/components/zakat/ZakatHistory";
 import { ZakatMonthlyBalances } from "@/components/zakat/ZakatMonthlyBalances";
@@ -40,11 +41,11 @@ import {
 	getZakatYearDefinitions,
 } from "@/lib/zakatEngine";
 import { exportZakat } from "@/lib/zakatExport";
+import { pinZakatGoldYearItems } from "@/lib/zakatGoldYearItemRepository";
+import { getZakatGoldYearItems } from "@/lib/zakatGoldYearItems";
 import {
-	getZakatGoldGramsByPurity,
 	getZakatGoldYearPrices,
-	hasZakatGoldYearGramsSnapshot,
-	resolveZakatGoldGramsByPurity,
+	resolveZakatGoldGramsForYear,
 	sumZakatGoldGrams,
 } from "@/lib/zakatGoldYearRepository";
 import {
@@ -66,7 +67,7 @@ import { useFilterStore } from "@/store/filter-store";
 
 import type { ZakatBasis } from "@/lib/zakatEngine";
 import type { ZakatYearAssessment } from "@/lib/zakatYearAssessment";
-import type { ZakatGoldYear } from "@/types";
+import type { ZakatGoldYear, ZakatGoldYearItem } from "@/types";
 
 /**
  * How a zakat year is assembled now lives in `@/lib/zakatYearAssessment`, so the
@@ -140,11 +141,15 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const allTransactions = zakatContext?.transactions;
 	const goldItems = zakatContext?.goldItems;
 	const zakatAccounts = useMemo(() => zakatContext?.currencyAccounts ?? [], [zakatContext]);
-	// Gold priced per zakat year. The inventory is NOT duplicated per year: only the
-	// price the owner typed for a year — and the grams snapshot, when a year's holding
-	// genuinely differed — lives here.
+	// Gold priced per zakat year: the price the owner typed for that year.
 	const zakatGoldYears = useMemo(
 		() => zakatContext?.goldYears ?? new Map<number, ZakatGoldYear>(),
+		[zakatContext]
+	);
+	// And the pieces that year was held on. Each year owns its own list, so selling a
+	// piece this year cannot reach back and empty the years that still held it.
+	const zakatGoldYearItems = useMemo(
+		() => zakatContext?.goldYearItems ?? new Map<number, ZakatGoldYearItem[]>(),
 		[zakatContext]
 	);
 	// Payments recorded for this currency; the screen, the engine and the export all
@@ -308,17 +313,24 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	}, [accounts, allTransactions, todayMs, userId]);
 
 	// ── Gold ────────────────────────────────────────────────────────────────
-	// Pieces roll up to per-karat grams; each karat is valued at its own price per gram
-	// for THE SELECTED YEAR, in the selected currency. The same 170.52g is worth a
-	// different amount every year because the price, not the weight, belongs to the year.
-	const inventoryGramsByPurity = useMemo(
-		() => getZakatGoldGramsByPurity(goldItems ?? []),
-		[goldItems]
-	);
+	// The pieces THIS year held roll up to per-karat grams, and each karat is valued at
+	// its own price per gram for THIS year, in the selected currency. Both the holding
+	// and the price belong to the year: 168.4 g of 21k can become 158.4 g of 21k plus
+	// 14 g of 22k in a later year without a single earlier year moving.
 	const selectedGoldYear = zakatGoldYears.get(selectedYear.islamicYear);
+	const selectedGoldYearItems = useMemo(
+		() => getZakatGoldYearItems(zakatGoldYearItems, selectedYear.islamicYear),
+		[selectedYear.islamicYear, zakatGoldYearItems]
+	);
 	const goldGramsByPurity = useMemo(
-		() => resolveZakatGoldGramsByPurity(selectedGoldYear, goldItems ?? []),
-		[goldItems, selectedGoldYear]
+		() =>
+			resolveZakatGoldGramsForYear({
+				islamicYear: selectedYear.islamicYear,
+				record: selectedGoldYear,
+				itemsByYear: zakatGoldYearItems,
+				inventoryItems: goldItems ?? [],
+			}),
+		[goldItems, selectedGoldYear, selectedYear.islamicYear, zakatGoldYearItems]
 	);
 	const goldPrices = useMemo(() => getZakatGoldYearPrices(selectedGoldYear), [selectedGoldYear]);
 	// The sheet prices gold at 1 Ramaḍān, so that is what an unpriced year opens on.
@@ -433,6 +445,20 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 			updatedAt: Date.now(),
 		});
 
+		// An assessed year stops drifting: the holding it was assessed on is written
+		// against the year itself, so editing another year's gold later cannot change
+		// what this determination meant.
+		try {
+			await pinZakatGoldYearItems({
+				userId,
+				currency: referenceCurrency,
+				islamicYear: selectedYear.islamicYear,
+			});
+		} catch (error) {
+			console.error("Failed to pin the year's gold holding", error);
+			toast.error("The calculation was saved, but this year's gold could not be pinned.");
+		}
+
 		// Switch to history tab to see the saved calculation
 		setActiveTab("history");
 	}
@@ -529,13 +555,25 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 						yearLabel={selectedYear.label}
 						pricesByPurity={goldPrices}
 						gramsByPurity={goldGramsByPurity}
-						inventoryGramsByPurity={inventoryGramsByPurity}
-						hasGramsSnapshot={hasZakatGoldYearGramsSnapshot(selectedGoldYear)}
 						priceDate={goldPriceDate}
 						goldValue={selectedYearAssessment?.goldValue ?? 0}
 					/>
 
-					{/* Gold Items */}
+					{/* The pieces this zakat year was held on */}
+					<ZakatGoldYearInventory
+						userId={userId}
+						currency={referenceCurrency}
+						islamicYear={selectedYear.islamicYear}
+						yearLabel={selectedYear.label}
+						items={selectedGoldYearItems}
+						itemsByYear={zakatGoldYearItems}
+						availableIslamicYears={availableZakatYears.map((year) => year.islamicYear)}
+						pricesByPurity={goldPrices}
+					/>
+
+					{/* The shared current holding. It values no year on its own — it only
+					    seeds a year that has no gold recorded and no earlier year to
+					    inherit from, and it is what the sheet exports carry. */}
 					<GoldItemsManager
 						userId={userId}
 						pricesByPurity={goldPrices}
