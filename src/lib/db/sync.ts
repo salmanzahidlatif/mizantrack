@@ -78,6 +78,24 @@ type SyncableRecord = (
 	| ZakatGoldYear
 ) &
 	SyncDirtyFields;
+/** A record carrying the last-write-wins clock every synced and backed-up table shares. */
+export interface LastWriteWinsRecord {
+	updatedAt: number;
+}
+
+/**
+ * The single conflict rule for every merge of an incoming record into the local
+ * database — Firestore pulls and full-backup restores both resolve through this.
+ * An incoming record wins only when it is strictly newer, so an equal clock is a
+ * no-op and re-applying the same payload never rewrites anything.
+ */
+export function incomingRecordWins(
+	local: LastWriteWinsRecord | undefined,
+	incoming: LastWriteWinsRecord
+): boolean {
+	if (!local) return true;
+	return incoming.updatedAt > local.updatedAt;
+}
 export type SyncScope = SyncableTable | "firebase" | "settings" | "dashboard";
 type OptionalSyncFieldsByTable = {
 	accounts: readonly (keyof Account)[];
@@ -365,6 +383,11 @@ const NON_CLEARING_OPTIONAL_SYNC_FIELDS = {
 } as const satisfies NonClearingOptionalSyncFieldsByTable;
 
 const LOCAL_ONLY_SYNC_FIELDS = new Set(["pendingSync", "syncedAt"]);
+/**
+ * Fields that only ever exist on this device: a dirty flag and the server stamp.
+ * Neither belongs in a Firestore document nor in a portable backup file.
+ */
+export const LOCAL_ONLY_RECORD_FIELDS: readonly string[] = [...LOCAL_ONLY_SYNC_FIELDS];
 // Legacy backfill only: pre-v10 zakat documents were written without a currency and
 // must default to PKR on pull. Report tables never had that legacy shape, so they are
 // deliberately excluded — reportManualEntries.currency is always user-supplied.
@@ -376,6 +399,18 @@ const ZAKAT_SYNC_TABLES = new Set<SyncableTable>([
 
 function getLocalSyncTable(tableName: SyncableTable): Table<SyncableRecord> {
 	return localDb[tableName] as unknown as Table<SyncableRecord>;
+}
+
+/**
+ * The Dexie table behind a syncable name, typed loosely enough for bulk merges.
+ * Shared so a restore writes through exactly the same mapping a pull does.
+ */
+export function getSyncableLocalTable(
+	tableName: SyncableTable
+): Table<LastWriteWinsRecord & SyncDirtyFields & { id: string }> {
+	return localDb[tableName] as unknown as Table<
+		LastWriteWinsRecord & SyncDirtyFields & { id: string }
+	>;
 }
 
 function toFirestoreSyncRecord(
@@ -730,7 +765,7 @@ async function applyRemoteRecord(
 	const remote = fromFirestoreSyncRecord(tableName, rawRemote, docSnap.id);
 	const local = (await table.get(remote.id)) as SyncableRecord | undefined;
 
-	if (!local || remote.updatedAt > local.updatedAt) {
+	if (incomingRecordWins(local, remote)) {
 		await options.invalidateAnalytics?.();
 		await putLocalRecord(tableName, remote);
 		return {
@@ -741,7 +776,7 @@ async function applyRemoteRecord(
 		};
 	}
 
-	if (local.updatedAt > remote.updatedAt) {
+	if (local && local.updatedAt > remote.updatedAt) {
 		if (local.pendingSync !== true) {
 			await markLocalRecordPending(tableName, local.id);
 			return {

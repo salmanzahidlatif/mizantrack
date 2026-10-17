@@ -27,6 +27,14 @@ export interface SyncDirtyFields {
 export const LEGACY_ZAKAT_CURRENCY = "PKR";
 export const ZAKAT_CURRENCY_BACKFILL_META_ID = "zakatCurrencyBackfill:PKR:v1";
 
+/**
+ * The highest schema version declared below. Full backups record it so a file written
+ * by a newer build is refused with a clear message instead of being half-applied.
+ * A test pins this to the opened database's `verno`, so bumping one without the other
+ * fails loudly.
+ */
+export const MIZAN_TRACK_DEXIE_VERSION = 13;
+
 let suppressSyncDirtyTracking = 0;
 
 export async function withoutSyncDirtyTracking<T>(operation: () => Promise<T>): Promise<T> {

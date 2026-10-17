@@ -21,10 +21,16 @@ import { useDbConfig } from "@/hooks/useDbConfig";
 import { normalizeCurrencyCode, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getDateRange } from "@/lib/dateRange";
 import { db } from "@/lib/db/local";
-import { exportToExcel, exportToHysabKytabSqliteDb } from "@/lib/export";
+import {
+	exportToExcel,
+	exportToHysabKytabSqliteDb,
+	exportToMizanTrackFullBackup,
+} from "@/lib/export";
 import { useFilterStore } from "@/store/filter-store";
 
 import type { DateRange } from "@/types";
+
+type ExportFormat = "full-backup" | "hysab-kytab-db" | "xlsx";
 
 interface ExportPanelProps {
 	userId: string;
@@ -79,20 +85,31 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 	const [range, setRange] = useState<DateRange>(() => getDateRange("all"));
 	const [currency, setCurrency] = useState(defaultCurrency);
 	const [includeArchivedAccounts, setIncludeArchivedAccounts] = useState(true);
-	const [format, setFormat] = useState<"xlsx" | "hysab-kytab-db">("hysab-kytab-db");
+	const [format, setFormat] = useState<ExportFormat>("full-backup");
+	const [backupProgress, setBackupProgress] = useState<string | null>(null);
+	// Only the full backup is complete; the other two are interchange formats that are
+	// scoped to one currency and one date range by the schema they have to satisfy.
+	const isFullBackup = format === "full-backup";
 
 	function handleOpen() {
 		setRange(getDateRange("all"));
 		setCurrency(defaultCurrency);
 		setIncludeArchivedAccounts(true);
-		setFormat("hysab-kytab-db");
+		setFormat("full-backup");
+		setBackupProgress(null);
 		setOpen(true);
 	}
 
 	async function handleDownload() {
 		setExporting(true);
 		try {
-			if (format === "hysab-kytab-db") {
+			if (format === "full-backup") {
+				await exportToMizanTrackFullBackup(userId, {
+					onProgress: ({ table, tablesDone, tablesTotal }) =>
+						setBackupProgress(`Saving ${table} (${tablesDone}/${tablesTotal})`),
+				});
+				toast.success("Full backup downloaded. It restores everything, on any device.");
+			} else if (format === "hysab-kytab-db") {
 				await exportToHysabKytabSqliteDb(userId, range, {
 					currency,
 					includeArchivedAccounts,
@@ -105,6 +122,7 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 			toast.error("Export failed. Please try again.");
 		} finally {
 			setExporting(false);
+			setBackupProgress(null);
 		}
 	}
 
@@ -113,7 +131,7 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 			<div>
 				<h2 className="font-semibold">Export Data</h2>
 				<p className="mt-0.5 text-sm text-muted-foreground">
-					Download a full MizanTrack Excel backup or a Hysab Kytab .db file
+					Download a complete MizanTrack backup, or an Excel / Hysab Kytab interchange file
 				</p>
 			</div>
 
@@ -127,14 +145,26 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 					<DialogHeader>
 						<DialogTitle>Export Data</DialogTitle>
 						<DialogDescription>
-							Excel includes full-fidelity MizanTrack sheets for every local table plus
-							Hysab-compatible sheets. Hysab Kytab .db exports remain one currency at a time.
+							The MizanTrack backup is the complete one: every account, transaction, category,
+							budget, zakat and report record, in every currency, plus your settings. Excel and
+							Hysab Kytab .db are interchange formats for other apps and cover one currency and date
+							range at a time.
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 py-2">
 						<div className="space-y-1.5">
 							<Label>Format</Label>
 							<div className="flex flex-wrap gap-1.5">
+								<button
+									type="button"
+									onClick={() => setFormat("full-backup")}
+									className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+										format === "full-backup"
+											? "border-primary bg-primary/10 text-primary"
+											: "border-border text-muted-foreground hover:bg-muted/50"
+									}`}>
+									MizanTrack full backup
+								</button>
 								<button
 									type="button"
 									onClick={() => setFormat("hysab-kytab-db")}
@@ -156,47 +186,64 @@ export function ExportPanel({ userId }: ExportPanelProps) {
 									Excel .xlsx
 								</button>
 							</div>
+							<p className="text-xs text-muted-foreground">
+								{isFullBackup
+									? "Complete backup — restore it on another device from Settings → Import Data. Credentials and your app-lock PIN are never written to the file."
+									: "Interchange format — covers accounts, categories, transactions and budgets for the chosen currency and dates only."}
+							</p>
 						</div>
 
-						<div className="space-y-1.5">
-							<Label>Currency</Label>
-							<div className="flex flex-wrap gap-1.5">
-								{exportCurrencies.map((code) => (
-									<button
-										key={code}
-										type="button"
-										onClick={() => setCurrency(code)}
-										className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-											currency === code
-												? "border-primary bg-primary/10 text-primary"
-												: "border-border text-muted-foreground hover:bg-muted/50"
-										}`}>
-										{code}
-									</button>
-								))}
-							</div>
-						</div>
+						{!isFullBackup && (
+							<>
+								<div className="space-y-1.5">
+									<Label>Currency</Label>
+									<div className="flex flex-wrap gap-1.5">
+										{exportCurrencies.map((code) => (
+											<button
+												key={code}
+												type="button"
+												onClick={() => setCurrency(code)}
+												className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+													currency === code
+														? "border-primary bg-primary/10 text-primary"
+														: "border-border text-muted-foreground hover:bg-muted/50"
+												}`}>
+												{code}
+											</button>
+										))}
+									</div>
+								</div>
 
-						<div className="space-y-1.5">
-							<Label>Date range</Label>
-							<DateRangePicker
-								standalone
-								value={range}
-								onChange={setRange}
-								fiscalYearStartMonth={fiscalYearStartMonth}
-							/>
-						</div>
+								<div className="space-y-1.5">
+									<Label>Date range</Label>
+									<DateRangePicker
+										standalone
+										value={range}
+										onChange={setRange}
+										fiscalYearStartMonth={fiscalYearStartMonth}
+									/>
+								</div>
 
-						<div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2.5">
-							<div>
-								<p className="text-sm font-medium">Include archived accounts</p>
-								<p className="text-xs text-muted-foreground">Off exports active accounts only</p>
-							</div>
-							<Switch
-								checked={includeArchivedAccounts}
-								onCheckedChange={setIncludeArchivedAccounts}
-							/>
-						</div>
+								<div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2.5">
+									<div>
+										<p className="text-sm font-medium">Include archived accounts</p>
+										<p className="text-xs text-muted-foreground">
+											Off exports active accounts only
+										</p>
+									</div>
+									<Switch
+										checked={includeArchivedAccounts}
+										onCheckedChange={setIncludeArchivedAccounts}
+									/>
+								</div>
+							</>
+						)}
+
+						{backupProgress && (
+							<p className="text-xs text-muted-foreground" aria-live="polite">
+								{backupProgress}
+							</p>
+						)}
 					</div>
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setOpen(false)}>

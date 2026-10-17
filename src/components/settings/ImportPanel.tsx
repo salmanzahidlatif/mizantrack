@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, FileUp, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, DatabaseBackup, FileUp, Loader2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -23,12 +23,14 @@ import {
 	isHysabKytabSqliteFile,
 	prepareHysabKytabSqliteImport,
 } from "@/lib/import/hysabKytabSqlite";
+import { restoreMizanTrackFullBackup } from "@/lib/import/mizanTrackFullBackup";
 import { useFilterStore } from "@/store/filter-store";
 
 import type {
 	HysabKytabSqliteImportPlan,
 	HysabKytabVerificationReport,
 } from "@/lib/import/hysabKytabSqlite";
+import type { MizanTrackFullBackupRestoreResult } from "@/lib/import/mizanTrackFullBackup";
 
 interface ImportPanelProps {
 	userId: string;
@@ -54,6 +56,24 @@ const IMPORT_SYNC_QUOTA_NOTE_THRESHOLD = 2_000;
 function formatCount(value: number): string {
 	return new Intl.NumberFormat("en-US").format(value);
 }
+
+const RESTORE_TABLE_LABELS: Record<string, string> = {
+	dbConfig: "Settings",
+	accounts: "Accounts",
+	categories: "Categories",
+	transactions: "Transactions",
+	budgets: "Budgets",
+	goldItems: "Gold items",
+	zakatCalculations: "Zakat calculations",
+	zakatPayments: "Zakat payments",
+	reportAccountTags: "Report account tags",
+	reportProjects: "Report projects",
+	reportTransactionTags: "Report transaction tags",
+	reportManualEntries: "Report manual entries",
+	reportMonthlySalaryRows: "Report salary rows",
+	zakatYears: "Zakat years (Ramaḍān anchors)",
+	zakatGoldYears: "Zakat gold prices by year",
+};
 
 function formatMoney(value: number): string {
 	return new Intl.NumberFormat("en-US", {
@@ -85,7 +105,13 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 	const needsCurrencyPrompt = enabledCurrencies.length > 1;
 
 	const fileRef = useRef<HTMLInputElement>(null);
+	const backupFileRef = useRef<HTMLInputElement>(null);
 	const [importing, setImporting] = useState(false);
+	const [restoring, setRestoring] = useState(false);
+	const [restoreProgress, setRestoreProgress] = useState<string | null>(null);
+	const [restoreResult, setRestoreResult] = useState<MizanTrackFullBackupRestoreResult | null>(
+		null
+	);
 	const [result, setResult] = useState<ImportResult | null>(null);
 	const [pendingFile, setPendingFile] = useState<File | null>(null);
 	const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
@@ -141,6 +167,30 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 			setCurrencyPickerOpen(true);
 		} else {
 			await runImport(file);
+		}
+	}
+
+	async function handleBackupFile(e: React.ChangeEvent<HTMLInputElement>) {
+		const file = e.target.files?.[0];
+		if (!file) return;
+
+		setRestoring(true);
+		setRestoreProgress("Reading backup…");
+		try {
+			const restored = await restoreMizanTrackFullBackup(file, userId, {
+				onProgress: ({ table, tablesDone, tablesTotal, recordsDone, recordsTotal }) =>
+					setRestoreProgress(
+						`Restoring ${RESTORE_TABLE_LABELS[table] ?? table} (${tablesDone}/${tablesTotal}) — ${formatCount(recordsDone)}/${formatCount(recordsTotal)}`
+					),
+			});
+			setRestoreResult(restored);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : "Restore failed";
+			toast.error(msg);
+		} finally {
+			setRestoring(false);
+			setRestoreProgress(null);
+			if (backupFileRef.current) backupFileRef.current.value = "";
 		}
 	}
 
@@ -214,45 +264,105 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 	}
 
 	return (
-		<div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-[var(--shadow-card)]">
+		<div className="space-y-5 rounded-xl border border-border/60 bg-card p-4 shadow-[var(--shadow-card)]">
 			<div>
 				<h2 className="font-semibold">Import Data</h2>
 				<p className="mt-0.5 text-sm text-muted-foreground">
-					Import your Hysab Kytab backup (.db, .xlsx, or .xls file)
+					Restore a complete MizanTrack backup, or import a Hysab Kytab file
 				</p>
 			</div>
 
-			<div className="flex items-center gap-3">
-				<Button variant="outline" disabled={importing} onClick={() => fileRef.current?.click()}>
-					{importing ? (
-						<>
-							<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-							Importing…
-						</>
-					) : (
-						<>
-							<FileUp className="mr-2 h-4 w-4" />
-							Choose HK File
-						</>
-					)}
-				</Button>
-				<span className="text-xs text-muted-foreground">.db / .xlsx / .xls files</span>
-			</div>
-			<p className="text-xs text-muted-foreground">
-				SQLite .db backups are merged by source ID, stamped with the selected currency, and
-				reconciled before the result is shown.
-			</p>
+			<div className="space-y-3">
+				<div>
+					<h3 className="text-sm font-medium">MizanTrack full backup</h3>
+					<p className="mt-0.5 text-xs text-muted-foreground">
+						Everything from another device: accounts, transactions, categories, budgets, gold, zakat
+						years and payments, report tags and projects, and your settings.
+					</p>
+				</div>
 
-			{/* Hidden file input */}
-			<input
-				ref={fileRef}
-				type="file"
-				accept=".db,.sqlite,.sqlite3,.xlsx,.xls,application/x-sqlite3,application/vnd.sqlite3,application/octet-stream"
-				className="hidden"
-				onChange={(e) => {
-					void handleFile(e);
-				}}
-			/>
+				<div className="flex items-center gap-3">
+					<Button
+						variant="outline"
+						disabled={restoring}
+						onClick={() => backupFileRef.current?.click()}>
+						{restoring ? (
+							<>
+								<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+								Restoring…
+							</>
+						) : (
+							<>
+								<DatabaseBackup className="mr-2 h-4 w-4" />
+								Restore Backup
+							</>
+						)}
+					</Button>
+					<span className="text-xs text-muted-foreground">.mizantrack.json files</span>
+				</div>
+				{restoreProgress ? (
+					<p className="text-xs text-muted-foreground" aria-live="polite">
+						{restoreProgress}
+					</p>
+				) : null}
+				<p className="text-xs text-muted-foreground">
+					Nothing is wiped. Records are merged by id and only a genuinely newer copy replaces what
+					is already here, so restoring the same file twice changes nothing and a merged account
+					stays merged.
+				</p>
+
+				<input
+					ref={backupFileRef}
+					type="file"
+					accept=".json,application/json"
+					className="hidden"
+					onChange={(e) => {
+						void handleBackupFile(e);
+					}}
+				/>
+			</div>
+
+			<div className="space-y-3 border-t border-border/60 pt-4">
+				<div>
+					<h3 className="text-sm font-medium">Hysab Kytab</h3>
+					<p className="mt-0.5 text-xs text-muted-foreground">
+						An interchange format: accounts, categories, transactions and budgets for one currency
+						at a time (.db, .xlsx, or .xls file).
+					</p>
+				</div>
+
+				<div className="flex items-center gap-3">
+					<Button variant="outline" disabled={importing} onClick={() => fileRef.current?.click()}>
+						{importing ? (
+							<>
+								<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+								Importing…
+							</>
+						) : (
+							<>
+								<FileUp className="mr-2 h-4 w-4" />
+								Choose HK File
+							</>
+						)}
+					</Button>
+					<span className="text-xs text-muted-foreground">.db / .xlsx / .xls files</span>
+				</div>
+				<p className="text-xs text-muted-foreground">
+					SQLite .db backups are merged by source ID, stamped with the selected currency, and
+					reconciled before the result is shown.
+				</p>
+
+				{/* Hidden file input */}
+				<input
+					ref={fileRef}
+					type="file"
+					accept=".db,.sqlite,.sqlite3,.xlsx,.xls,application/x-sqlite3,application/vnd.sqlite3,application/octet-stream"
+					className="hidden"
+					onChange={(e) => {
+						void handleFile(e);
+					}}
+				/>
+			</div>
 
 			{/* Currency selector for multi-currency import */}
 			<CurrencyPicker
@@ -493,6 +603,95 @@ export function ImportPanel({ userId }: ImportPanelProps) {
 									Auto-created (archived): {result.autoCreatedAccounts.join(", ")}
 								</p>
 							)}
+						</div>
+					)}
+				</DialogContent>
+			</Dialog>
+
+			{/* Full backup restore summary */}
+			<Dialog open={!!restoreResult} onOpenChange={() => setRestoreResult(null)}>
+				<DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle>Restore Complete</DialogTitle>
+						<DialogDescription>
+							{restoreResult
+								? `Backup taken ${new Date(restoreResult.exportedAt).toLocaleString()} · format v${restoreResult.formatVersion} · database v${restoreResult.dexieVersion}`
+								: null}
+						</DialogDescription>
+					</DialogHeader>
+					{restoreResult && (
+						<div className="space-y-3 py-2">
+							<div className="divide-y divide-border rounded-lg border border-border">
+								{restoreResult.tables.map((table) => (
+									<div
+										key={table.table}
+										className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+										<span className="text-muted-foreground">
+											{RESTORE_TABLE_LABELS[table.table] ?? table.table}
+										</span>
+										<span className="text-right">
+											<span className="font-medium">{formatCount(table.applied)}</span>
+											<span className="text-muted-foreground">
+												{" "}
+												of {formatCount(table.incoming)} restored
+												{table.skippedOlder > 0
+													? ` · ${formatCount(table.skippedOlder)} kept newer local`
+													: ""}
+												{table.unchanged > 0
+													? ` · ${formatCount(table.unchanged)} already current`
+													: ""}
+											</span>
+										</span>
+									</div>
+								))}
+							</div>
+							<p className="text-xs text-muted-foreground">
+								{formatCount(restoreResult.totalApplied)} of{" "}
+								{formatCount(restoreResult.totalIncoming)} records were written. The rest were
+								already here at the same version, or this device holds a newer edit — restoring the
+								same file again will change nothing.
+							</p>
+							{restoreResult.settingsRestored.length > 0 ? (
+								<p className="text-xs text-muted-foreground">
+									Settings restored: {restoreResult.settingsRestored.join(", ")}. Your Firebase
+									configuration, app-lock PIN and API keys are never written to a backup file, so
+									they were left as they are on this device.
+								</p>
+							) : null}
+							{restoreResult.userIdRemapped ? (
+								<p className="text-xs text-amber-600 dark:text-amber-400">
+									This backup was written by a different account; its records were re-homed onto
+									yours.
+								</p>
+							) : null}
+							{restoreResult.orphans.length > 0 ? (
+								<p className="text-xs text-amber-600 dark:text-amber-400">
+									Some restored rows point at records this device does not have:{" "}
+									{restoreResult.orphans
+										.map(
+											(orphan) =>
+												`${RESTORE_TABLE_LABELS[orphan.table] ?? orphan.table}.${orphan.field} (${formatCount(orphan.count)})`
+										)
+										.join(", ")}
+									. They were kept rather than discarded — a later sync may still bring the missing
+									records in.
+								</p>
+							) : null}
+							{restoreResult.totalApplied >= IMPORT_SYNC_QUOTA_NOTE_THRESHOLD ? (
+								<p className="text-xs text-muted-foreground">
+									These {formatCount(restoreResult.totalApplied)} restored records are queued for
+									your next Firebase sync — about{" "}
+									{Math.min(
+										100,
+										Math.round(
+											(restoreResult.totalApplied / FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT) * 100
+										)
+									)}
+									% of the daily {formatCount(FIRESTORE_FREE_TIER_DAILY_WRITE_LIMIT)}-write
+									free-tier limit. Syncing may take more than one day; that&apos;s expected and
+									safe.
+								</p>
+							) : null}
 						</div>
 					)}
 				</DialogContent>

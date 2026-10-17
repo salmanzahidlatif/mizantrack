@@ -5,8 +5,13 @@ import {
 	buildHysabKytabSqliteExport,
 	HYSAB_KYTAB_SQLITE_FLEX_MAPPING,
 } from "./export/hysabKytabSqlite";
+import {
+	buildMizanTrackFullBackupFilename,
+	buildMizanTrackFullBackupText,
+} from "./export/mizanTrackFullBackup";
 import { buildMizanTrackBackupWorkbook } from "./export/mizanTrackWorkbook";
 
+import type { MizanTrackFullBackupOptions } from "./export/mizanTrackFullBackup";
 import type { DateRange } from "@/types";
 
 export interface ExportOptions {
@@ -136,6 +141,31 @@ export async function exportToHysabKytabSqliteDb(
 	writeBinaryFile(bytes, `mizantrack-hysab-kytab-${options.currency}-${Date.now()}.db`);
 }
 
+function writeTextFile(text: string, filename: string, mimeType: string) {
+	const blob = new Blob([text], { type: mimeType });
+	const url = URL.createObjectURL(blob);
+	const anchor = document.createElement("a");
+	anchor.href = url;
+	anchor.download = filename;
+	document.body.appendChild(anchor);
+	anchor.click();
+	anchor.remove();
+	URL.revokeObjectURL(url);
+}
+
+/**
+ * The complete backup: every table the owner's data lives in, not just the four an
+ * external app understands. Ignores currency and date range on purpose — a backup that
+ * only held one slice of the data would be the bug it exists to fix.
+ */
+export async function exportToMizanTrackFullBackup(
+	userId: string,
+	options: MizanTrackFullBackupOptions = {}
+) {
+	const text = await buildMizanTrackFullBackupText(userId, options);
+	writeTextFile(text, buildMizanTrackFullBackupFilename(), "application/json");
+}
+
 export {
 	buildHysabKytabSqliteExport,
 	buildMizanTrackBackupWorkbook,
@@ -148,3 +178,17 @@ export {
 	MIZAN_TRACK_BACKUP_SHEETS,
 	SECURITY_EXCLUDED_DB_CONFIG_FIELDS,
 } from "./export/mizanTrackWorkbook";
+export {
+	buildMizanTrackFullBackup,
+	buildMizanTrackFullBackupFilename,
+	buildMizanTrackFullBackupText,
+	MIZAN_TRACK_FULL_BACKUP_DB_CONFIG_FIELDS,
+	MIZAN_TRACK_FULL_BACKUP_EXCLUDED_DB_CONFIG_FIELDS,
+	MIZAN_TRACK_FULL_BACKUP_EXCLUDED_TABLES,
+	MIZAN_TRACK_FULL_BACKUP_FILE_SUFFIX,
+	MIZAN_TRACK_FULL_BACKUP_FORMAT,
+	MIZAN_TRACK_FULL_BACKUP_FORMAT_VERSION,
+	MIZAN_TRACK_FULL_BACKUP_REFERENCES,
+	MIZAN_TRACK_FULL_BACKUP_TABLES,
+	serializeMizanTrackFullBackup,
+} from "./export/mizanTrackFullBackup";
