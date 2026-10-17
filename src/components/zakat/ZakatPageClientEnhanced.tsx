@@ -1,7 +1,6 @@
 "use client";
 
-import { endOfDay, format } from "date-fns";
-import { useLiveQuery } from "dexie-react-hooks";
+import { endOfDay } from "date-fns";
 import { Check, Download, Minus, Save } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -27,21 +26,12 @@ import { ZakatHistory } from "@/components/zakat/ZakatHistory";
 import { ZakatMonthlyBalances } from "@/components/zakat/ZakatMonthlyBalances";
 import { ZakatPayments } from "@/components/zakat/ZakatPayments";
 import { ZakatYearCalendarControl } from "@/components/zakat/ZakatYearCalendarControl";
-import { useAccounts } from "@/hooks/useAccounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
-import {
-	computeAccountBalances,
-	normalizeCurrencyCode,
-	resolveCurrencyCode,
-} from "@/lib/analytics/balanceMath";
+import { useZakatYearAssessmentContext } from "@/hooks/useZakatYearAssessments";
+import { computeAccountBalances, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
-import { ZAKAT_EARLIEST_ISLAMIC_YEAR } from "@/lib/zakatCalendar";
-import {
-	resolveZakatCarryForward,
-	ZAKAT_CARRY_FORWARD_MAX_LOOKBACK_YEARS,
-	type ZakatYearSettlement,
-} from "@/lib/zakatCarryForward";
+import { resolveZakatCarryForward, type ZakatYearSettlement } from "@/lib/zakatCarryForward";
 import {
 	calculateZakatAssessment,
 	computeZakatYearGrid,
@@ -56,86 +46,42 @@ import {
 	hasZakatGoldYearGramsSnapshot,
 	resolveZakatGoldGramsByPurity,
 	sumZakatGoldGrams,
-	toZakatGoldItems,
-	toZakatGoldYearMap,
 } from "@/lib/zakatGoldYearRepository";
+import {
+	buildZakatYearAssessments,
+	DEFAULT_ZAKAT_RATE_PERCENT,
+	getZakatAccountsForCurrency,
+	getZakatCarryForwardYearRange,
+	getZakatCountedAccountIds,
+	getZakatGoldGrams,
+	getZakatGoldItemsForCurrency,
+	resolveZakatAccountSelection,
+	ZAKAT_SHOW_ARCHIVED_ACCOUNTS_DEFAULT,
+} from "@/lib/zakatYearAssessment";
 import {
 	saveZakatYearAccountSelection,
 	saveZakatYearShowArchivedAccounts,
-	toPastRemainingOverrideMap,
-	toRamadanStartMap,
-	toZakatAccountSelectionMap,
-	toZakatShowArchivedAccountsMap,
 } from "@/lib/zakatYearRepository";
 import { useFilterStore } from "@/store/filter-store";
 
-import type {
-	ZakatAssessment,
-	ZakatAssessmentInput,
-	ZakatBasis,
-	ZakatYearGrid,
-} from "@/lib/zakatEngine";
-import type { Account, GoldItem } from "@/types";
-
-/** The owner's workbook rate. Editable on screen; stored with every calculation. */
-export const DEFAULT_ZAKAT_RATE_PERCENT = 2.5;
-
-/** Closed accounts are listed, and counted, until the owner says otherwise. */
-export const ZAKAT_SHOW_ARCHIVED_ACCOUNTS_DEFAULT = true;
+import type { ZakatBasis } from "@/lib/zakatEngine";
+import type { ZakatYearAssessment } from "@/lib/zakatYearAssessment";
+import type { ZakatGoldYear } from "@/types";
 
 /**
- * The accounts a year is assessed on.
- *
- * A stored selection — including an empty one — is the owner's own answer and always
- * wins. Only a year he has never touched falls back to pre-selecting the open asset
- * accounts, which is a convenience, not a decision. Ids of accounts that no longer exist
- * are dropped so a deleted account cannot haunt a year.
+ * How a zakat year is assembled now lives in `@/lib/zakatYearAssessment`, so the
+ * calculator, the carry-forward chain and the History audit all derive a year the same
+ * way. Re-exported here because this screen is where they have always been reached from.
  */
-export function resolveZakatAccountSelection({
-	storedAccountIds,
-	currencyAccounts,
-}: {
-	storedAccountIds?: readonly string[];
-	currencyAccounts: Account[];
-}): Set<string> {
-	if (storedAccountIds) {
-		const known = new Set(currencyAccounts.map((account) => account.id));
-		return new Set(storedAccountIds.filter((id) => known.has(id)));
-	}
-
-	return new Set(
-		currencyAccounts
-			.filter((account) => account.accountType !== "liability" && !account.isArchived)
-			.map((account) => account.id)
-	);
-}
-
-/**
- * The accounts that actually count: selected AND, for a closed one, only while the year
- * counts closed accounts.
- *
- * The "show closed accounts" toggle is an INCLUSION filter, not a view preference. With
- * it off an archived account is excluded from the grid, the monthly totals, MINIMUM,
- * MAXIMUM, the assessment and the export alike — hiding it must never leave it quietly
- * inflating a figure the owner can no longer see. The stored selection underneath is
- * kept, so switching the toggle back on restores the account as selected.
- */
-export function getZakatCountedAccountIds({
-	selectedAccountIds,
-	currencyAccounts,
-	showArchivedAccounts,
-}: {
-	selectedAccountIds: Set<string>;
-	currencyAccounts: Account[];
-	showArchivedAccounts: boolean;
-}): Set<string> {
-	if (showArchivedAccounts) return new Set(selectedAccountIds);
-
-	const archived = new Set(
-		currencyAccounts.filter((account) => account.isArchived).map((account) => account.id)
-	);
-	return new Set([...selectedAccountIds].filter((id) => !archived.has(id)));
-}
+export {
+	DEFAULT_ZAKAT_RATE_PERCENT,
+	getZakatAccountsForCurrency,
+	getZakatCountedAccountIds,
+	getZakatGoldGrams,
+	getZakatGoldItemsForCurrency,
+	resolveZakatAccountSelection,
+	ZAKAT_SHOW_ARCHIVED_ACCOUNTS_DEFAULT,
+};
 
 export type ZakatSelectAllState = "checked" | "mixed" | "unchecked";
 
@@ -174,22 +120,6 @@ export function applyZakatSelectAll(
 	return next;
 }
 
-export function getZakatAccountsForCurrency(accounts: Account[], currency: string): Account[] {
-	const normalizedCurrency = normalizeCurrencyCode(currency);
-	return accounts.filter(
-		(account) => normalizeCurrencyCode(account.currency) === normalizedCurrency
-	);
-}
-
-export function getZakatGoldItemsForCurrency(items: GoldItem[], currency: string): GoldItem[] {
-	const normalizedCurrency = normalizeCurrencyCode(currency);
-	return items.filter((item) => normalizeCurrencyCode(item.currency) === normalizedCurrency);
-}
-
-export function getZakatGoldGrams(items: GoldItem[]): number {
-	return items.reduce((sum, item) => sum + item.weight, 0);
-}
-
 interface ZakatPageClientProps {
 	userId?: string;
 }
@@ -199,58 +129,27 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	const config = useDbConfig(userId);
 	const { activeCurrency } = useFilterStore();
 	const referenceCurrency = resolveCurrencyCode(activeCurrency, config?.currency);
-	// Archived accounts are loaded as well: a closed account still held wealth during a
-	// past year, so it must be selectable and must reach the grid, the totals, MINIMUM
-	// and MAXIMUM. The toggle below only decides whether the picker lists them.
-	const accounts = useAccounts(userId, { showArchived: true });
-
-	const allTransactions = useLiveQuery(
-		() =>
-			db.transactions
-				.where("userId")
-				.equals(userId)
-				.filter((t) => !t.deletedAt)
-				.toArray(),
-		[userId]
-	);
-
-	const goldItems = useLiveQuery(
-		() =>
-			db.goldItems
-				.where("userId")
-				.equals(userId)
-				.filter((g) => !g.deletedAt && normalizeCurrencyCode(g.currency) === referenceCurrency)
-				.toArray(),
-		[userId, referenceCurrency]
-	);
-	const zakatAccounts = useMemo(
-		() => getZakatAccountsForCurrency(accounts ?? [], referenceCurrency),
-		[accounts, referenceCurrency]
-	);
-
+	// Every table a zakat year is assessed from, loaded once and prepared once. The
+	// calculator, the carry-forward chain and the History audit all read this same
+	// context, so a year cannot mean one thing on one tab and something else on another.
+	// Archived accounts are included: a closed account still held wealth during a past
+	// year, so it must be selectable and must reach the grid, the totals, MINIMUM and
+	// MAXIMUM. The toggle below only decides whether the picker lists them.
+	const zakatContext = useZakatYearAssessmentContext(userId, referenceCurrency);
+	const accounts = zakatContext?.accounts;
+	const allTransactions = zakatContext?.transactions;
+	const goldItems = zakatContext?.goldItems;
+	const zakatAccounts = useMemo(() => zakatContext?.currencyAccounts ?? [], [zakatContext]);
 	// Gold priced per zakat year. The inventory is NOT duplicated per year: only the
 	// price the owner typed for a year — and the grams snapshot, when a year's holding
 	// genuinely differed — lives here.
-	const zakatGoldYearRecords = useLiveQuery(
-		() => db.zakatGoldYears.where("userId").equals(userId).toArray(),
-		[userId]
-	);
 	const zakatGoldYears = useMemo(
-		() => toZakatGoldYearMap(zakatGoldYearRecords ?? [], referenceCurrency),
-		[referenceCurrency, zakatGoldYearRecords]
+		() => zakatContext?.goldYears ?? new Map<number, ZakatGoldYear>(),
+		[zakatContext]
 	);
-
 	// Payments recorded for this currency; the screen, the engine and the export all
 	// filter them down to the selected year.
-	const zakatPayments = useLiveQuery(
-		() =>
-			db.zakatPayments
-				.where("userId")
-				.equals(userId)
-				.filter((p) => !p.deletedAt && normalizeCurrencyCode(p.currency) === referenceCurrency)
-				.sortBy("date"),
-		[userId, referenceCurrency]
-	);
+	const zakatPayments = zakatContext?.payments;
 
 	// ── Form state ──────────────────────────────────────────────────────────
 	// There is no assessment-date picker: the selected zakat year IS the period, and a
@@ -266,13 +165,9 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	// ── Zakat calendar ──────────────────────────────────────────────────────
 	// Saved Ramaḍān anchors win over the announced/computed defaults. Only the anchor is
 	// stored; the twelve months are regenerated from it on every render.
-	const zakatYearOverrides = useLiveQuery(
-		() => db.zakatYears.where("userId").equals(userId).toArray(),
-		[userId]
-	);
 	const ramadanStarts = useMemo(
-		() => toRamadanStartMap(zakatYearOverrides ?? []),
-		[zakatYearOverrides]
+		() => zakatContext?.ramadanStarts ?? new Map<number, Date>(),
+		[zakatContext]
 	);
 	const availableZakatYears = useMemo(
 		() => getZakatYearDefinitions({ ramadanStarts }),
@@ -310,12 +205,12 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	// straight out of Dexie rather than held in component state, so it survives a reload
 	// and reaches his other devices.
 	const accountSelections = useMemo(
-		() => toZakatAccountSelectionMap(zakatYearOverrides ?? []),
-		[zakatYearOverrides]
+		() => zakatContext?.accountSelections ?? new Map<number, string[]>(),
+		[zakatContext]
 	);
 	const showArchivedByYear = useMemo(
-		() => toZakatShowArchivedAccountsMap(zakatYearOverrides ?? []),
-		[zakatYearOverrides]
+		() => zakatContext?.showArchivedByYear ?? new Map<number, boolean>(),
+		[zakatContext]
 	);
 	const showArchivedAccounts =
 		showArchivedByYear.get(selectedYear.islamicYear) ?? ZAKAT_SHOW_ARCHIVED_ACCOUNTS_DEFAULT;
@@ -441,104 +336,33 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	// year's opening figure, and an overpayment carries as a negative so it reduces what
 	// the following year owes. Only a figure the owner typed is persisted.
 	const pastRemainingOverrides = useMemo(
-		() => toPastRemainingOverrideMap(zakatYearOverrides ?? []),
-		[zakatYearOverrides]
+		() => zakatContext?.pastRemainingOverrides ?? new Map<number, number>(),
+		[zakatContext]
 	);
 
 	/**
 	 * Every year the chain needs, assessed with nothing carried in. The window is walked
 	 * forward from the earliest year the app exposes and capped, so resolving one year can
 	 * never turn into an unbounded walk back through history.
+	 *
+	 * Each year is assembled by `buildZakatYearAssessments` — its own accounts, its own
+	 * closed-accounts rule, its own grams at its own price per gram — which is the same
+	 * call History audits a saved calculation against, so the two cannot drift apart.
+	 * Only the year on screen follows the owner's basis and rate: decision 2 says a
+	 * deliberate switch belongs to the year it was made on.
 	 */
 	const zakatYearAssessments = useMemo(() => {
-		const byYear = new Map<
-			number,
-			{ grid: ZakatYearGrid; input: ZakatAssessmentInput; assessment: ZakatAssessment }
-		>();
-		const goldItemsForYear = goldItems ?? [];
-		const firstIslamicYear = Math.max(
-			ZAKAT_EARLIEST_ISLAMIC_YEAR,
-			selectedYear.islamicYear - ZAKAT_CARRY_FORWARD_MAX_LOOKBACK_YEARS
-		);
+		if (!zakatContext) return new Map<number, ZakatYearAssessment>();
 
-		for (
-			let islamicYear = firstIslamicYear;
-			islamicYear <= selectedYear.islamicYear;
-			islamicYear += 1
-		) {
-			const definition =
+		return buildZakatYearAssessments(
+			zakatContext,
+			getZakatCarryForwardYearRange(selectedYear.islamicYear),
+			(islamicYear) =>
 				islamicYear === selectedYear.islamicYear
-					? selectedYear
-					: getZakatYearDefinitionByIslamicYear(islamicYear, { ramadanStarts });
-			// Every year is assessed on ITS OWN accounts and its own closed-accounts rule,
-			// so settling an earlier year to carry its balance forward cannot be distorted
-			// by the accounts the owner happens to have chosen for the year on screen.
-			const yearSelection = getZakatCountedAccountIds({
-				selectedAccountIds: resolveZakatAccountSelection({
-					storedAccountIds: accountSelections.get(islamicYear),
-					currencyAccounts: zakatAccounts,
-				}),
-				currencyAccounts: zakatAccounts,
-				showArchivedAccounts:
-					showArchivedByYear.get(islamicYear) ?? ZAKAT_SHOW_ARCHIVED_ACCOUNTS_DEFAULT,
-			});
-			const grid = computeZakatYearGrid({
-				userId,
-				accounts: accounts ?? [],
-				transactions: allTransactions ?? [],
-				selectedAccountIds: yearSelection,
-				sheetYear: definition.sheetYear,
-				yearDefinition: definition,
-			});
-			// Only the year on screen follows the owner's basis and rate. Earlier years
-			// are only being settled to carry a balance forward, and decision 2 says a
-			// deliberate switch is never remembered or applied to another year.
-			const isSelectedYear = islamicYear === selectedYear.islamicYear;
-			// Each year is valued at ITS OWN price per gram, on its own grams. A year the
-			// owner never priced contributes no gold value rather than borrowing another
-			// year's price.
-			const goldYear = zakatGoldYears.get(islamicYear);
-			const gramsByPurity = resolveZakatGoldGramsByPurity(goldYear, goldItemsForYear);
-			const priceDate =
-				goldYear?.priceDate !== undefined
-					? new Date(goldYear.priceDate)
-					: definition.months[0]!.startDate;
-			const input: ZakatAssessmentInput = {
-				monthlyTotals: grid.monthlyTotals,
-				basis: isSelectedYear ? basis : "minimum",
-				goldItems: toZakatGoldItems(gramsByPurity),
-				goldPrices: {
-					priceDate: format(priceDate, "yyyy-MM-dd"),
-					pricesByPurity: getZakatGoldYearPrices(goldYear),
-				},
-				ratePercent: isSelectedYear ? ratePercent : DEFAULT_ZAKAT_RATE_PERCENT,
-				pastRemaining: 0,
-				// Paid is the sum of THIS year's payments, which is the same figure the
-				// carry-forward chain settles the year on.
-				payments: (zakatPayments ?? []).filter(
-					(payment) => payment.islamicYear === definition.zakatYear
-				),
-			};
-
-			byYear.set(islamicYear, { grid, input, assessment: calculateZakatAssessment(input) });
-		}
-
-		return byYear;
-	}, [
-		accountSelections,
-		accounts,
-		allTransactions,
-		basis,
-		goldItems,
-		ramadanStarts,
-		ratePercent,
-		selectedYear,
-		showArchivedByYear,
-		userId,
-		zakatAccounts,
-		zakatGoldYears,
-		zakatPayments,
-	]);
+					? { basis, ratePercent, definition: selectedYear }
+					: {}
+		);
+	}, [basis, ratePercent, selectedYear, zakatContext]);
 
 	const zakatYearSettlements = useMemo<ZakatYearSettlement[]>(
 		() =>
@@ -565,6 +389,11 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	// ── Save calculation ────────────────────────────────────────────────────
 	// Whatever the engine returned is what gets stored. There is no liability gate:
 	// zakat is owed on the chosen basis however small it is (spec section 2).
+	//
+	// A save ADDS a record; it never replaces one. "On this date I assessed X" is a
+	// determination the owner made, and overwriting it would destroy exactly what the
+	// History trail exists to preserve. History marks the latest record for a year and
+	// keeps the ones it supersedes readable underneath.
 	async function handleSaveCalculation() {
 		const assessment = selectedYearAssessment;
 		if (!assessment) return;
@@ -1010,11 +839,15 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 									</p>
 								</div>
 
-								<div className="mt-4 flex justify-center">
+								<div className="mt-4 flex flex-col items-center gap-1.5">
 									<Button onClick={() => void handleSaveCalculation()}>
 										<Save className="mr-2 h-4 w-4" />
 										Save This Calculation
 									</Button>
+									<p className="text-center text-xs text-muted-foreground">
+										Saving records what you assessed today. It is kept as a record and never
+										rewritten, so assessing this year again adds another entry beside it.
+									</p>
 								</div>
 							</>
 						) : (

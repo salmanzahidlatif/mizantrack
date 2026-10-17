@@ -4,10 +4,12 @@ import { ArrowLeftRight, ChevronRight, TrendingDown, TrendingUp } from "lucide-r
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { useHaptics } from "@/hooks/useHaptics";
+import { currencyCodesMatch } from "@/lib/analytics/balanceMath";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { PRESS_SCALE, TAPPABLE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
 import type { Account, Category, Transaction } from "@/types";
@@ -61,6 +63,7 @@ export function ArchivedAccountIndicator({ label = "Archived account" }: { label
 
 export function TransactionRow({ transaction, accounts, categories }: TransactionRowProps) {
 	const openEditTransaction = useUIStore((s) => s.openEditTransaction);
+	const activeCurrency = useFilterStore((s) => s.activeCurrency);
 	const haptics = useHaptics();
 
 	const TypeIcon = TYPE_ICON[transaction.type];
@@ -70,6 +73,13 @@ export function TransactionRow({ transaction, accounts, categories }: Transactio
 	const toAccount = transaction.toAccountId
 		? accounts.find((a) => a.id === transaction.toAccountId)
 		: undefined;
+
+	// Only a row denominated in the currency the screen is showing can safely drop its
+	// symbol. An unknown or foreign currency keeps it so the figures stay distinguishable.
+	const matchesActiveCurrency =
+		Boolean(account?.currency) &&
+		Boolean(activeCurrency) &&
+		currencyCodesMatch(account?.currency, activeCurrency);
 	const category = categories.find((c) => c.id === transaction.categoryId);
 
 	const label =
@@ -144,9 +154,11 @@ export function TransactionRow({ transaction, accounts, categories }: Transactio
 					currency={account?.currency}
 					colorized
 					showNegativeSign
-					// The transactions screen is scoped to one currency and states it, so
-					// repeating the symbol on every row is noise.
-					showCurrency={false}
+					// The screen already states the currency it is scoped to, so repeating the
+					// symbol on every matching row is noise. A row in another currency — an FX
+					// transfer, an imported account with none recorded — must still show it,
+					// otherwise two different currencies read as the same number.
+					showCurrency={!matchesActiveCurrency}
 					variant={transaction.type === "Transfer" ? "transfer" : undefined}
 					className="text-[15px] leading-5"
 				/>
