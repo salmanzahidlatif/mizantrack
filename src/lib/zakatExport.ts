@@ -14,6 +14,7 @@
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
 
+import { visibleZakatAccounts } from "@/lib/zakatAccountVisibility";
 import { formatZakatMonthRange } from "@/lib/zakatEngine";
 
 import type { ZakatBasis, ZakatYearGrid } from "@/lib/zakatEngine";
@@ -158,8 +159,8 @@ interface SheetLayout {
 	summaryFirstRow: number;
 }
 
-function computeLayout(year: ZakatExportYear): SheetLayout {
-	const accountRows = reservedRowCount(year.grid.accounts.length);
+function computeLayout(year: ZakatExportYear, accountCount: number): SheetLayout {
+	const accountRows = reservedRowCount(accountCount);
 	const goldRows = reservedRowCount(year.goldRows?.length ?? 0);
 	const paymentRows = reservedRowCount(year.payments?.length ?? 0);
 
@@ -372,10 +373,13 @@ function buildSummaryBlock(
 }
 
 function buildYearSheet(year: ZakatExportYear): XLSX.WorkSheet {
-	const layout = computeLayout(year);
+	const { grid } = year;
+	// The sheet shows the same rows the screen does: an account that was flat at zero all
+	// year contributes nothing to the TOTAL SUM, so leaving it out moves no figure.
+	const accounts = visibleZakatAccounts(grid.accounts);
+	const layout = computeLayout(year, accounts.length);
 	const rows: SheetRow[] = [];
 	const formulas: FormulaCell[] = [];
-	const { grid } = year;
 	const months = grid.year.months.slice(0, MONTH_COUNT);
 
 	setCell(rows, TITLE_ROW, 0, `Zakat ${grid.year.label}`);
@@ -406,9 +410,9 @@ function buildYearSheet(year: ZakatExportYear): XLSX.WorkSheet {
 	];
 	for (const [column, label] of summaryHeaders) setCell(rows, HEADER_ROW, column, label);
 
-	for (let index = 0; index < reservedRowCount(grid.accounts.length); index += 1) {
+	for (let index = 0; index < reservedRowCount(accounts.length); index += 1) {
 		const row = FIRST_ACCOUNT_ROW + index;
-		const account = grid.accounts[index];
+		const account = accounts[index];
 
 		setCell(rows, row, 0, account ? accountLabel(account) : null);
 		for (let monthIndex = 0; monthIndex < MONTH_COUNT; monthIndex += 1) {

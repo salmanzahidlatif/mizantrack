@@ -1,6 +1,7 @@
 "use client";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
+import { visibleZakatAccounts } from "@/lib/zakatAccountVisibility";
 import { formatZakatMonthRange } from "@/lib/zakatEngine";
 
 import type { ZakatBasis, ZakatYearGrid } from "@/lib/zakatEngine";
@@ -32,6 +33,9 @@ export function ZakatMonthlyBalances({ grid, currency, basis }: ZakatMonthlyBala
 	// and a closed account still counts for the years it was open. The signs themselves
 	// come from `normalizeZakatAccountBalance` inside the engine.
 	const basisAmount = basis === "minimum" ? grid.minimum : grid.maximum;
+	// Presentation only: an account that was flat at zero all year adds nothing to any
+	// monthly total, so hiding its row leaves TOTAL, MINIMUM and MAXIMUM untouched.
+	const accounts = visibleZakatAccounts(grid.accounts);
 
 	return (
 		<div className="space-y-3">
@@ -68,98 +72,110 @@ export function ZakatMonthlyBalances({ grid, currency, basis }: ZakatMonthlyBala
 				</div>
 			</div>
 
-			{/* Scrollable table */}
-			<div className="overflow-x-auto rounded-lg border">
-				<table className="w-full text-sm">
-					<thead className="bg-muted/50">
-						<tr>
-							<th className="sticky left-0 z-10 bg-muted/50 px-3 py-2 text-left font-medium">
-								Account
-							</th>
-							{months.map((month) => (
-								<th
-									key={`${month.month}-${month.islamicYear}`}
-									className="min-w-[110px] px-2 py-2 text-right font-medium tabular-nums">
-									<div className="text-xs">{month.month}</div>
-									<div className="text-[10px] font-normal text-muted-foreground">
-										{formatZakatMonthRange(month)}
-									</div>
-								</th>
-							))}
-						</tr>
-					</thead>
-					<tbody>
-						{grid.accounts.map((account) => (
-							<tr key={account.accountId} className="border-t hover:bg-accent/30">
-								<td className="sticky left-0 z-10 bg-card px-3 py-2 font-medium hover:bg-accent/30">
-									<div className="flex items-center gap-1.5">
-										<span>{account.accountTitle}</span>
-										<span className="text-xs text-muted-foreground">{account.currency}</span>
-										{account.accountType === "liability" && (
-											<span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-												Liability
-											</span>
-										)}
-										{account.isArchived && (
-											<span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-												Closed
-											</span>
-										)}
-									</div>
-								</td>
-								{months.map((month, index) => {
-									const balance = account.balances[index] ?? 0;
-
-									return (
-										<td
+			{accounts.length === 0 ? (
+				<div className="rounded-lg border bg-card p-8 text-center">
+					<p className="text-sm font-medium">No account held a balance in this year</p>
+					<p className="mt-1 text-xs text-muted-foreground">
+						Accounts that stayed at zero for all twelve months are hidden here and in the export.
+						Include an account that held a balance — or owed one — to see its row.
+					</p>
+				</div>
+			) : (
+				<>
+					{/* Scrollable table */}
+					<div className="overflow-x-auto rounded-lg border">
+						<table className="w-full text-sm">
+							<thead className="bg-muted/50">
+								<tr>
+									<th className="sticky left-0 z-10 bg-muted/50 px-3 py-2 text-left font-medium">
+										Account
+									</th>
+									{months.map((month) => (
+										<th
 											key={`${month.month}-${month.islamicYear}`}
-											className={`px-2 py-2 text-right tabular-nums ${
-												balance < 0 ? "text-destructive" : ""
-											}`}>
-											<CurrencyAmount
-												amount={balance}
-												currency={account.currency}
-												showNegativeSign
-												className="font-normal tracking-normal"
-											/>
+											className="min-w-[110px] px-2 py-2 text-right font-medium tabular-nums">
+											<div className="text-xs">{month.month}</div>
+											<div className="text-[10px] font-normal text-muted-foreground">
+												{formatZakatMonthRange(month)}
+											</div>
+										</th>
+									))}
+								</tr>
+							</thead>
+							<tbody>
+								{accounts.map((account) => (
+									<tr key={account.accountId} className="border-t hover:bg-accent/30">
+										<td className="sticky left-0 z-10 bg-card px-3 py-2 font-medium hover:bg-accent/30">
+											<div className="flex items-center gap-1.5">
+												<span>{account.accountTitle}</span>
+												<span className="text-xs text-muted-foreground">{account.currency}</span>
+												{account.accountType === "liability" && (
+													<span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+														Liability
+													</span>
+												)}
+												{account.isArchived && (
+													<span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+														Closed
+													</span>
+												)}
+											</div>
 										</td>
-									);
-								})}
-							</tr>
-						))}
+										{months.map((month, index) => {
+											const balance = account.balances[index] ?? 0;
 
-						{/* TOTAL ROW */}
-						<tr className="border-t-2 border-primary/20 bg-primary/5 font-bold">
-							<td className="sticky left-0 z-10 bg-primary/5 px-3 py-2">TOTAL ({currency})</td>
-							{months.map((month, index) => {
-								const total = grid.monthlyTotals[index] ?? 0;
-								const isBasisMonth = total === basisAmount;
+											return (
+												<td
+													key={`${month.month}-${month.islamicYear}`}
+													className={`px-2 py-2 text-right tabular-nums ${
+														balance < 0 ? "text-destructive" : ""
+													}`}>
+													<CurrencyAmount
+														amount={balance}
+														currency={account.currency}
+														showNegativeSign
+														className="font-normal tracking-normal"
+													/>
+												</td>
+											);
+										})}
+									</tr>
+								))}
 
-								return (
-									<td
-										key={`${month.month}-${month.islamicYear}`}
-										className={`px-2 py-2 text-right tabular-nums ${
-											isBasisMonth ? "bg-primary/20 text-primary" : ""
-										}`}>
-										<CurrencyAmount
-											amount={total}
-											currency={currency}
-											showNegativeSign
-											className="font-bold tracking-normal"
-										/>
-									</td>
-								);
-							})}
-						</tr>
-					</tbody>
-				</table>
-			</div>
+								{/* TOTAL ROW */}
+								<tr className="border-t-2 border-primary/20 bg-primary/5 font-bold">
+									<td className="sticky left-0 z-10 bg-primary/5 px-3 py-2">TOTAL ({currency})</td>
+									{months.map((month, index) => {
+										const total = grid.monthlyTotals[index] ?? 0;
+										const isBasisMonth = total === basisAmount;
 
-			<p className="text-xs text-muted-foreground">
-				💡 <strong>Note:</strong> Zakat is calculated on the{" "}
-				<strong>{basis === "minimum" ? "minimum" : "maximum"}</strong> monthly total of the lunar
-				year. The highlighted column is the one feeding the calculation.
-			</p>
+										return (
+											<td
+												key={`${month.month}-${month.islamicYear}`}
+												className={`px-2 py-2 text-right tabular-nums ${
+													isBasisMonth ? "bg-primary/20 text-primary" : ""
+												}`}>
+												<CurrencyAmount
+													amount={total}
+													currency={currency}
+													showNegativeSign
+													className="font-bold tracking-normal"
+												/>
+											</td>
+										);
+									})}
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<p className="text-xs text-muted-foreground">
+						💡 <strong>Note:</strong> Zakat is calculated on the{" "}
+						<strong>{basis === "minimum" ? "minimum" : "maximum"}</strong> monthly total of the
+						lunar year. The highlighted column is the one feeding the calculation.
+					</p>
+				</>
+			)}
 		</div>
 	);
 }
