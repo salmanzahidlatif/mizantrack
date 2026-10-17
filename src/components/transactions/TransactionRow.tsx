@@ -144,6 +144,9 @@ export function TransactionRow({ transaction, accounts, categories }: Transactio
 					currency={account?.currency}
 					colorized
 					showNegativeSign
+					// The transactions screen is scoped to one currency and states it, so
+					// repeating the symbol on every row is noise.
+					showCurrency={false}
 					variant={transaction.type === "Transfer" ? "transfer" : undefined}
 					className="text-[15px] leading-5"
 				/>

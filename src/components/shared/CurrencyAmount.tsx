@@ -17,6 +17,12 @@ interface CurrencyAmountProps {
 	showNegativeSign?: boolean;
 	/** Force a specific color regardless of sign */
 	variant?: "positive" | "negative" | "neutral" | "transfer";
+	/**
+	 * Hide the currency symbol. Use where the surrounding screen already states the
+	 * currency, such as a transaction list that is scoped to one currency, so every row
+	 * does not repeat it. The symbol stays available to screen readers.
+	 */
+	showCurrency?: boolean;
 	className?: string;
 }
 
@@ -41,7 +47,8 @@ function formatAmount(
 	currency: string | undefined,
 	fallbackCurrency: string,
 	showNegativeSign: boolean,
-	hideAmounts: boolean
+	hideAmounts: boolean,
+	showCurrency: boolean
 ): ReactNode {
 	const { code, symbol } = getCurrencyDisplay(currency, fallbackCurrency);
 
@@ -55,6 +62,17 @@ function formatAmount(
 		maximumFractionDigits: 2,
 	});
 	const prefix = showNegativeSign && amount < 0 ? "-" : "";
+
+	if (!showCurrency) {
+		// The screen already names the currency, so only the figure is rendered. The code
+		// stays in the accessible name so the amount is never ambiguous when read aloud.
+		return (
+			<>
+				<span className="sr-only">{code}</span>
+				<span className="inline-block">{prefix + formatted}</span>
+			</>
+		);
+	}
 
 	if (typeof symbol === "string" && !RTL_SYMBOL_PATTERN.test(symbol)) {
 		return `${symbol} ${prefix}${formatted}`;
@@ -94,6 +112,7 @@ export function CurrencyAmount({
 	colorized = false,
 	showNegativeSign = false,
 	variant,
+	showCurrency = true,
 	className,
 }: CurrencyAmountProps) {
 	const hideAmounts = useHideAmounts();
@@ -114,7 +133,14 @@ export function CurrencyAmount({
 				"[unicode-bidi:isolate]",
 				className
 			)}>
-			{formatAmount(amount, currency, fallbackCurrency, showNegativeSign, hideAmounts)}
+			{formatAmount(
+				amount,
+				currency,
+				fallbackCurrency,
+				showNegativeSign,
+				hideAmounts,
+				showCurrency
+			)}
 		</span>
 	);
 }
