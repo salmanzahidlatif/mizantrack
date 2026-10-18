@@ -4,6 +4,7 @@ import { Archive, ArchiveRestore, MoreVertical, Pencil, Plus, Trash2 } from "luc
 import { useMemo, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 
+import { AccountIcon } from "@/components/icons/AccountIcon";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
@@ -15,7 +16,6 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useHaptics } from "@/hooks/useHaptics";
-import { getAccountIcon } from "@/lib/accountIcons";
 import { deleteAccount, setAccountArchived } from "@/lib/actions/accounts";
 import { CARD_SURFACE, LIST_ROW, PRESS_SCALE, TAPPABLE, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -57,7 +57,6 @@ interface AccountRowProps {
 function AccountRow({ account, balance, onEdit, onSelect, className, style }: AccountRowProps) {
 	const [confirming, setConfirming] = useState(false);
 	const haptics = useHaptics();
-	const icon = getAccountIcon(account);
 
 	function handleSelect() {
 		haptics.selection();
@@ -105,7 +104,7 @@ function AccountRow({ account, balance, onEdit, onSelect, className, style }: Ac
 					TAPPABLE
 				)}>
 				<span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-muted text-lg leading-none shadow-sm">
-					{icon}
+					<AccountIcon account={account} className="h-6 w-6" />
 				</span>
 				<span className="min-w-0 flex-1">
 					<span className="block truncate text-base font-semibold tracking-tight">

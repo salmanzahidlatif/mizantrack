@@ -212,7 +212,7 @@ Commit: `740e360`
 
 **Acceptance Criteria:**
 - [x] "Add Account" button opens a drawer/dialog containing the account form
-- [x] Form fields: Title (required), Currency (required, ISO-4217 text input with common shortcuts AED/PKR/USD), Opening Balance (number, default 0), Color (color picker or predefined swatches), Icon (optional text/emoji)
+- [x] Form fields: Title (required), Currency (required, ISO-4217 text input with common shortcuts AED/PKR/USD), Opening Balance (number, default 0), Color (color picker or predefined swatches), Icon (optional, searchable picker of bundled SVG brand/generic icons with an Automatic option)
 - [x] Submitting a valid form creates the account in Dexie and closes the drawer; account appears immediately in the list
 - [x] Tapping an existing account card's edit action pre-fills the form with current values; saving updates the record (`updatedAt` refreshed)
 - [x] Validation errors shown inline per field (Zod schema from US-004)

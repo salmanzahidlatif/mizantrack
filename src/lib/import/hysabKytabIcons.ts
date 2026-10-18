@@ -1,6 +1,8 @@
 import { DEFAULT_ACCOUNT_ICON, resolveAccountIcon } from "@/lib/accountIcons";
 import { resolveCategoryIcon } from "@/lib/categoryIcons";
 
+import type { AccountIconKey } from "@/lib/accountIcons";
+
 export const HYSAB_KYTAB_BOX_ICON_EMOJI: Record<string, string> = {
 	allowance_inactive: "💵",
 	bills_inactive: "🧾",
@@ -77,6 +79,21 @@ const ACCOUNT_SAFE_BOX_ICONS = new Set([
 	"scb",
 ]);
 
+// Accounts store icon keys, so the account-safe BOXICON names map straight to
+// the registry instead of the emoji table that categories still use.
+const ACCOUNT_BOX_ICON_KEYS: Record<string, AccountIconKey> = {
+	easypaisa_bank: "wallet.easypaisa",
+	ic_person: "generic.person",
+	mcb: "bank.mcb",
+	meezan: "bank.meezan",
+	meezan_bank: "bank.meezan",
+	nayapay: "wallet.nayapay",
+	sadapay: "wallet.sadapay",
+	savings_inactive: "generic.savings",
+	sc_bank: "bank.scb",
+	scb: "bank.scb",
+};
+
 function normalizeBoxIconKey(value: string | undefined): string | undefined {
 	const key = value
 		?.trim()
@@ -94,6 +111,14 @@ export function mapHysabKytabBoxIcon(
 	if (!key || GENERIC_BOX_ICON_PATTERN.test(key)) return undefined;
 	if (context === "account" && !ACCOUNT_SAFE_BOX_ICONS.has(key)) return undefined;
 	return HYSAB_KYTAB_BOX_ICON_EMOJI[key];
+}
+
+/** Maps an account-context BOXICON name onto an account icon key. */
+export function mapHysabKytabAccountBoxIcon(value: string | undefined): AccountIconKey | undefined {
+	const key = normalizeBoxIconKey(value);
+	if (!key || GENERIC_BOX_ICON_PATTERN.test(key)) return undefined;
+	if (!ACCOUNT_SAFE_BOX_ICONS.has(key)) return undefined;
+	return ACCOUNT_BOX_ICON_KEYS[key];
 }
 
 export function normalizeHysabKytabColor(value: string | undefined): string | undefined {
@@ -128,7 +153,7 @@ export function resolveHysabKytabAccountIcon(
 	});
 	if (inferred !== DEFAULT_ACCOUNT_ICON) return inferred;
 
-	return mapHysabKytabBoxIcon(options.boxIcon, "account") ?? inferred;
+	return mapHysabKytabAccountBoxIcon(options.boxIcon) ?? inferred;
 }
 
 export function resolveHysabKytabCategoryIcon(title: string, boxIcon?: string): string {

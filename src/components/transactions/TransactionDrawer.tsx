@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useForm, type FieldErrors, type Resolver, type SubmitErrorHandler } from "react-hook-form";
 import { toast } from "sonner";
 
+import { AccountIcon } from "@/components/icons/AccountIcon";
 import { IconGridPicker } from "@/components/shared/IconGridPicker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -27,7 +28,6 @@ import { useActiveAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { scrollFocusedFieldIntoView } from "@/hooks/useKeyboardInset";
-import { getAccountIcon } from "@/lib/accountIcons";
 import {
 	createTransaction,
 	deleteTransaction,
@@ -330,7 +330,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 			accountOptions.map((account) => ({
 				badge: account.currency,
 				color: account.color,
-				icon: getAccountIcon(account),
+				icon: <AccountIcon account={account} className="h-6 w-6" />,
 				id: account.id,
 				title: account.title,
 			})),
@@ -341,7 +341,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 			destAccounts.map((account) => ({
 				badge: account.currency,
 				color: account.color,
-				icon: getAccountIcon(account),
+				icon: <AccountIcon account={account} className="h-6 w-6" />,
 				id: account.id,
 				title: account.title,
 			})),

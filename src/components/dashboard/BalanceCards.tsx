@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 
+import { AccountIcon } from "@/components/icons/AccountIcon";
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { SkeletonBalance } from "@/components/shared/SkeletonBalance";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
-import { getAccountIcon } from "@/lib/accountIcons";
 import { resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { CARD_SURFACE, LIST_ROW, PRESS_SCALE, TAPPABLE, staggerDelay } from "@/lib/motion";
@@ -25,7 +25,6 @@ interface BalanceCardProps {
 
 function BalanceCard({ account, balance }: BalanceCardProps) {
 	const currency = getCurrencyByCode(account.currency);
-	const icon = getAccountIcon(account);
 
 	return (
 		<div
@@ -42,7 +41,7 @@ function BalanceCard({ account, balance }: BalanceCardProps) {
 			/>
 			<div className="flex items-center gap-2">
 				<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-muted text-base leading-none shadow-sm">
-					{icon}
+					<AccountIcon account={account} className="h-5 w-5" />
 				</span>
 				<div className="min-w-0">
 					<p className="truncate text-sm font-semibold tracking-tight">{account.title}</p>

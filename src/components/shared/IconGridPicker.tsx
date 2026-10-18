@@ -1,7 +1,15 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+	useEffect,
+	useId,
+	useMemo,
+	useRef,
+	useState,
+	type KeyboardEvent,
+	type ReactNode,
+} from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +20,7 @@ import { cn } from "@/lib/utils";
 export interface IconGridPickerItem {
 	id: string;
 	title: string;
-	icon: string;
+	icon: ReactNode;
 	color?: string;
 	badge?: string;
 }

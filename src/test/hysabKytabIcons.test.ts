@@ -36,6 +36,6 @@ describe("Hysab Kytab icon and color helpers", () => {
 				bankName: "MCB Bank",
 				currency: "PKR",
 			})
-		).toBe("🏦");
+		).toBe("bank.mcb");
 	});
 });

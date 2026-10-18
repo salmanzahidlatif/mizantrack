@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
+import { AccountIconPicker } from "@/components/accounts/AccountIconPicker";
 import { Button } from "@/components/ui/button";
 import {
 	Drawer,
@@ -19,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { scrollFocusedFieldIntoView } from "@/hooks/useKeyboardInset";
+import { resolveAccountIcon } from "@/lib/accountIcons";
 import { createAccount, updateAccount } from "@/lib/actions/accounts";
 import { normalizeCurrencyCode, resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import { getCurrencyByCode } from "@/lib/currencies";
@@ -109,7 +111,13 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 
 	const selectedColor = watch("color");
 	const selectedCurrency = watch("currency");
+	const selectedIcon = watch("icon");
+	const selectedTitle = watch("title");
 	const selectedCurrencyCode = normalizeCurrencyCode(selectedCurrency);
+	// Preview what inference would pick so "Automatic" is not a blind choice
+	const automaticIcon = resolveAccountIcon(selectedTitle ?? "", {
+		currency: selectedCurrency,
+	});
 	const currencyOptions =
 		selectedCurrencyCode && !currencyShortcuts.includes(selectedCurrencyCode)
 			? [selectedCurrencyCode, ...currencyShortcuts]
@@ -243,8 +251,13 @@ export function AccountDrawer({ userId }: AccountDrawerProps) {
 
 						{/* Icon */}
 						<div className="space-y-1.5">
-							<Label htmlFor="acc-icon">Icon (emoji)</Label>
-							<Input id="acc-icon" placeholder="🏦" maxLength={2} {...register("icon")} />
+							<Label htmlFor="acc-icon">Icon</Label>
+							<AccountIconPicker
+								id="acc-icon"
+								value={selectedIcon}
+								automaticIcon={automaticIcon}
+								onChange={(icon) => setValue("icon", icon, { shouldDirty: true })}
+							/>
 						</div>
 					</div>
 
