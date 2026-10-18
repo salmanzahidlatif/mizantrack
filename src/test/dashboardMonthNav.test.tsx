@@ -10,7 +10,6 @@ import {
 	SpendingTrendChart,
 } from "@/components/charts/DashboardDesktopCharts";
 import { DashboardPageClient } from "@/components/dashboard/DashboardPageClient";
-import { ReportsPageClient } from "@/components/reports/ReportsPageClient";
 import { getPeriodStripRanges } from "@/lib/dateRange";
 import { useFilterStore } from "@/store/filter-store";
 
@@ -449,19 +448,17 @@ describe("dashboard UI rebuild", () => {
 		expect(screen.getByTestId("area-chart")).toHaveAttribute("data-chart", initialSpendingChart);
 	});
 
-	it("changing interval updates every figure on the reports screen", async () => {
+	it("changing interval updates every period figure on the dashboard", async () => {
 		const { usePeriodAnalytics } = await import("@/hooks/usePeriodAnalytics");
-		render(<ReportsPageClient userId={USER_ID} />);
+		render(<DashboardPageClient userId={USER_ID} />);
 
-		expect(screen.getByText("Insights for Sep 2026")).toBeInTheDocument();
+		expect(screen.getAllByText("Sep 2026").length).toBeGreaterThan(0);
 		expect(screen.getAllByText((text) => text.includes("1,000.00")).length).toBeGreaterThan(0);
 		expect(screen.getAllByText((text) => text.includes("600.00")).length).toBeGreaterThan(0);
 
-		fireEvent.click(screen.getByRole("button", { name: "Choose interval" }));
-		fireEvent.click(screen.getByRole("radio", { name: "Quarterly" }));
-		fireEvent.click(screen.getByRole("button", { name: "APPLY" }));
+		applyInterval("Quarterly");
 
-		expect(screen.getByText("Insights for Q3 2026")).toBeInTheDocument();
+		expect(screen.getAllByText("Q3 2026").length).toBeGreaterThan(0);
 		expect(screen.getAllByText((text) => text.includes("3,000.00")).length).toBeGreaterThan(0);
 		expect(screen.getAllByText((text) => text.includes("1,500.00")).length).toBeGreaterThan(0);
 		expect(vi.mocked(usePeriodAnalytics).mock.calls.at(-1)?.[1]?.currency).toBe("AED");
@@ -756,11 +753,16 @@ describe("dashboard UI rebuild", () => {
 	it("renders empty period states instead of broken charts", async () => {
 		await mockHooks(true);
 
-		render(<ReportsPageClient userId={USER_ID} />);
+		render(<DashboardPageClient userId={USER_ID} />);
 
-		expect(screen.getByText("No Income in this period")).toBeInTheDocument();
-		expect(screen.getByText("No expenses in this period")).toBeInTheDocument();
-		expect(within(screen.getByText("No Income in this period").closest("section")!)).toBeTruthy();
+		const emptyBreakdown = screen.getByText("No expenses in this period");
+		expect(emptyBreakdown).toBeInTheDocument();
+		expect(
+			screen.getByText("Expense categories will appear here when you record spending.")
+		).toBeInTheDocument();
+		expect(
+			within(emptyBreakdown.parentElement!).queryByTestId("responsive-container")
+		).not.toBeInTheDocument();
 	});
 
 	it("renders intentional empty states for new desktop charts", () => {

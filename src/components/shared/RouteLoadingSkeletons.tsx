@@ -204,10 +204,10 @@ export function CategoriesLoadingSkeleton() {
 export function ReportsLoadingSkeleton() {
 	return (
 		<RouteLoadingFrame title="Reports" testId="reports-route-loading">
-			<PillStripSkeleton count={1} />
-			<SkeletonCard className="h-72" />
-			<SkeletonChart height={280} />
+			<SkeletonCard className="h-32" />
+			<SkeletonCard className="h-40" />
 			<SkeletonCard className="h-52" />
+			<SkeletonCard className="h-40" />
 		</RouteLoadingFrame>
 	);
 }
