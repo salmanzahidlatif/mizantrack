@@ -32,16 +32,17 @@ export function SettingsPageClient({
 				<p className="text-sm text-muted-foreground">Manage your preferences and data</p>
 			</div>
 
-			<PreferencesForm userId={userId} />
+			<div className="grid gap-4 sm:grid-cols-2">
+				<PreferencesForm userId={userId} />
+				<AppLockSettings userId={userId} userDisplay={displayName} />
+			</div>
 
-			<AppLockSettings userId={userId} userDisplay={displayName} />
+			<FirebaseSyncPanel userId={userId} />
 
 			<div className="grid gap-4 sm:grid-cols-2">
 				<ImportPanel userId={userId} />
 				<ExportPanel userId={userId} />
 			</div>
-
-			<FirebaseSyncPanel userId={userId} />
 
 			<GoogleSheetsPanel userId={userId} />
 
