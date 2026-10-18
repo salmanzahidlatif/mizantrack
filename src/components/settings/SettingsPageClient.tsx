@@ -48,9 +48,10 @@ export function SettingsPageClient({
 
 			<TransferIntegrityPanel userId={userId} />
 
-			<RebuildAnalyticsPanel userId={userId} />
-
-			<ResetLocalDataPanel userId={userId} />
+			<div className="grid gap-4 sm:grid-cols-2">
+				<RebuildAnalyticsPanel userId={userId} />
+				<ResetLocalDataPanel userId={userId} />
+			</div>
 		</div>
 	);
 }
