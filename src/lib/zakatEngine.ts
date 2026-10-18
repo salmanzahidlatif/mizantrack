@@ -220,9 +220,30 @@ export function computeZakatYearGrid({
 		year,
 		accounts: Array.from(accountRows.values()),
 		monthlyTotals,
-		minimum: monthlyTotals.length > 0 ? Math.min(...monthlyTotals) : 0,
+		minimum: minimumMonthlyTotal(monthlyTotals),
 		maximum: monthlyTotals.length > 0 ? Math.max(...monthlyTotals) : 0,
 	};
+}
+
+/**
+ * The year's MINIMUM, counting only the months something was actually held.
+ *
+ * A zakat year can begin before the book has any history behind it: the AED year opens
+ * two months before its earliest transaction, and `computeZakatYearGrid` reports those
+ * months as zero because no account existed yet — not because the wealth had been spent.
+ * A plain `MIN` over all twelve then returned 0 and declared no zakat due on a year that
+ * plainly held money every month after.
+ *
+ * So a month is only a candidate once it holds something. A year that genuinely held
+ * nothing all year still has no minimum, and still owes nothing.
+ *
+ * The owner's own sheet writes `MIN(B14:M14)` across the row, and this agrees with it
+ * everywhere the sheet applies: his books never contain a zero month, so every month is
+ * a candidate and the answer is identical. This only changes years the sheet never had.
+ */
+export function minimumMonthlyTotal(monthlyTotals: readonly number[]): number {
+	const held = monthlyTotals.filter((total) => total > 0);
+	return held.length > 0 ? Math.min(...held) : 0;
 }
 
 export function calculateGoldValue(
@@ -241,7 +262,7 @@ export function calculateZakatAssessment({
 	pastRemaining,
 	payments,
 }: ZakatAssessmentInput): ZakatAssessment {
-	const minimum = monthlyTotals.length > 0 ? Math.min(...monthlyTotals) : 0;
+	const minimum = minimumMonthlyTotal(monthlyTotals);
 	const maximum = monthlyTotals.length > 0 ? Math.max(...monthlyTotals) : 0;
 	const basisAmount = basis === "minimum" ? minimum : maximum;
 	const goldValue = calculateGoldValue(goldItems, goldPrices.pricesByPurity);
