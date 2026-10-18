@@ -124,25 +124,25 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 						onOpenChange={setPickerOpen}
 					/>
 				</div>
-			</div>
 
-			{/* Theme */}
-			<div className="space-y-1.5">
-				<Label>Theme</Label>
-				<div className="flex gap-2">
-					{(["light", "dark", "system"] as const).map((t) => (
-						<button
-							key={t}
-							type="button"
-							onClick={() => setTheme(t)}
-							className={`rounded-lg border px-3 py-1.5 text-sm capitalize transition-colors ${
-								mounted && theme === t
-									? "border-primary bg-primary text-primary-foreground"
-									: "border-border hover:bg-accent"
-							}`}>
-							{t}
-						</button>
-					))}
+				{/* Theme */}
+				<div className="space-y-1.5">
+					<Label>Theme</Label>
+					<div className="flex gap-2">
+						{(["light", "dark", "system"] as const).map((t) => (
+							<button
+								key={t}
+								type="button"
+								onClick={() => setTheme(t)}
+								className={`rounded-lg border px-3 py-1.5 text-sm capitalize transition-colors ${
+									mounted && theme === t
+										? "border-primary bg-primary text-primary-foreground"
+										: "border-border hover:bg-accent"
+								}`}>
+								{t}
+							</button>
+						))}
+					</div>
 				</div>
 			</div>
 		</div>
