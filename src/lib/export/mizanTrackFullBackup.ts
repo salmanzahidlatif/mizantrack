@@ -66,9 +66,9 @@ export const MIZAN_TRACK_FULL_BACKUP_DB_CONFIG_FIELDS = [
  * Settings never written to a backup file.
  *
  * The four `SECURITY_EXCLUDED_DB_CONFIG_FIELDS` are credentials: a Firebase service
- * config, a gold API key, the app-lock PIN hash and a WebAuthn credential id. A backup
- * is a file the owner moves around on a USB stick or a chat thread, so none of them may
- * leave the device — and restoring an app-lock PIN hash onto a different phone is a
+ * config, a legacy gold API key, the app-lock PIN hash and a WebAuthn credential id. A
+ * backup is a file the owner moves around on a USB stick or a chat thread, so none of them
+ * may leave the device — and restoring an app-lock PIN hash onto a different phone is a
  * security decision nobody asked for.
  *
  * The rest are excluded because they would arrive broken:
@@ -77,8 +77,9 @@ export const MIZAN_TRACK_FULL_BACKUP_DB_CONFIG_FIELDS = [
  * - `appLockEnabled` without the `pinHash` would lock the owner out of their own data.
  * - `biometricEnabled` without the device-local `biometricCredentialId` points at a
  *   credential this device has never registered.
- * - `lastGoldPricePerGram` / `lastGoldPriceFetchedAt` are a live-price cache. The prices
- *   that matter to a zakat year live in `zakatGoldYears` and are restored in full.
+ * - `lastGoldPricePerGram` / `lastGoldPriceFetchedAt` are a dead live-price cache; nothing
+ *   writes them any more. The prices that matter to a zakat year live in `zakatGoldYears`
+ *   and are restored in full.
  */
 export const MIZAN_TRACK_FULL_BACKUP_EXCLUDED_DB_CONFIG_FIELDS = [
 	...SECURITY_EXCLUDED_DB_CONFIG_FIELDS,

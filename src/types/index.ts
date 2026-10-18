@@ -77,9 +77,18 @@ export interface DbConfig {
 	enabled: boolean;
 	currency: string; // user's default currency
 	fiscalYearStartMonth: number; // 1–12
-	// Gold price cache
+	// Gold price cache — legacy
+	/**
+	 * @deprecated Live gold-price fetching was dropped; the owner types a price per karat
+	 * for each zakat year instead (see `ZakatGoldYear`). Kept, unwritten, so records saved
+	 * before the change still read back intact — and so `goldApiKey` stays in
+	 * `SECURITY_EXCLUDED_DB_CONFIG_FIELDS`, which keeps an already-stored key out of every
+	 * export file.
+	 */
 	goldApiKey?: string;
+	/** @deprecated Cache for the dropped live price fetch. Never written now. */
 	lastGoldPricePerGram?: number;
+	/** @deprecated Cache for the dropped live price fetch. Never written now. */
 	lastGoldPriceFetchedAt?: number;
 	// App Lock
 	pinHash?: string; // SHA-256 hex of 4-digit PIN; absent = no PIN set

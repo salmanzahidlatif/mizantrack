@@ -6,33 +6,11 @@ import { useEffect, useRef, useState } from "react";
 
 import { CurrencyPicker } from "@/components/shared/CurrencyPicker";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { getCurrencyByCode } from "@/lib/currencies";
+import { defaultDbConfig } from "@/lib/db/dbConfig";
 import { db } from "@/lib/db/local";
-
-const MONTHS = [
-	{ value: 1, label: "January" },
-	{ value: 2, label: "February" },
-	{ value: 3, label: "March" },
-	{ value: 4, label: "April" },
-	{ value: 5, label: "May" },
-	{ value: 6, label: "June" },
-	{ value: 7, label: "July" },
-	{ value: 8, label: "August" },
-	{ value: 9, label: "September" },
-	{ value: 10, label: "October" },
-	{ value: 11, label: "November" },
-	{ value: 12, label: "December" },
-];
 
 interface PreferencesFormProps {
 	userId: string;
@@ -42,11 +20,8 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 	const config = useDbConfig(userId);
 	const { theme, setTheme } = useTheme();
 
-	const [currency, setCurrency] = useState("");
 	const [enabledCurrencies, setEnabledCurrencies] = useState<string[]>([]);
 	const [pickerOpen, setPickerOpen] = useState(false);
-	const [fiscalMonth, setFiscalMonth] = useState(7);
-	const [goldApiKey, setGoldApiKey] = useState("");
 	const [saved, setSaved] = useState(false);
 	const [mounted, setMounted] = useState(false);
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,17 +38,8 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 		if (config === null || !initialised.current) {
 			// First time: create config if missing
 			if (!config) {
-				void db.dbConfig.put({
-					id: userId,
-					currency: "PKR",
-					fiscalYearStartMonth: 7,
-					firebaseConfig: "",
-					enabled: false,
-				});
+				void db.dbConfig.put(defaultDbConfig(userId));
 			}
-			setCurrency(config?.currency ?? "PKR");
-			setFiscalMonth(config?.fiscalYearStartMonth ?? 7);
-			setGoldApiKey(config?.goldApiKey ?? "");
 			initialised.current = true;
 		}
 		// Always sync enabledCurrencies from config so it reflects the latest
@@ -81,12 +47,7 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 		setEnabledCurrencies(config?.enabledCurrencies ?? [config?.currency ?? "PKR"]);
 	}, [config, userId]);
 
-	function scheduleSave(
-		newCurrency: string,
-		newMonth: number,
-		newGoldKey: string,
-		newEnabledCurrencies?: string[]
-	) {
+	function scheduleSave(newCurrency: string, newEnabledCurrencies?: string[]) {
 		if (saveTimer.current) clearTimeout(saveTimer.current);
 		saveTimer.current = setTimeout(() => {
 			const cur = newCurrency.toUpperCase() || "PKR";
@@ -95,19 +56,15 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 				.update(userId, {
 					currency: cur,
 					enabledCurrencies: enabled.length > 0 ? enabled : [cur],
-					fiscalYearStartMonth: newMonth,
-					goldApiKey: newGoldKey || undefined,
 				})
 				.then((count) => {
 					if (count === 0) {
+						// A fresh row still needs a valid fiscal month; it is no longer
+						// editable here, so it comes straight from the stored default.
 						return db.dbConfig.put({
-							id: userId,
+							...defaultDbConfig(userId),
 							currency: cur,
 							enabledCurrencies: enabled.length > 0 ? enabled : [cur],
-							fiscalYearStartMonth: newMonth,
-							firebaseConfig: "",
-							enabled: false,
-							...(newGoldKey ? { goldApiKey: newGoldKey } : {}),
 						});
 					}
 					return undefined;
@@ -121,20 +78,8 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 
 	function handleCurrencyChange(codes: string[]) {
 		const primary = codes[0] ?? "PKR";
-		setCurrency(primary);
 		setEnabledCurrencies(codes);
-		scheduleSave(primary, fiscalMonth, goldApiKey, codes);
-	}
-
-	function handleMonthChange(value: string) {
-		const month = parseInt(value, 10);
-		setFiscalMonth(month);
-		scheduleSave(currency, month, goldApiKey);
-	}
-
-	function handleGoldKeyChange(value: string) {
-		setGoldApiKey(value);
-		scheduleSave(currency, fiscalMonth, value);
+		scheduleSave(primary, codes);
 	}
 
 	return (
@@ -179,38 +124,6 @@ export function PreferencesForm({ userId }: PreferencesFormProps) {
 						onOpenChange={setPickerOpen}
 					/>
 				</div>
-
-				{/* Fiscal year start month */}
-				<div className="space-y-1.5">
-					<Label>Fiscal Year Start Month</Label>
-					<Select value={String(fiscalMonth)} onValueChange={handleMonthChange}>
-						<SelectTrigger>
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{MONTHS.map((m) => (
-								<SelectItem key={m.value} value={String(m.value)}>
-									{m.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
-			</div>
-
-			{/* Gold price API key */}
-			<div className="space-y-1.5">
-				<Label htmlFor="gold-api-key">Gold Price API Key (goldapi.io)</Label>
-				<Input
-					id="gold-api-key"
-					type="password"
-					value={goldApiKey}
-					onChange={(e) => handleGoldKeyChange(e.target.value)}
-					placeholder="Your goldapi.io API key"
-				/>
-				<p className="text-xs text-muted-foreground">
-					Used by the Zakat calculator to fetch live gold prices. Leave blank to enter manually.
-				</p>
 			</div>
 
 			{/* Theme */}
