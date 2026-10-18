@@ -15,8 +15,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db/local";
 import { CORE_SYNC_TABLES, syncAll } from "@/lib/db/sync";
 import {
+	clearZakatGoldYearItemSold,
 	deleteZakatGoldYearItem,
 	listZakatGoldYearItemsForYear,
+	listZakatGoldYearItemsHeldInYear,
+	markZakatGoldYearItemSold,
 	saveZakatGoldYearItem,
 } from "@/lib/zakatGoldYearItemRepository";
 
@@ -326,5 +329,90 @@ describe("syncAll — gold held by year", () => {
 		const pulled = await db.zakatGoldYearItems.get(`${USER_ID}:PKR:1446:pulled`);
 		expect(pulled).toMatchObject({ title: "Chain", weight: 10 });
 		expect(pulled).not.toHaveProperty("sourceGoldItemId");
+	});
+
+	/**
+	 * A sale is recorded once, on one row, and every later year reads it from there — so
+	 * that row is the only thing that carries the sale to the owner's other devices. It
+	 * has to arrive as a year, and taking the sale back has to arrive as an explicit null:
+	 * an absent field reads as "unchanged" and would leave the gold off the other device's
+	 * books with nothing on screen to explain why.
+	 */
+	it("carries the year a piece was sold in, and clears it as an explicit null", async () => {
+		await markAllTableMigrationsDone();
+		for (const islamicYear of [1445, 1446]) {
+			await saveZakatGoldYearItem({
+				userId: USER_ID,
+				currency: "PKR",
+				islamicYear,
+				lineageId: "chain",
+				title: "Chain",
+				weight: 10,
+				purity: "21k",
+			});
+		}
+		await markZakatGoldYearItemSold({
+			userId: USER_ID,
+			currency: "PKR",
+			islamicYear: 1446,
+			lineageId: "chain",
+		});
+
+		const sold = await configureEmptySyncMocks();
+		await syncAll(USER_ID);
+
+		expect(
+			findWrite(sold.mockSet, `users/${USER_ID}/zakatGoldYearItems/${USER_ID}:PKR:1446:chain`)
+		).toMatchObject({ soldInIslamicYear: 1446, deletedAt: null });
+		// The year that still holds it says so, rather than saying nothing.
+		expect(
+			findWrite(sold.mockSet, `users/${USER_ID}/zakatGoldYearItems/${USER_ID}:PKR:1445:chain`)
+		).toMatchObject({ soldInIslamicYear: null });
+
+		vi.clearAllMocks();
+		await clearZakatGoldYearItemSold({ userId: USER_ID, currency: "PKR", lineageId: "chain" });
+
+		const unsold = await configureEmptySyncMocks();
+		await syncAll(USER_ID);
+
+		expect(
+			findWrite(unsold.mockSet, `users/${USER_ID}/zakatGoldYearItems/${USER_ID}:PKR:1446:chain`)
+		).toMatchObject({ soldInIslamicYear: null });
+	});
+
+	it("pulls a remote sale and keeps the piece off the years that follow it", async () => {
+		await markAllTableMigrationsDone();
+		const { firestore } = await configureEmptySyncMocks();
+
+		configureRemoteGoldYearItems(firestore, USER_ID, [
+			{
+				id: `${USER_ID}:PKR:1446:chain`,
+				data: {
+					id: `${USER_ID}:PKR:1446:chain`,
+					userId: USER_ID,
+					currency: "PKR",
+					islamicYear: 1446,
+					lineageId: "chain",
+					title: "Chain",
+					weight: 10,
+					purity: "21k",
+					notes: null,
+					sourceGoldItemId: null,
+					soldInIslamicYear: 1446,
+					createdAt: 10_000,
+					deletedAt: null,
+					updatedAt: 50_000,
+					syncedAt: firestoreTimestamp(5_000),
+				},
+			},
+		]);
+
+		await syncAll(USER_ID);
+
+		expect(await db.zakatGoldYearItems.get(`${USER_ID}:PKR:1446:chain`)).toMatchObject({
+			soldInIslamicYear: 1446,
+			pendingSync: false,
+		});
+		expect(await listZakatGoldYearItemsHeldInYear(USER_ID, "PKR", 1446)).toEqual([]);
 	});
 });

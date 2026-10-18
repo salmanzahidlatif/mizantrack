@@ -10,7 +10,10 @@ import { Button } from "@/components/ui/button";
 import { useZakatYearAssessmentContext } from "@/hooks/useZakatYearAssessments";
 import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
-import { hasAnyMonthlyBalance } from "@/lib/zakatAccountVisibility";
+import {
+	getContributingZakatSnapshotAccounts,
+	hasUncountedZakatSnapshotAccounts,
+} from "@/lib/zakatAccountVisibility";
 import { auditZakatSnapshots } from "@/lib/zakatSnapshotAudit";
 
 import type { ZakatSnapshotAudit } from "@/lib/zakatSnapshotAudit";
@@ -19,6 +22,10 @@ import type { ZakatCalculation } from "@/types";
 interface ZakatHistoryProps {
 	userId: string;
 	referenceCurrency: string;
+	/** The zakat year chosen above the tabs, e.g. "1444-1445". Undefined shows them all. */
+	islamicYear?: string;
+	/** Label for that year, e.g. "2024 (1444–1445)". */
+	yearLabel?: string;
 }
 
 /**
@@ -35,8 +42,17 @@ interface ZakatHistoryProps {
  * this screen exists to prevent; the newest record for a year is marked, and the ones it
  * supersedes stay readable underneath it.
  */
-export function ZakatHistory({ userId, referenceCurrency }: ZakatHistoryProps) {
+export function ZakatHistory({
+	userId,
+	referenceCurrency,
+	islamicYear,
+	yearLabel,
+}: ZakatHistoryProps) {
 	const [expandedId, setExpandedId] = useState<string | null>(null);
+	// The year is chosen once, above the tabs, and this tab answers for it. The whole
+	// trail is one click away, because a determination's worth is in the chain it sits in.
+	const [showEveryYear, setShowEveryYear] = useState(false);
+	const scopedToYear = islamicYear !== undefined && !showEveryYear;
 
 	const calculations = useLiveQuery(
 		() =>
@@ -96,6 +112,14 @@ export function ZakatHistory({ userId, referenceCurrency }: ZakatHistoryProps) {
 		}));
 	}, [calculations]);
 
+	// The tab answers for the year chosen above the tabs; the rest stay one click away.
+	const visibleRecords = useMemo(
+		() =>
+			scopedToYear ? records.filter((record) => record.calc.islamicYear === islamicYear) : records,
+		[islamicYear, records, scopedToYear]
+	);
+	const otherYearCount = records.length - visibleRecords.length;
+
 	const audits = useMemo(
 		() =>
 			auditZakatSnapshots(
@@ -139,26 +163,51 @@ export function ZakatHistory({ userId, referenceCurrency }: ZakatHistoryProps) {
 
 	return (
 		<div className="space-y-3">
-			<div>
-				<h3 className="text-sm font-medium">Zakat Assessment Record</h3>
-				<p className="text-xs text-muted-foreground">
-					What you assessed, and when you assessed it. Each record is kept exactly as it was saved
-					and is never rewritten when the underlying data changes later, so it shows what was
-					assessed then — not necessarily what the books say now. Where the two no longer agree,
-					both figures are shown.
-				</p>
+			<div className="flex flex-wrap items-start justify-between gap-2">
+				<div>
+					<h3 className="text-sm font-medium">
+						Zakat Assessment Record
+						{scopedToYear && yearLabel ? ` • ${yearLabel}` : ""}
+					</h3>
+					<p className="text-xs text-muted-foreground">
+						What you assessed, and when you assessed it. Each record is kept exactly as it was saved
+						and is never rewritten when the underlying data changes later, so it shows what was
+						assessed then — not necessarily what the books say now. Where the two no longer agree,
+						both figures are shown.
+					</p>
+				</div>
+				{islamicYear !== undefined && (otherYearCount > 0 || showEveryYear) && (
+					<Button size="sm" variant="outline" onClick={() => setShowEveryYear(!showEveryYear)}>
+						{showEveryYear
+							? `Only ${yearLabel ?? islamicYear}`
+							: `Every year (${otherYearCount} more)`}
+					</Button>
+				)}
 			</div>
 
+			{visibleRecords.length === 0 && (
+				<div className="rounded-lg border bg-card p-8 text-center">
+					<p className="text-sm text-muted-foreground">
+						Nothing assessed for {yearLabel ?? islamicYear} yet. Saving a calculation for this year
+						records it here.
+					</p>
+				</div>
+			)}
+
 			<div className="space-y-2">
-				{records.map(({ calc, isLatestForYear, savedForYear }) => {
+				{visibleRecords.map(({ calc, isLatestForYear, savedForYear }) => {
 					const isExpanded = expandedId === calc.id;
 					const paidAmount = getPaidAmount(calc);
 					const remaining = Math.max(0, calc.zakatObligation - paidAmount);
 					const audit = audits.get(calc.id);
-					// The same presentation rule the monthly view and the workbook follow: an
-					// account that held nothing contributed zero, so it is not worth a row.
-					const zakatableAccounts = calc.accountBalances.filter((a) => a.zakatable);
-					const shownAccounts = zakatableAccounts.filter((a) => hasAnyMonthlyBalance([a.balance]));
+					// Only the accounts this record can evidence as contributors: the ones it
+					// counted, minus the ones that held nothing — the same zero-balance rule
+					// the monthly view and the workbook follow. A record saved before the
+					// snapshot was narrowed also carries accounts that were never counted;
+					// they stay on the record, but they are not presented as contributors.
+					const countedAccounts = calc.accountBalances.filter((a) => a.zakatable);
+					const shownAccounts = getContributingZakatSnapshotAccounts(calc.accountBalances);
+					const hasUncountedAccounts = hasUncountedZakatSnapshotAccounts(calc.accountBalances);
 
 					return (
 						<div
@@ -317,13 +366,20 @@ export function ZakatHistory({ userId, referenceCurrency }: ZakatHistoryProps) {
 										{/* Accounts */}
 										<div className="space-y-2 sm:col-span-2">
 											<h4 className="text-xs font-medium text-muted-foreground">
-												Account Balances ({shownAccounts.length} of {zakatableAccounts.length}{" "}
+												Account Balances ({shownAccounts.length} of {countedAccounts.length}{" "}
 												accounts)
 											</h4>
-											{shownAccounts.length < zakatableAccounts.length && (
+											{shownAccounts.length < countedAccounts.length && (
 												<p className="text-xs text-muted-foreground">
 													Accounts that held nothing in this assessment are hidden, as they are on
 													the monthly view and in the export. They contributed zero either way.
+												</p>
+											)}
+											{hasUncountedAccounts && (
+												<p className="text-xs text-muted-foreground">
+													This record was saved before snapshots were narrowed to the accounts
+													actually counted. The others are still on the record, but they took no
+													part in this assessment and are not shown as contributors.
 												</p>
 											)}
 											<div className="max-h-40 space-y-1 overflow-y-auto text-sm">

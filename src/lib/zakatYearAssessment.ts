@@ -26,7 +26,12 @@ import {
 	computeZakatYearGrid,
 	getZakatYearDefinitionByIslamicYear,
 } from "@/lib/zakatEngine";
-import { getZakatGoldYearItems, toZakatGoldYearItemMap } from "@/lib/zakatGoldYearItems";
+import {
+	buildZakatGoldSoldLineages,
+	getZakatGoldYearItems,
+	toZakatGoldYearItemLedger,
+	toZakatGoldYearItemMap,
+} from "@/lib/zakatGoldYearItems";
 import {
 	getZakatGoldYearPrices,
 	resolveZakatGoldGramsForYear,
@@ -166,8 +171,12 @@ export interface ZakatYearAssessmentContext {
 	currencyAccounts: Account[];
 	goldItems: GoldItem[];
 	goldYears: Map<number, ZakatGoldYear>;
-	/** The pieces each year was held on, keyed by Islamic year. */
+	/** The pieces each year was held on, keyed by Islamic year. Sold pieces are gone. */
 	goldYearItems: Map<number, ZakatGoldYearItem[]>;
+	/** The same pieces as RECORDED, sold ones included, so the screen can show them. */
+	goldYearItemLedger: Map<number, ZakatGoldYearItem[]>;
+	/** The year each piece was sold in — the first year that stops counting it. */
+	soldGoldLineages: Map<string, number>;
 	ramadanStarts: Map<number, Date>;
 	accountSelections: Map<number, string[]>;
 	showArchivedByYear: Map<number, boolean>;
@@ -218,6 +227,8 @@ export function prepareZakatYearAssessmentContext(
 		goldItems: getZakatGoldItemsForCurrency(source.goldItems, referenceCurrency),
 		goldYears: toZakatGoldYearMap(source.goldYears, referenceCurrency),
 		goldYearItems: toZakatGoldYearItemMap(source.goldYearItems ?? [], referenceCurrency),
+		goldYearItemLedger: toZakatGoldYearItemLedger(source.goldYearItems ?? [], referenceCurrency),
+		soldGoldLineages: buildZakatGoldSoldLineages(source.goldYearItems ?? [], referenceCurrency),
 		ramadanStarts: toRamadanStartMap(liveOverrides),
 		accountSelections: toZakatAccountSelectionMap(liveOverrides),
 		showArchivedByYear: toZakatShowArchivedAccountsMap(liveOverrides),

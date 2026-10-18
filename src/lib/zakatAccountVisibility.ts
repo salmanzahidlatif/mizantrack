@@ -35,3 +35,40 @@ export function visibleZakatAccounts<Account extends Pick<ZakatAccountMonthBalan
 ): Account[] {
 	return accounts.filter((account) => hasAnyMonthlyBalance(account.balances));
 }
+
+/** The shape a saved calculation stores each account in. */
+export interface ZakatSnapshotAccountBalance {
+	balance: number;
+	zakatable: boolean;
+}
+
+/**
+ * True when a saved snapshot carries accounts that were NOT part of the assessment.
+ *
+ * Calculations saved before the snapshot was narrowed listed every account in the
+ * currency, counted or not. The record is never rewritten — a determination made on a
+ * date is exactly what the History trail exists to preserve — so the wide shape is
+ * detected on read instead, and the screen says so rather than presenting 51 accounts as
+ * contributors to a figure a handful of them produced.
+ */
+export function hasUncountedZakatSnapshotAccounts(
+	accountBalances: readonly ZakatSnapshotAccountBalance[]
+): boolean {
+	return accountBalances.some((account) => !account.zakatable);
+}
+
+/**
+ * The accounts a saved snapshot can evidence as contributors.
+ *
+ * Two filters, in order: the snapshot's own counted flag, and then the same zero-balance
+ * rule the monthly view and the exported workbook apply — an account that held nothing
+ * contributed nothing, whichever way it was flagged. Nothing is deleted; the stored row
+ * keeps every account it was saved with.
+ */
+export function getContributingZakatSnapshotAccounts<Account extends ZakatSnapshotAccountBalance>(
+	accountBalances: readonly Account[]
+): Account[] {
+	return accountBalances.filter(
+		(account) => account.zakatable && hasAnyMonthlyBalance([account.balance])
+	);
+}

@@ -369,7 +369,7 @@ async function seedEverything(): Promise<void> {
 		await db.zakatYears.bulkPut([zakatYear(1445), zakatYear(1446)]);
 		await db.zakatGoldYears.bulkPut([zakatGoldYear(1445), zakatGoldYear(1446)]);
 		// Two years holding different gold: a piece carried forward keeps its lineage,
-		// and the piece sold in 1446 is still in the record for 1445.
+		// and the chain sold in 1446 is still in the record for 1445, which held it.
 		await db.zakatGoldYearItems.bulkPut([
 			zakatGoldYearItem(1445, "wedding-set"),
 			zakatGoldYearItem(1445, "chain", {
@@ -378,6 +378,12 @@ async function seedEverything(): Promise<void> {
 				sourceGoldItemId: undefined,
 			}),
 			zakatGoldYearItem(1446, "wedding-set"),
+			zakatGoldYearItem(1446, "chain", {
+				title: "Chain",
+				weight: 10,
+				sourceGoldItemId: undefined,
+				soldInIslamicYear: 1446,
+			}),
 			zakatGoldYearItem(1446, "new-bangle", {
 				title: "New Bangle",
 				weight: 14,
@@ -833,7 +839,15 @@ describe("MizanTrack full backup — zakat and report fidelity", () => {
 			.equals([USER_ID, "PKR", 1446])
 			.toArray();
 		expect(held1445.map((item) => item.lineageId).sort()).toEqual(["chain", "wedding-set"]);
-		expect(held1446.map((item) => item.lineageId).sort()).toEqual(["new-bangle", "wedding-set"]);
+		expect(held1446.map((item) => item.lineageId).sort()).toEqual([
+			"chain",
+			"new-bangle",
+			"wedding-set",
+		]);
+		// The sale survives: 1446 is the first year that stops counting the chain, and
+		// 1445 — the last year that counts it — still records it as a plain holding.
+		expect(held1446.find((item) => item.lineageId === "chain")?.soldInIslamicYear).toBe(1446);
+		expect(held1445.find((item) => item.lineageId === "chain")?.soldInIslamicYear).toBeUndefined();
 		// The same piece, recognisably the same piece, in both years.
 		expect(held1445.find((item) => item.lineageId === "wedding-set")?.title).toBe("Wedding Set");
 		expect(held1446.find((item) => item.lineageId === "wedding-set")?.title).toBe("Wedding Set");

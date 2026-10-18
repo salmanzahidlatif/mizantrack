@@ -18,12 +18,15 @@ import { v4 as uuid } from "uuid";
 import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
 import {
+	buildZakatGoldSoldLineages,
 	buildZakatGoldYearItemId,
 	buildZakatGoldYearItemsFromGrams,
 	buildZakatGoldYearItemsFromInventory,
 	copyZakatGoldYearItemsTo,
 	findZakatGoldYearItemsToInherit,
 	isUsableZakatGoldWeight,
+	isZakatGoldYearItemSale,
+	selectZakatGoldYearItemsHeldIn,
 	sortZakatGoldYearItems,
 	toZakatGoldYearItemMap,
 } from "@/lib/zakatGoldYearItems";
@@ -55,7 +58,7 @@ async function listCurrencyItems(userId: string, currency: string): Promise<Zaka
 	return records.filter((record) => !record.deletedAt);
 }
 
-/** The pieces one year holds, oldest first. */
+/** The pieces one year has on its books, sold ones included, oldest first. */
 export async function listZakatGoldYearItemsForYear(
 	userId: string,
 	currency: string,
@@ -66,6 +69,32 @@ export async function listZakatGoldYearItemsForYear(
 		.equals([userId, normalizeCurrencyCode(currency), islamicYear])
 		.toArray();
 	return sortZakatGoldYearItems(records.filter((record) => !record.deletedAt));
+}
+
+/** The year each piece was sold in, for one user and currency. */
+export async function getZakatGoldSoldLineages(
+	userId: string,
+	currency: string
+): Promise<Map<string, number>> {
+	const normalizedCurrency = normalizeCurrencyCode(currency);
+	return buildZakatGoldSoldLineages(
+		await listCurrencyItems(userId, normalizedCurrency),
+		normalizedCurrency
+	);
+}
+
+/** The pieces one year is actually assessed on: whatever it holds, minus what was sold. */
+export async function listZakatGoldYearItemsHeldInYear(
+	userId: string,
+	currency: string,
+	islamicYear: number
+): Promise<ZakatGoldYearItem[]> {
+	const normalizedCurrency = normalizeCurrencyCode(currency);
+	return selectZakatGoldYearItemsHeldIn(
+		await listZakatGoldYearItemsForYear(userId, normalizedCurrency, islamicYear),
+		islamicYear,
+		await getZakatGoldSoldLineages(userId, normalizedCurrency)
+	);
 }
 
 /**
@@ -139,9 +168,12 @@ export async function saveZakatGoldYearItem({
 }
 
 /**
- * Removes a piece from ONE year — the owner sold it, or it was never held that year.
- * Soft-deleted so the removal reaches his other devices instead of being resurrected,
- * and so the years that still hold the piece are untouched.
+ * Removes a piece from ONE year, because it was never held that year — a mis-typed
+ * entry, not a sale. Soft-deleted so the correction reaches the owner's other devices
+ * instead of being resurrected, and so the years that still hold the piece are untouched.
+ *
+ * Selling is `markZakatGoldYearItemSold`: a sale is recorded, carries into every later
+ * year on its own, and stays readable. Removal is a correction and leaves no trace.
  */
 export async function deleteZakatGoldYearItem(
 	userId: string,
@@ -155,6 +187,97 @@ export async function deleteZakatGoldYearItem(
 
 	const now = Date.now();
 	await db.zakatGoldYearItems.update(id, { deletedAt: now, updatedAt: now });
+}
+
+/**
+ * Records that a piece was SOLD, from this zakat year onward.
+ *
+ * "Sold in 1446" means 1446 is the first year that no longer counts it: the owner sold a
+ * 10 g piece and bought 14 g of 22k instead, so the replacement — not the piece — is what
+ * serves that year. 1445 is the last year that counts it, and every year up to it keeps
+ * the piece exactly as it was.
+ *
+ * The sale is written against the LINEAGE, once, on this year's row. Later years read it
+ * from here, so nothing has to be tombstoned year by year and a year the owner has not
+ * opened yet cannot inherit the piece back.
+ */
+export async function markZakatGoldYearItemSold({
+	userId,
+	currency,
+	islamicYear,
+	lineageId,
+}: {
+	userId: string;
+	currency: string;
+	islamicYear: number;
+	lineageId: string;
+}): Promise<ZakatGoldYearItem | undefined> {
+	const normalizedCurrency = normalizeCurrencyCode(currency);
+	const id = buildZakatGoldYearItemId(userId, normalizedCurrency, islamicYear, lineageId);
+	const now = Date.now();
+	const existing = await db.zakatGoldYearItems.get(id);
+
+	if (existing && !existing.deletedAt) {
+		const record: ZakatGoldYearItem = {
+			...existing,
+			soldInIslamicYear: islamicYear,
+			updatedAt: now,
+		};
+		await db.zakatGoldYearItems.put(record);
+		return record;
+	}
+
+	// The piece is only on an earlier year's books. The sale still belongs to the first
+	// year that stops counting it, so that year gets the row that records it.
+	const held = await listCurrencyItems(userId, normalizedCurrency);
+	const source = held
+		.filter((item) => item.lineageId === lineageId && item.islamicYear < islamicYear)
+		.sort((left, right) => right.islamicYear - left.islamicYear)[0];
+	if (!source) return undefined;
+
+	const [copied] = copyZakatGoldYearItemsTo([source], {
+		userId,
+		currency: normalizedCurrency,
+		islamicYear,
+		now,
+	});
+	if (!copied) return undefined;
+
+	const record: ZakatGoldYearItem = { ...copied, soldInIslamicYear: islamicYear };
+	await db.zakatGoldYearItems.put(record);
+	return record;
+}
+
+/**
+ * Takes the sale back: the piece counts again from the year it was marked sold in.
+ *
+ * Cleared on every row of the lineage, because a sale is one fact about one piece — a
+ * stray marker left on another year would keep the gold off the books with nothing on
+ * screen to explain why.
+ */
+export async function clearZakatGoldYearItemSold({
+	userId,
+	currency,
+	lineageId,
+}: {
+	userId: string;
+	currency: string;
+	lineageId: string;
+}): Promise<void> {
+	const normalizedCurrency = normalizeCurrencyCode(currency);
+	const sold = (await listCurrencyItems(userId, normalizedCurrency)).filter(
+		(item) => item.lineageId === lineageId && isZakatGoldYearItemSale(item)
+	);
+	if (sold.length === 0) return;
+
+	const now = Date.now();
+	await db.zakatGoldYearItems.bulkPut(
+		sold.map((item) => {
+			const record: ZakatGoldYearItem = { ...item, updatedAt: now };
+			delete record.soldInIslamicYear;
+			return record;
+		})
+	);
 }
 
 /** Tombstones every piece a year holds, leaving the year with no gold recorded. */
@@ -176,6 +299,10 @@ export async function clearZakatGoldYearItems(
  * Makes one year hold exactly these pieces: the ones given are written, and anything the
  * year held that is not among them is tombstoned. A piece with a lineage the year
  * already knows keeps that lineage, which is how a holding stays the same holding.
+ *
+ * A piece sold by this year is left behind — copy-forward must not resurrect it — and
+ * the row that RECORDS a sale is never tombstoned here, or restating the year would
+ * quietly undo the sale.
  */
 export async function setZakatGoldYearItems({
 	userId,
@@ -190,16 +317,20 @@ export async function setZakatGoldYearItems({
 }): Promise<ZakatGoldYearItem[]> {
 	const normalizedCurrency = normalizeCurrencyCode(currency);
 	const now = Date.now();
-	const next = copyZakatGoldYearItemsTo(items, {
-		userId,
-		currency: normalizedCurrency,
-		islamicYear,
-		now,
-	});
+	const soldLineages = await getZakatGoldSoldLineages(userId, normalizedCurrency);
+	const next = copyZakatGoldYearItemsTo(
+		selectZakatGoldYearItemsHeldIn(items, islamicYear, soldLineages),
+		{
+			userId,
+			currency: normalizedCurrency,
+			islamicYear,
+			now,
+		}
+	);
 	const keptLineage = new Set(next.map((item) => item.lineageId));
 	const existing = await listZakatGoldYearItemsForYear(userId, normalizedCurrency, islamicYear);
 	const removed = existing
-		.filter((item) => !keptLineage.has(item.lineageId))
+		.filter((item) => !keptLineage.has(item.lineageId) && !isZakatGoldYearItemSale(item))
 		.map((item) => ({ ...item, deletedAt: now, updatedAt: now }));
 
 	await db.zakatGoldYearItems.bulkPut([...next, ...removed]);

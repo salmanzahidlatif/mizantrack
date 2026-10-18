@@ -1,6 +1,6 @@
 "use client";
 
-import { CopyPlus, Layers, Plus, Save, Trash2, X } from "lucide-react";
+import { CopyPlus, HandCoins, Layers, Plus, Save, Trash2, Undo2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -20,13 +20,19 @@ import { CARD_SURFACE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import {
 	applyZakatGoldYearItemsToRange,
+	clearZakatGoldYearItemSold,
 	copyZakatGoldYearItems,
 	deleteZakatGoldYearItem,
 	ensureZakatGoldYearItems,
+	markZakatGoldYearItemSold,
 	saveZakatGoldYearItem,
 	sumZakatGoldYearItemWeight,
 } from "@/lib/zakatGoldYearItemRepository";
-import { findZakatGoldYearItemsToInherit } from "@/lib/zakatGoldYearItems";
+import {
+	findZakatGoldYearItemsToInherit,
+	getZakatGoldSoldFromYear,
+	isZakatGoldLineageSold,
+} from "@/lib/zakatGoldYearItems";
 import { ZAKAT_GOLD_PURITIES } from "@/lib/zakatGoldYearRepository";
 
 import type { GoldPurity, ZakatGoldYearItem } from "@/types";
@@ -38,10 +44,14 @@ interface ZakatGoldYearInventoryProps {
 	islamicYear: number;
 	/** Label for the sheet this year maps to, e.g. "2024 (1444–1445)". */
 	yearLabel: string;
-	/** The pieces recorded for THIS year. */
+	/** The pieces this year is assessed on — what it recorded, minus what was sold. */
 	items: ZakatGoldYearItem[];
-	/** Every year's pieces, so a fresh year can inherit and a range can be applied. */
+	/** Everything this year has on its books, sold pieces included, so they stay visible. */
+	ledgerItems: ZakatGoldYearItem[];
+	/** Every year's held pieces, so a fresh year can inherit and a range can be applied. */
 	itemsByYear: Map<number, ZakatGoldYearItem[]>;
+	/** The year each piece was sold in — the first year that stops counting it. */
+	soldLineages: Map<string, number>;
 	/** The Islamic years the screen offers, oldest first. */
 	availableIslamicYears: number[];
 	/** Price per gram for each karat, for this year. */
@@ -82,7 +92,9 @@ export function ZakatGoldYearInventory({
 	islamicYear,
 	yearLabel,
 	items,
+	ledgerItems,
 	itemsByYear,
+	soldLineages,
 	availableIslamicYears,
 	pricesByPurity,
 }: ZakatGoldYearInventoryProps) {
@@ -109,16 +121,17 @@ export function ZakatGoldYearInventory({
 	}, [islamicYear]);
 
 	// A year with no holding yet inherits the previous year's. Most pieces carry over
-	// untouched, so asking the owner to retype them is how a holding loses a piece.
+	// untouched, so asking the owner to retype them is how a holding loses a piece. A
+	// year whose only row records a sale has been opened already, so it is left alone.
 	useEffect(() => {
 		const key = `${currency}:${islamicYear}`;
-		if (items.length > 0 || inheritedFor.current === key) return;
+		if (ledgerItems.length > 0 || inheritedFor.current === key) return;
 		inheritedFor.current = key;
 
 		void ensureZakatGoldYearItems({ userId, currency, islamicYear }).catch((error: unknown) => {
 			console.error("Failed to open the year's gold holding", error);
 		});
-	}, [currency, islamicYear, items.length, userId]);
+	}, [currency, islamicYear, ledgerItems.length, userId]);
 
 	async function handleSavePiece(lineageId: string | undefined, draft: GoldPieceDraft) {
 		const weight = parseDraftWeight(draft.weight);
@@ -149,10 +162,43 @@ export function ZakatGoldYearInventory({
 		setSaving(true);
 		try {
 			await deleteZakatGoldYearItem(userId, currency, islamicYear, item.lineageId);
-			toast.success(`${item.title} removed from ${yearLabel}. Earlier years keep it.`);
+			toast.success(`${item.title} removed from ${yearLabel}. Other years keep it.`);
 		} catch (error) {
 			console.error("Failed to remove the gold piece", error);
 			toast.error("Could not remove this gold item.");
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	/**
+	 * Selling stops the piece counting FROM this year on, so the previous year is the
+	 * last one that counts it. The owner sold a 10 g piece and bought 14 g of 22k
+	 * instead: the replacement is what serves the year of the sale, not the piece.
+	 */
+	async function handleSellPiece(item: ZakatGoldYearItem) {
+		setSaving(true);
+		try {
+			await markZakatGoldYearItemSold({ userId, currency, islamicYear, lineageId: item.lineageId });
+			toast.success(
+				`${item.title} marked sold in ${yearLabel}. ${islamicYear - 1} is the last year that counts it.`
+			);
+		} catch (error) {
+			console.error("Failed to mark the gold piece as sold", error);
+			toast.error("Could not mark this gold item as sold.");
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	async function handleUnsellPiece(item: ZakatGoldYearItem) {
+		setSaving(true);
+		try {
+			await clearZakatGoldYearItemSold({ userId, currency, lineageId: item.lineageId });
+			toast.success(`${item.title} counts again from ${yearLabel} on.`);
+		} catch (error) {
+			console.error("Failed to take back the sale", error);
+			toast.error("Could not take back this sale.");
 		} finally {
 			setSaving(false);
 		}
@@ -207,8 +253,8 @@ export function ZakatGoldYearInventory({
 				<div>
 					<h3 className="text-sm font-medium">Gold held • {yearLabel}</h3>
 					<p className="text-xs text-muted-foreground">
-						The pieces held in this zakat year. Selling one here leaves every earlier year exactly
-						as it was.
+						The pieces held in this zakat year. Marking one sold stops it counting from this year on
+						and leaves every earlier year exactly as it was.
 					</p>
 				</div>
 				<div className="flex items-center gap-2">
@@ -244,8 +290,11 @@ export function ZakatGoldYearInventory({
 			)}
 
 			<div className="space-y-2">
-				{items.map((item) =>
-					editingLineageId === item.lineageId ? (
+				{ledgerItems.map((item) => {
+					const soldFrom = getZakatGoldSoldFromYear(soldLineages, item.lineageId);
+					const sold = isZakatGoldLineageSold(soldLineages, item.lineageId, islamicYear);
+
+					return editingLineageId === item.lineageId ? (
 						<GoldPieceForm
 							key={item.lineageId}
 							item={item}
@@ -256,41 +305,86 @@ export function ZakatGoldYearInventory({
 					) : (
 						<div
 							key={item.lineageId}
-							className="flex items-center justify-between rounded-lg border bg-card p-3 text-sm">
+							data-sold={sold ? "true" : undefined}
+							className={cn(
+								"flex items-center justify-between rounded-lg border bg-card p-3 text-sm",
+								sold && "border-dashed bg-muted/40"
+							)}>
 							<button
 								type="button"
 								className="flex-1 text-left"
 								disabled={saving}
 								onClick={() => setEditingLineageId(item.lineageId)}>
-								<span className="flex items-center gap-2">
-									<span className="font-medium">{item.title}</span>
+								<span className="flex flex-wrap items-center gap-2">
+									<span className={cn("font-medium", sold && "text-muted-foreground line-through")}>
+										{item.title}
+									</span>
 									<span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
 										{item.purity}
 									</span>
+									{sold && <Badge variant="outline">Sold</Badge>}
 								</span>
 								<span className="block text-xs text-muted-foreground">
-									{item.weight}g {item.purity} ={" "}
-									<CurrencyAmount
-										amount={item.weight * (pricesByPurity[item.purity] ?? 0)}
-										currency={currency}
-										className="font-normal tracking-normal"
-									/>
+									{sold ? (
+										<>
+											{item.weight}g {item.purity} • not counted this year
+										</>
+									) : (
+										<>
+											{item.weight}g {item.purity} ={" "}
+											<CurrencyAmount
+												amount={item.weight * (pricesByPurity[item.purity] ?? 0)}
+												currency={currency}
+												className="font-normal tracking-normal"
+											/>
+										</>
+									)}
 								</span>
+								{soldFrom !== undefined && (
+									<span className="block text-xs text-muted-foreground">
+										Sold in {soldFrom} • last counted in {soldFrom - 1}
+									</span>
+								)}
 							</button>
-							<Button
-								size="sm"
-								variant="ghost"
-								disabled={saving}
-								aria-label={`Remove ${item.title} from ${yearLabel}`}
-								onClick={() => void handleDeletePiece(item)}
-								className="h-8 w-8 p-0 text-destructive hover:text-destructive">
-								<Trash2 className="h-3.5 w-3.5" />
-							</Button>
+							<div className="flex items-center gap-1">
+								{sold ? (
+									<Button
+										size="sm"
+										variant="ghost"
+										disabled={saving}
+										aria-label={`Take back the sale of ${item.title}`}
+										onClick={() => void handleUnsellPiece(item)}
+										className="h-8 w-8 p-0">
+										<Undo2 className="h-3.5 w-3.5" />
+									</Button>
+								) : (
+									<>
+										<Button
+											size="sm"
+											variant="ghost"
+											disabled={saving}
+											aria-label={`Mark ${item.title} sold in ${yearLabel}`}
+											onClick={() => void handleSellPiece(item)}
+											className="h-8 w-8 p-0">
+											<HandCoins className="h-3.5 w-3.5" />
+										</Button>
+										<Button
+											size="sm"
+											variant="ghost"
+											disabled={saving}
+											aria-label={`Remove ${item.title} from ${yearLabel}`}
+											onClick={() => void handleDeletePiece(item)}
+											className="h-8 w-8 p-0 text-destructive hover:text-destructive">
+											<Trash2 className="h-3.5 w-3.5" />
+										</Button>
+									</>
+								)}
+							</div>
 						</div>
-					)
-				)}
+					);
+				})}
 
-				{items.length === 0 && !isAdding && (
+				{ledgerItems.length === 0 && !isAdding && (
 					<p className="py-6 text-center text-sm text-muted-foreground">
 						No gold recorded for {yearLabel}. This year is valued at zero rather than borrowing
 						another year&apos;s holding.

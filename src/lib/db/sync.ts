@@ -370,8 +370,9 @@ const OPTIONAL_SYNC_FIELDS = {
 	zakatGoldYears: ["gramsByPurity", "priceDate", "deletedAt"],
 	// A piece's note is the only field that can be emptied, and a sold piece has to
 	// travel as an explicit tombstone — absence would read as "unchanged" and leave the
-	// gold on the other device's books.
-	zakatGoldYearItems: ["notes", "deletedAt"],
+	// gold on the other device's books. A sale year clears the same way: "not sold after
+	// all" has to reach the other device as a null, or it keeps the piece off its books.
+	zakatGoldYearItems: ["notes", "soldInIslamicYear", "deletedAt"],
 } as const satisfies OptionalSyncFieldsByTable;
 
 // sourceId is optional for legacy/manual records, but it is not null-written:

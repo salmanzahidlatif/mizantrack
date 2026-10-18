@@ -377,3 +377,119 @@ describe("the comparison itself", () => {
 		expect(getZakatSnapshotIslamicYear(undefined)).toBeUndefined();
 	});
 });
+
+/**
+ * A saved calculation is evidence of what was assessed, so it must not claim accounts
+ * that took no part in the figure. The save now records only the counted set, and the
+ * records written before it did are READ down to what they can evidence rather than
+ * rewritten — a determination made on a date is exactly what this trail preserves.
+ */
+describe("a snapshot saved before it was narrowed to the counted accounts", () => {
+	const LEGACY = snapshot({
+		accountBalances: [
+			{
+				accountId: ACCOUNT.id,
+				accountTitle: ACCOUNT.title,
+				balance: SAVED_BALANCE,
+				currency: CURRENCY,
+				exchangeRate: 1,
+				zakatable: true,
+				accountType: "asset",
+			},
+			{
+				accountId: "daughter",
+				accountTitle: "Daughter's Account",
+				balance: 450_000,
+				currency: CURRENCY,
+				exchangeRate: 1,
+				zakatable: false,
+				accountType: "asset",
+			},
+			{
+				accountId: "alfalah-closed",
+				accountTitle: "Alfalah Closed",
+				balance: 80_000,
+				currency: CURRENCY,
+				exchangeRate: 1,
+				zakatable: false,
+				accountType: "asset",
+			},
+		],
+	});
+
+	it("does not present the accounts it never counted as contributors", async () => {
+		await seed({ calculations: [LEGACY] });
+		renderHistory();
+		await expandFirstRecord();
+
+		expect(screen.getByText(/Account Balances \(1 of 1 accounts\)/)).toBeInTheDocument();
+		expect(screen.getByText(ACCOUNT.title)).toBeInTheDocument();
+		expect(screen.queryByText("Daughter's Account")).not.toBeInTheDocument();
+		expect(screen.queryByText("Alfalah Closed")).not.toBeInTheDocument();
+	});
+
+	it("says why the record carries more accounts than it counted", async () => {
+		await seed({ calculations: [LEGACY] });
+		renderHistory();
+		await expandFirstRecord();
+
+		expect(
+			screen.getByText(/saved before snapshots were narrowed to the accounts actually counted/)
+		).toBeInTheDocument();
+	});
+
+	it("leaves the stored record exactly as it was saved", async () => {
+		await seed({ calculations: [LEGACY] });
+		renderHistory();
+		await expandFirstRecord();
+
+		const stored = await db.zakatCalculations.get(LEGACY.id);
+		expect(stored?.accountBalances).toHaveLength(3);
+	});
+});
+
+/**
+ * The zakat year is chosen once, above the tabs, so this tab answers for it. The rest of
+ * the trail stays one click away: a determination's worth is in the chain it sits in.
+ */
+describe("history scoped to the year chosen above the tabs", () => {
+	const OTHER_YEAR = getZakatYearDefinitionByIslamicYear(1443);
+	const OTHER = snapshot({
+		id: "calc-1443",
+		islamicYear: OTHER_YEAR.zakatYear,
+		assessmentDate: OTHER_YEAR.months[11]!.endDate.getTime(),
+	});
+
+	function renderScoped() {
+		return render(
+			<ZakatHistory
+				userId={USER_ID}
+				referenceCurrency={CURRENCY}
+				islamicYear={YEAR.zakatYear}
+				yearLabel={YEAR.label}
+			/>
+		);
+	}
+
+	it("shows the selected year's records and keeps the others one click away", async () => {
+		await seed({ calculations: [snapshot(), OTHER] });
+		renderScoped();
+
+		expect(await screen.findByText(`Islamic Year ${YEAR.zakatYear}`)).toBeInTheDocument();
+		expect(screen.queryByText(`Islamic Year ${OTHER_YEAR.zakatYear}`)).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByText(/Every year \(1 more\)/));
+
+		expect(await screen.findByText(`Islamic Year ${OTHER_YEAR.zakatYear}`)).toBeInTheDocument();
+	});
+
+	it("says nothing was assessed for the year rather than showing another year's", async () => {
+		await seed({ calculations: [OTHER] });
+		renderScoped();
+
+		expect(
+			await screen.findByText(new RegExp(`Nothing assessed for ${YEAR.sheetYear}`))
+		).toBeInTheDocument();
+		expect(screen.queryByText(`Islamic Year ${OTHER_YEAR.zakatYear}`)).not.toBeInTheDocument();
+	});
+});

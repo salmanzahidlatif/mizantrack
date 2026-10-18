@@ -152,6 +152,16 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		() => zakatContext?.goldYearItems ?? new Map<number, ZakatGoldYearItem[]>(),
 		[zakatContext]
 	);
+	// The same pieces as recorded, sold ones included, so a sold piece stays readable in
+	// the years it was held rather than vanishing from the record.
+	const zakatGoldYearItemLedger = useMemo(
+		() => zakatContext?.goldYearItemLedger ?? new Map<number, ZakatGoldYearItem[]>(),
+		[zakatContext]
+	);
+	const soldGoldLineages = useMemo(
+		() => zakatContext?.soldGoldLineages ?? new Map<string, number>(),
+		[zakatContext]
+	);
 	// Payments recorded for this currency; the screen, the engine and the export all
 	// filter them down to the selected year.
 	const zakatPayments = zakatContext?.payments;
@@ -322,6 +332,10 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 		() => getZakatGoldYearItems(zakatGoldYearItems, selectedYear.islamicYear),
 		[selectedYear.islamicYear, zakatGoldYearItems]
 	);
+	const selectedGoldYearLedger = useMemo(
+		() => getZakatGoldYearItems(zakatGoldYearItemLedger, selectedYear.islamicYear),
+		[selectedYear.islamicYear, zakatGoldYearItemLedger]
+	);
 	const goldGramsByPurity = useMemo(
 		() =>
 			resolveZakatGoldGramsForYear({
@@ -426,19 +440,26 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 			ratePercent: assessment.ratePercent,
 			totalGoldWeightGrams,
 			totalGoldValue: assessment.goldValue,
-			accountBalances: zakatAccounts.map((a) => {
-				const balance = accountBalances.get(a.id) ?? 0;
-				return {
-					accountId: a.id,
-					accountTitle: a.title,
-					balance,
-					currency: a.currency,
-					// One currency per calculation, so nothing is ever converted.
-					exchangeRate: 1,
-					zakatable: zakatableIds.has(a.id),
-					accountType: a.accountType ?? "asset",
-				};
-			}),
+			// Only the accounts this year was ACTUALLY assessed on. A snapshot is evidence
+			// of a determination, so listing every account in the currency would have it
+			// claim that accounts the owner excluded — or closed ones the year's toggle
+			// kept out — took part in the figure. `zakatableIds` is the same counted set
+			// that fed MINIMUM and MAXIMUM, so the record and the arithmetic cannot drift.
+			accountBalances: zakatAccounts
+				.filter((a) => zakatableIds.has(a.id))
+				.map((a) => {
+					const balance = accountBalances.get(a.id) ?? 0;
+					return {
+						accountId: a.id,
+						accountTitle: a.title,
+						balance,
+						currency: a.currency,
+						// One currency per calculation, so nothing is ever converted.
+						exchangeRate: 1,
+						zakatable: true,
+						accountType: a.accountType ?? "asset",
+					};
+				}),
 			totalZakatable: assessment.totalZakatable,
 			zakatObligation: assessment.zakatObligation,
 			createdAt: Date.now(),
@@ -528,6 +549,19 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 				</Button>
 			</div>
 
+			{/* The zakat year IS the period, and every tab below is scoped by it — the
+			    calculator, the month grid, the payments and the history trail. So it is
+			    chosen ONCE, here, rather than repeated inside the tabs that happened to
+			    show it. The currency comes with it: one book per currency, never
+			    combined, and that scope applies to the whole page too. */}
+			<ZakatYearCalendarControl
+				userId={userId}
+				years={availableZakatYears}
+				definition={selectedYear}
+				currency={referenceCurrency}
+				onSelectIslamicYear={setPinnedIslamicYear}
+			/>
+
 			{/* Tabs */}
 			<Tabs value={activeTab} onValueChange={setActiveTab}>
 				<TabsList className="grid w-full grid-cols-4">
@@ -539,14 +573,6 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 				{/* CALCULATOR TAB */}
 				<TabsContent value="calculator" className="space-y-5">
-					{/* The zakat year IS the period: one control, not two. */}
-					<ZakatYearCalendarControl
-						userId={userId}
-						years={availableZakatYears}
-						definition={selectedYear}
-						onSelectIslamicYear={setPinnedIslamicYear}
-					/>
-
 					{/* Gold price for the selected zakat year */}
 					<ZakatGoldYearPricing
 						userId={userId}
@@ -566,7 +592,9 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 						islamicYear={selectedYear.islamicYear}
 						yearLabel={selectedYear.label}
 						items={selectedGoldYearItems}
+						ledgerItems={selectedGoldYearLedger}
 						itemsByYear={zakatGoldYearItems}
+						soldLineages={soldGoldLineages}
 						availableIslamicYears={availableZakatYears.map((year) => year.islamicYear)}
 						pricesByPurity={goldPrices}
 					/>
@@ -896,12 +924,15 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 
 				{/* MONTHLY VIEW TAB */}
 				<TabsContent value="monthly" className="space-y-5">
-					<ZakatYearCalendarControl
-						userId={userId}
-						years={availableZakatYears}
-						definition={selectedYear}
-						onSelectIslamicYear={setPinnedIslamicYear}
+					<ZakatMonthlyBalances
+						grid={zakatYearAssessments.get(selectedYear.islamicYear)?.grid}
+						currency={referenceCurrency}
+						basis={basis}
 					/>
+
+					{/* Past Remaining sits with the month grid at the owner's request. It is
+					    an input to this year's Total To Pay, which Calculator shows, so a
+					    change here is reflected on that tab rather than here. */}
 					{selectedYearAssessment && (
 						<ZakatCarryForwardControl
 							userId={userId}
@@ -912,16 +943,16 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 							assessment={selectedYearAssessment}
 						/>
 					)}
-					<ZakatMonthlyBalances
-						grid={zakatYearAssessments.get(selectedYear.islamicYear)?.grid}
-						currency={referenceCurrency}
-						basis={basis}
-					/>
 				</TabsContent>
 
 				{/* HISTORY TAB */}
 				<TabsContent value="history" className="space-y-5">
-					<ZakatHistory userId={userId} referenceCurrency={referenceCurrency} />
+					<ZakatHistory
+						userId={userId}
+						referenceCurrency={referenceCurrency}
+						islamicYear={selectedYear.zakatYear}
+						yearLabel={selectedYear.label}
+					/>
 				</TabsContent>
 
 				{/* PAYMENTS TAB */}

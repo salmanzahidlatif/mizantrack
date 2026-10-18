@@ -50,6 +50,73 @@ export function isUsableZakatGoldWeight(weight: unknown): weight is number {
 	return typeof weight === "number" && Number.isFinite(weight) && weight > 0;
 }
 
+/** A sale year only counts when it is a real Islamic year. */
+export function isUsableZakatGoldSoldYear(islamicYear: unknown): islamicYear is number {
+	return typeof islamicYear === "number" && Number.isFinite(islamicYear);
+}
+
+/** True for the ONE row that records a sale: the year the piece stopped counting. */
+export function isZakatGoldYearItemSale(item: ZakatGoldYearItem): boolean {
+	return isUsableZakatGoldSoldYear(item.soldInIslamicYear);
+}
+
+/**
+ * The year each lineage was sold in, read off the one row that records the sale.
+ *
+ * A sale belongs to the PIECE, not to a year: it is recorded once, in the first year the
+ * piece stops counting, and every later year reads it from there. Writing a tombstone
+ * into each following year instead would mean maintaining the sale forever — and a year
+ * the owner has not opened yet would quietly inherit the piece back.
+ */
+export function buildZakatGoldSoldLineages(
+	records: ZakatGoldYearItem[],
+	currency: string
+): Map<string, number> {
+	const normalizedCurrency = normalizeCurrencyCode(currency);
+	const soldFrom = new Map<string, number>();
+
+	for (const record of records) {
+		if (record.deletedAt) continue;
+		if (normalizeCurrencyCode(record.currency) !== normalizedCurrency) continue;
+		if (!isUsableZakatGoldSoldYear(record.soldInIslamicYear)) continue;
+		const existing = soldFrom.get(record.lineageId);
+		if (existing === undefined || record.soldInIslamicYear < existing) {
+			soldFrom.set(record.lineageId, record.soldInIslamicYear);
+		}
+	}
+	return soldFrom;
+}
+
+/** The year a piece stopped counting, or undefined while it is still held. */
+export function getZakatGoldSoldFromYear(
+	soldLineages: Map<string, number>,
+	lineageId: string
+): number | undefined {
+	return soldLineages.get(lineageId);
+}
+
+/**
+ * True once a year has reached the sale. "Sold in 1446" means 1446 itself no longer
+ * counts the piece, so 1445 is the last year that does.
+ */
+export function isZakatGoldLineageSold(
+	soldLineages: Map<string, number>,
+	lineageId: string,
+	islamicYear: number
+): boolean {
+	const soldFrom = soldLineages.get(lineageId);
+	return soldFrom !== undefined && islamicYear >= soldFrom;
+}
+
+/** The pieces a list still holds in one year; anything sold by then is left behind. */
+export function selectZakatGoldYearItemsHeldIn(
+	items: ZakatGoldYearItem[],
+	islamicYear: number,
+	soldLineages: Map<string, number>
+): ZakatGoldYearItem[] {
+	return items.filter((item) => !isZakatGoldLineageSold(soldLineages, item.lineageId, islamicYear));
+}
+
 /**
  * Oldest piece first, then by lineage. `createdAt` travels with the piece through every
  * copy-forward, so a year's list keeps the same order the owner built it in.
@@ -61,8 +128,14 @@ export function sortZakatGoldYearItems(items: ZakatGoldYearItem[]): ZakatGoldYea
 	);
 }
 
-/** The live pieces for one currency, grouped by the zakat year they were held in. */
-export function toZakatGoldYearItemMap(
+/**
+ * Every piece each year has on its books for one currency, sold ones included.
+ *
+ * This is the RECORD, not the holding: a piece sold in 1446 is still listed under 1446,
+ * marked as sold, so the screen can say what happened to it instead of the piece simply
+ * vanishing. Use `toZakatGoldYearItemMap` for what a year is actually assessed on.
+ */
+export function toZakatGoldYearItemLedger(
 	records: ZakatGoldYearItem[],
 	currency: string
 ): Map<number, ZakatGoldYearItem[]> {
@@ -80,6 +153,30 @@ export function toZakatGoldYearItemMap(
 
 	for (const [islamicYear, items] of byYear) {
 		byYear.set(islamicYear, sortZakatGoldYearItems(items));
+	}
+	return byYear;
+}
+
+/**
+ * The live pieces for one currency, grouped by the zakat year they were HELD in.
+ *
+ * A piece sold in 1446 drops out of 1446 and everything after it, and stays in every
+ * earlier year exactly as it was — which is the whole point of holdings belonging to
+ * years. The sale is read off the one row that records it, so no later year needs a
+ * tombstone of its own.
+ */
+export function toZakatGoldYearItemMap(
+	records: ZakatGoldYearItem[],
+	currency: string
+): Map<number, ZakatGoldYearItem[]> {
+	const soldLineages = buildZakatGoldSoldLineages(records, currency);
+	const byYear = toZakatGoldYearItemLedger(records, currency);
+
+	for (const [islamicYear, items] of byYear) {
+		const held = selectZakatGoldYearItemsHeldIn(items, islamicYear, soldLineages);
+		if (held.length === items.length) continue;
+		if (held.length === 0) byYear.delete(islamicYear);
+		else byYear.set(islamicYear, held);
 	}
 	return byYear;
 }
@@ -162,7 +259,8 @@ function toYearItem(
  *
  * Lineage and `createdAt` travel with each piece, so the same necklace is recognisably
  * the same necklace in 1440 and 1446 — the copy is the SAME item, held again, not a new
- * one that happens to weigh the same.
+ * one that happens to weigh the same. A sale marker never travels: it is recorded once,
+ * against the year the piece stopped counting, and read from there by every later year.
  */
 export function copyZakatGoldYearItemsTo(
 	items: ZakatGoldYearItem[],

@@ -320,6 +320,16 @@ export interface ZakatGoldYearItem {
 	notes?: string;
 	/** The `goldItems` row this piece was first seeded from, when it came from there. */
 	sourceGoldItemId?: string;
+	/**
+	 * The zakat year the piece was SOLD in, recorded once against the lineage.
+	 *
+	 * A sale is not a removal: "sold in 1446" means 1446 is the first year that no longer
+	 * counts the piece — the owner sold a 10 g piece and bought 14 g of 22k instead, and
+	 * the replacement is what serves that year. Every year before it keeps the piece, and
+	 * every year after it reads the sale from this one row rather than needing a tombstone
+	 * of its own.
+	 */
+	soldInIslamicYear?: number;
 	/** Unix ms the piece first entered the record; stable across years, so order is too. */
 	createdAt: number;
 	updatedAt: number;
