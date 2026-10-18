@@ -103,6 +103,7 @@ export function TransactionsPageClient({
 				transactions={transactions}
 				accounts={accountList}
 				categories={categories ?? []}
+				screenCurrency={currency}
 			/>
 		</div>
 	);

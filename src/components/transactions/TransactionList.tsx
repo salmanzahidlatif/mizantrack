@@ -40,9 +40,16 @@ interface TransactionListProps {
 	/** Full account list for row label/currency resolution; filters stay upstream. */
 	accounts: Account[];
 	categories: Category[];
+	/** Resolved currency of the screen, so rows can drop a symbol that is already stated. */
+	screenCurrency?: string;
 }
 
-export function TransactionList({ transactions, accounts, categories }: TransactionListProps) {
+export function TransactionList({
+	transactions,
+	accounts,
+	categories,
+	screenCurrency,
+}: TransactionListProps) {
 	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 	const parentRef = useRef<HTMLDivElement>(null);
 
@@ -67,7 +74,13 @@ export function TransactionList({ transactions, accounts, categories }: Transact
 	const items = buildItems(transactions);
 
 	return (
-		<VirtualList parentRef={parentRef} items={items} accounts={accounts} categories={categories} />
+		<VirtualList
+			parentRef={parentRef}
+			items={items}
+			accounts={accounts}
+			categories={categories}
+			screenCurrency={screenCurrency}
+		/>
 	);
 }
 
@@ -76,9 +89,10 @@ interface VirtualListProps {
 	items: ListItem[];
 	accounts: Account[];
 	categories: Category[];
+	screenCurrency?: string;
 }
 
-function VirtualList({ parentRef, items, accounts, categories }: VirtualListProps) {
+function VirtualList({ parentRef, items, accounts, categories, screenCurrency }: VirtualListProps) {
 	const activeStickyIndexRef = useRef<number | null>(null);
 	const stickyIndexes = useMemo(
 		() =>
@@ -160,6 +174,7 @@ function VirtualList({ parentRef, items, accounts, categories }: VirtualListProp
 										transaction={item.transaction}
 										accounts={accounts}
 										categories={categories}
+										screenCurrency={screenCurrency}
 									/>
 									<div className="pointer-events-none absolute right-4 bottom-0 left-[72px] border-b border-border/55" />
 								</div>

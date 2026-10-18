@@ -9,7 +9,6 @@ import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyByCode } from "@/lib/currencies";
 import { PRESS_SCALE, TAPPABLE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
 import type { Account, Category, Transaction } from "@/types";
@@ -18,6 +17,12 @@ interface TransactionRowProps {
 	transaction: Transaction;
 	accounts: Account[];
 	categories: Category[];
+	/**
+	 * The currency this screen is showing, already resolved against the user's default.
+	 * Rows in that currency drop their symbol because the screen states it; rows in any
+	 * other currency keep it so the figures stay distinguishable.
+	 */
+	screenCurrency?: string;
 }
 
 const TYPE_ICON = {
@@ -61,9 +66,13 @@ export function ArchivedAccountIndicator({ label = "Archived account" }: { label
 	);
 }
 
-export function TransactionRow({ transaction, accounts, categories }: TransactionRowProps) {
+export function TransactionRow({
+	transaction,
+	accounts,
+	categories,
+	screenCurrency,
+}: TransactionRowProps) {
 	const openEditTransaction = useUIStore((s) => s.openEditTransaction);
-	const activeCurrency = useFilterStore((s) => s.activeCurrency);
 	const haptics = useHaptics();
 
 	const TypeIcon = TYPE_ICON[transaction.type];
@@ -78,8 +87,8 @@ export function TransactionRow({ transaction, accounts, categories }: Transactio
 	// symbol. An unknown or foreign currency keeps it so the figures stay distinguishable.
 	const matchesActiveCurrency =
 		Boolean(account?.currency) &&
-		Boolean(activeCurrency) &&
-		currencyCodesMatch(account?.currency, activeCurrency);
+		Boolean(screenCurrency) &&
+		currencyCodesMatch(account?.currency, screenCurrency);
 	const category = categories.find((c) => c.id === transaction.categoryId);
 
 	const label =
