@@ -129,9 +129,9 @@ function transaction(id: string, accountId: string, amount: number): Transaction
 		id,
 		userId: USER_ID,
 		accountId,
-		type: "income",
+		type: "Income",
 		amount,
-		currency: CURRENCY,
+		// Currency is the account's, never the transaction's.
 		// Inside the 1444 zakat year, so it reaches every month-end total.
 		date: Date.UTC(2023, 3, 1),
 		updatedAt: 1_000,
@@ -165,6 +165,11 @@ function buildContext(selectedAccountIds: string[]): ZakatYearAssessmentContext 
 				id: `${USER_ID}:${SELECTED_ISLAMIC_YEAR}`,
 				userId: USER_ID,
 				islamicYear: SELECTED_ISLAMIC_YEAR,
+				// The computed anchor, so the override changes only the account selection
+				// and leaves this year's months exactly where the calendar puts them.
+				ramadanStart:
+					getZakatYearDefinitionByIslamicYear(SELECTED_ISLAMIC_YEAR).months[0]!.startDate.getTime(),
+				source: "computed",
 				selectedAccountIds,
 				showArchivedAccounts: false,
 				updatedAt: 1_000,
