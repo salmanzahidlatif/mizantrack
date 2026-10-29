@@ -42,6 +42,10 @@ interface TransactionListProps {
 	categories: Category[];
 	/** Resolved currency of the screen, so rows can drop a symbol that is already stated. */
 	screenCurrency?: string;
+	/** Turns every row into a checkbox target so several can be edited at once. */
+	selectionMode?: boolean;
+	selectedIds?: Set<string>;
+	onToggleSelect?: (id: string) => void;
 }
 
 export function TransactionList({
@@ -49,6 +53,9 @@ export function TransactionList({
 	accounts,
 	categories,
 	screenCurrency,
+	selectionMode = false,
+	selectedIds,
+	onToggleSelect,
 }: TransactionListProps) {
 	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 	const parentRef = useRef<HTMLDivElement>(null);
@@ -80,6 +87,9 @@ export function TransactionList({
 			accounts={accounts}
 			categories={categories}
 			screenCurrency={screenCurrency}
+			selectionMode={selectionMode}
+			selectedIds={selectedIds}
+			onToggleSelect={onToggleSelect}
 		/>
 	);
 }
@@ -90,9 +100,21 @@ interface VirtualListProps {
 	accounts: Account[];
 	categories: Category[];
 	screenCurrency?: string;
+	selectionMode: boolean;
+	selectedIds: Set<string> | undefined;
+	onToggleSelect: ((id: string) => void) | undefined;
 }
 
-function VirtualList({ parentRef, items, accounts, categories, screenCurrency }: VirtualListProps) {
+function VirtualList({
+	parentRef,
+	items,
+	accounts,
+	categories,
+	screenCurrency,
+	selectionMode,
+	selectedIds,
+	onToggleSelect,
+}: VirtualListProps) {
 	const activeStickyIndexRef = useRef<number | null>(null);
 	const stickyIndexes = useMemo(
 		() =>
@@ -175,6 +197,9 @@ function VirtualList({ parentRef, items, accounts, categories, screenCurrency }:
 										accounts={accounts}
 										categories={categories}
 										screenCurrency={screenCurrency}
+										selectionMode={selectionMode}
+										selected={selectedIds?.has(item.transaction.id) ?? false}
+										onToggleSelect={onToggleSelect}
 									/>
 									<div className="pointer-events-none absolute right-4 bottom-0 left-[72px] border-b border-border/55" />
 								</div>
