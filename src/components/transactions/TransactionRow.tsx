@@ -1,6 +1,13 @@
 "use client";
 
-import { ArrowLeftRight, ChevronRight, TrendingDown, TrendingUp } from "lucide-react";
+import {
+	ArrowLeftRight,
+	Check,
+	ChevronRight,
+	Repeat,
+	TrendingDown,
+	TrendingUp,
+} from "lucide-react";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -23,6 +30,10 @@ interface TransactionRowProps {
 	 * other currency keep it so the figures stay distinguishable.
 	 */
 	screenCurrency?: string;
+	/** When true the row selects instead of opening, so a bulk edit can gather targets. */
+	selectionMode?: boolean;
+	selected?: boolean;
+	onToggleSelect?: (id: string) => void;
 }
 
 const TYPE_ICON = {
@@ -71,6 +82,9 @@ export function TransactionRow({
 	accounts,
 	categories,
 	screenCurrency,
+	selectionMode = false,
+	selected = false,
+	onToggleSelect,
 }: TransactionRowProps) {
 	const openEditTransaction = useUIStore((s) => s.openEditTransaction);
 	const haptics = useHaptics();
@@ -113,6 +127,10 @@ export function TransactionRow({
 
 	function handleOpen() {
 		haptics.light();
+		if (selectionMode) {
+			onToggleSelect?.(transaction.id);
+			return;
+		}
 		openEditTransaction(transaction.id);
 	}
 
@@ -120,11 +138,24 @@ export function TransactionRow({
 		<button
 			type="button"
 			onClick={handleOpen}
+			aria-pressed={selectionMode ? selected : undefined}
+			aria-label={selectionMode ? `${selected ? "Deselect" : "Select"} ${label}` : undefined}
 			className={cn(
 				"flex min-h-[76px] w-full items-center gap-3 px-4 py-3.5 text-left transition-colors duration-150 hover:bg-muted/35 active:bg-muted/55",
+				selectionMode && selected && "bg-primary/10 hover:bg-primary/15",
 				PRESS_SCALE,
 				TAPPABLE
 			)}>
+			{selectionMode && (
+				<span
+					aria-hidden="true"
+					className={cn(
+						"flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+						selected ? "border-primary bg-primary text-primary-foreground" : "border-border"
+					)}>
+					{selected && <Check className="h-3 w-3" strokeWidth={3} />}
+				</span>
+			)}
 			<div
 				className={cn(
 					"flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1",
@@ -134,7 +165,15 @@ export function TransactionRow({
 			</div>
 
 			<div className="min-w-0 flex-1 space-y-1">
-				<p className="truncate text-[15px] leading-5 font-semibold tracking-tight">{label}</p>
+				<p className="flex min-w-0 items-center gap-1.5 text-[15px] leading-5 font-semibold tracking-tight">
+					<span className="truncate">{label}</span>
+					{transaction.recurrenceId && (
+						<Repeat
+							className="h-3 w-3 shrink-0 text-muted-foreground/70"
+							aria-label="Part of a repeating series"
+						/>
+					)}
+				</p>
 				<div className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground">
 					<span className="truncate">{accountLabel}</span>
 					{archivedDescription && <ArchivedAccountIndicator label={archivedDescription} />}
@@ -171,7 +210,10 @@ export function TransactionRow({
 					variant={transaction.type === "Transfer" ? "transfer" : undefined}
 					className="text-[15px] leading-5"
 				/>
-				<ChevronRight className="h-4 w-4 text-muted-foreground/45" aria-hidden="true" />
+				<ChevronRight
+					className={cn("h-4 w-4 text-muted-foreground/45", selectionMode && "invisible")}
+					aria-hidden="true"
+				/>
 			</div>
 		</button>
 	);

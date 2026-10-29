@@ -42,7 +42,7 @@ export const ZAKAT_GOLD_YEAR_ITEMS_BACKFILL_META_ID = "zakatGoldYearItemsBackfil
  * A test pins this to the opened database's `verno`, so bumping one without the other
  * fails loudly.
  */
-export const MIZAN_TRACK_DEXIE_VERSION = 14;
+export const MIZAN_TRACK_DEXIE_VERSION = 15;
 
 let suppressSyncDirtyTracking = 0;
 
@@ -199,6 +199,15 @@ const STORES_V14: StoreSchema = {
 		"id, userId, currency, islamicYear, lineageId, [userId+currency], [userId+currency+islamicYear], updatedAt, deletedAt, pendingSync",
 };
 
+// Version 15: Index the recurring-series key. Occurrences are ordinary transactions —
+// only the shared `recurrenceId` tells them apart — so editing or deleting a whole
+// series has to find its members without scanning every transaction the owner has.
+const STORES_V15: StoreSchema = {
+	...STORES_V14,
+	transactions:
+		"id, userId, [userId+date], [userId+recurrenceId], type, date, accountId, categoryId, toAccountId, sourceId, recurrenceId, updatedAt, deletedAt, pendingSync",
+};
+
 export class MizanTrackDB extends Dexie {
 	accounts!: Table<Account>;
 	categories!: Table<Category>;
@@ -283,6 +292,7 @@ export class MizanTrackDB extends Dexie {
 					timestamp: Date.now(),
 				});
 			});
+		this.version(15).stores(STORES_V15);
 
 		installSyncDirtyHooks(this.accounts);
 		installSyncDirtyHooks(this.categories);

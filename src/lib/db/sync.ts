@@ -377,10 +377,12 @@ const OPTIONAL_SYNC_FIELDS = {
 
 // sourceId is optional for legacy/manual records, but it is not null-written:
 // clearing it during a merge could erase the external identity needed for safe re-imports.
+// recurrenceId travels the same way: it is the only thing tying a repeated transaction to
+// its siblings, so a merge that dropped it would silently break the series apart.
 const NON_CLEARING_OPTIONAL_SYNC_FIELDS = {
 	accounts: ["sourceId"],
 	categories: ["sourceId"],
-	transactions: ["sourceId"],
+	transactions: ["sourceId", "recurrenceId"],
 	budgets: ["sourceId"],
 	goldItems: [],
 	zakatCalculations: [],

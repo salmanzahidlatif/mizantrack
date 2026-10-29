@@ -62,6 +62,7 @@ const TRANSACTION_COLUMNS = [
 	"place",
 	"travelCurrency",
 	"sourceId",
+	"recurrenceId",
 	"updatedAt",
 	"deletedAt",
 ] as const satisfies readonly (keyof Transaction)[];
