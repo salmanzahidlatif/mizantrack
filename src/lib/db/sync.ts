@@ -141,6 +141,15 @@ export const FIRESTORE_FREE_TIER_DAILY_READ_LIMIT = 50_000;
  * Guards against a sync hanging forever when Firebase is unreachable.
  */
 export const FIRESTORE_SYNC_TIMEOUT_MS = 15_000;
+/**
+ * One page of up to FIRESTORE_PULL_PAGE_SIZE documents, read or written in a single
+ * round trip. It is hundreds of records, not one, so it cannot share the single-request
+ * budget: on a phone's connection a 500-document page routinely needs longer than 15s,
+ * and timing it out failed the whole table rather than the page. It still gets less than
+ * a whole-collection scan, so a genuinely dead connection is reported in a minute rather
+ * than after several pages have each waited two.
+ */
+export const FIRESTORE_PAGE_SYNC_TIMEOUT_MS = 60_000;
 export const FIRESTORE_BULK_SYNC_TIMEOUT_MS = 120_000;
 // 500 keeps each mobile pull bounded while matching Firestore's write-batch ceiling.
 // Existing push chunks are 499 writes, so serverTimestamp ties from one push batch
@@ -1046,7 +1055,11 @@ async function pushLocalRecords(
 			const clean = toFirestoreSyncRecord(tableName, record);
 			batch.set(ref, clean, { merge: true });
 		});
-		await withFirestoreTimeout(batch.commit(), `pushing ${tableName}`);
+		await withFirestoreTimeout(
+			batch.commit(),
+			`pushing ${tableName}`,
+			FIRESTORE_PAGE_SYNC_TIMEOUT_MS
+		);
 		await clearPendingForPushedRecords(tableName, chunk);
 		pushed += chunk.length;
 	}
@@ -1102,7 +1115,8 @@ async function pullRemoteRecords(
 				);
 		const remoteSnap: Awaited<ReturnType<typeof getDocs>> = await withFirestoreTimeout(
 			getDocs(remoteQuery),
-			`pulling ${tableName} page`
+			`pulling ${tableName} page`,
+			FIRESTORE_PAGE_SYNC_TIMEOUT_MS
 		);
 
 		if (remoteSnap.docs.length === 0) {

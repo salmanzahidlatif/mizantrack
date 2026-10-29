@@ -13,6 +13,8 @@ import { db, withoutSyncDirtyTracking } from "@/lib/db/local";
 import {
 	CORE_SYNC_TABLES,
 	FIRESTORE_DAILY_QUOTA_EXCEEDED_MESSAGE,
+	FIRESTORE_PAGE_SYNC_TIMEOUT_MS,
+	FIRESTORE_SYNC_TIMEOUT_MS,
 	getFirestoreUsage,
 	getSyncBackupCounts,
 	repairSyncFromFirestore,
@@ -1122,7 +1124,7 @@ describe("syncAll — server syncedAt cursors", () => {
 	async function configurePaginatedPull(
 		tableName: (typeof CORE_SYNC_TABLES)[number],
 		docs: ReturnType<typeof remoteTransactionDoc>[],
-		options: { failOnPage?: number; userId?: string } = {}
+		options: { failOnPage?: number; userId?: string; delayPageMs?: number } = {}
 	) {
 		const { firestore, mockSet } = await configureEmptySyncMocks();
 		const syncUserId = options.userId ?? USER_ID;
@@ -1169,6 +1171,9 @@ describe("syncAll — server syncedAt cursors", () => {
 			tableCalls[tableName] = (tableCalls[tableName] ?? 0) + 1;
 			if (options.failOnPage === tableCalls[tableName]) {
 				throw new Error(`Injected ${tableName} page failure`);
+			}
+			if (options.delayPageMs) {
+				await new Promise((resolve) => setTimeout(resolve, options.delayPageMs));
 			}
 
 			const constraints = queryRef.constraints ?? [];
@@ -1366,6 +1371,82 @@ describe("syncAll — server syncedAt cursors", () => {
 				true
 			);
 		} finally {
+			await db.syncMeta.delete("lastSync:transactions");
+		}
+	}, 20_000);
+
+	/**
+	 * Drives a promise to completion under fake timers. Each sync scope schedules its own
+	 * timeout only once the previous one settles, so a single advance would leave the
+	 * later ones pending forever.
+	 */
+	async function settleWithFakeTimers<T>(pending: Promise<T>): Promise<T> {
+		let settled = false;
+		void pending.then(
+			() => (settled = true),
+			() => (settled = true)
+		);
+		for (let i = 0; i < 200 && !settled; i += 1) {
+			await vi.advanceTimersByTimeAsync(5_000);
+		}
+		return pending;
+	}
+
+	it("syncAll_PageSlowerThanSingleRequestBudget_StillCompletes", async () => {
+		await markMigrationDone();
+		const slowUserId = `${USER_ID}-slow`;
+		const remoteDocs = Array.from({ length: 10 }, (_, index) =>
+			remoteTransactionDoc(index + 1, slowUserId, "txn-slow")
+		);
+		// Longer than the 15s single-request budget, well inside the page budget. A phone
+		// on a slow connection reading a 500-document page lands exactly here, and used to
+		// fail the whole table for it.
+		await configurePaginatedPull("transactions", remoteDocs, {
+			userId: slowUserId,
+			delayPageMs: FIRESTORE_SYNC_TIMEOUT_MS + 5_000,
+		});
+
+		// Only setTimeout is faked: fake-indexeddb drives its own async work off other
+		// timers, and faking those wedges the Dexie writes this test depends on.
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			const pending = syncAll(slowUserId);
+			const result = await settleWithFakeTimers(pending);
+
+			expect(result.status).toBe("success");
+			expect(result.errors).toEqual([]);
+			expect(await db.transactions.where("userId").equals(slowUserId).count()).toBe(10);
+		} finally {
+			vi.useRealTimers();
+			await db.syncMeta.delete("lastSync:transactions");
+		}
+	}, 20_000);
+
+	it("syncAll_PageExceedsPageBudget_ReportsTimeoutInsteadOfHanging", async () => {
+		await markMigrationDone();
+		const deadUserId = `${USER_ID}-dead`;
+		const remoteDocs = Array.from({ length: 10 }, (_, index) =>
+			remoteTransactionDoc(index + 1, deadUserId, "txn-dead")
+		);
+		await configurePaginatedPull("transactions", remoteDocs, {
+			userId: deadUserId,
+			delayPageMs: FIRESTORE_PAGE_SYNC_TIMEOUT_MS + 5_000,
+		});
+
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			const pending = syncAll(deadUserId);
+			const result = await settleWithFakeTimers(pending);
+
+			// A genuinely dead connection must still surface, not wait forever.
+			expect(result.status).not.toBe("success");
+			expect(
+				result.errors.some((error) =>
+					/timed out while pulling transactions page/i.test(error.message)
+				)
+			).toBe(true);
+		} finally {
+			vi.useRealTimers();
 			await db.syncMeta.delete("lastSync:transactions");
 		}
 	}, 20_000);
