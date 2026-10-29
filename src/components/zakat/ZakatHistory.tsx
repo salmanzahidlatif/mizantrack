@@ -208,6 +208,12 @@ export function ZakatHistory({
 					const countedAccounts = calc.accountBalances.filter((a) => a.zakatable);
 					const shownAccounts = getContributingZakatSnapshotAccounts(calc.accountBalances);
 					const hasUncountedAccounts = hasUncountedZakatSnapshotAccounts(calc.accountBalances);
+					// Silver was one weight at one price, so the price it was assessed at is
+					// simply the value divided by the weight. A record saved before silver
+					// existed carries neither, and reads as a year that held none.
+					const silverGrams = calc.totalSilverWeightGrams ?? 0;
+					const silverPricePerGram =
+						silverGrams > 0 ? (calc.totalSilverValue ?? 0) / silverGrams : 0;
 
 					return (
 						<div
@@ -302,11 +308,11 @@ export function ZakatHistory({
 														className="font-normal tracking-normal"
 													/>
 												</div>
-												{calc.silverPricePerGram && (
+												{silverGrams > 0 && (
 													<div className="flex justify-between">
 														<span className="text-muted-foreground">Silver Price/gram:</span>
 														<CurrencyAmount
-															amount={calc.silverPricePerGram}
+															amount={silverPricePerGram}
 															currency={calc.referenceCurrency}
 															className="font-normal tracking-normal"
 														/>
@@ -355,6 +361,32 @@ export function ZakatHistory({
 														<span className="text-muted-foreground">Total Value:</span>
 														<CurrencyAmount
 															amount={calc.totalGoldValue}
+															currency={calc.referenceCurrency}
+															className="font-normal tracking-normal"
+														/>
+													</div>
+												</div>
+											</div>
+										)}
+
+										{/* Silver: one weight at one price, so the price per gram IS the
+										    value divided by the weight. The deprecated
+										    `silverPricePerGram` is deliberately not read here — it only
+										    ever held a dropped nisab threshold. */}
+										{silverGrams > 0 && (
+											<div className="space-y-2">
+												<h4 className="text-xs font-medium text-muted-foreground">
+													Silver Holdings
+												</h4>
+												<div className="space-y-1 text-sm">
+													<div className="flex justify-between">
+														<span className="text-muted-foreground">Total Weight:</span>
+														<span className="tabular-nums">{silverGrams.toFixed(2)}g</span>
+													</div>
+													<div className="flex justify-between">
+														<span className="text-muted-foreground">Total Value:</span>
+														<CurrencyAmount
+															amount={calc.totalSilverValue ?? 0}
 															currency={calc.referenceCurrency}
 															className="font-normal tracking-normal"
 														/>

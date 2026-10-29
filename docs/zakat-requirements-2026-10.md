@@ -128,6 +128,22 @@ gold value = sum of (grams for karat × price per gram for that karat on effecti
 
 The workbook uses 21k only for `2020`–`2024`. The known-wrong `2025` and `2026` layouts show started 21k and 22k rows; that is a useful layout clue only.
 
+### 4.3b Silver
+
+Added at the owner's request, October 2026: *"a simple section for silver, just its value and weight, simple values per zakat year, included in the total zakatable value to calculate the final rate."*
+
+Silver is **one weight at one price per gram, per zakat year**. It is deliberately NOT itemised the way gold is — no pieces, no purity, no lineage, no sold tracking — because the owner keeps it as a single line he retypes each year. Both figures live on the same per-year record as that year's gold prices (`ZakatGoldYear`), and are priced on that year's existing `priceDate`; there is no second date.
+
+The weight is always required: a price with no weight contributes nothing, and the screen says so rather than silently assessing zero.
+
+Formula:
+
+```text
+silver value = silver grams × silver price per gram
+```
+
+A year that recorded no silver contributes **exactly zero**, so every year settled before silver existed reproduces its figures unchanged.
+
 ### 4.4 Zakat amount
 
 The percentage must be editable and default to **2.5%**.
@@ -136,7 +152,7 @@ Formula:
 
 ```text
 chosen basis = MINIMUM or MAXIMUM, selected by owner
-TOTAL = chosen basis + gold value
+TOTAL = chosen basis + gold value + silver value
 ZAKAT = TOTAL × zakat percentage
 Per Month = ZAKAT ÷ 12
 ```
@@ -441,7 +457,7 @@ Verified against the code at commit `839d243`. Another agent is actively working
 2. **Anchor persistence and sync** — `zakatYears` (schema v12) stores the anchor and its provenance; `src/lib/zakatYearRepository.ts` saves, lists and resets overrides, and `src/test/zakatYearSync.test.ts` covers push, pull and tombstones. `goldItems`, `zakatCalculations` and `zakatPayments` are synced too.
 3. **Yearly grid engine** — `computeZakatYearGrid` in `src/lib/zakatEngine.ts` produces per-account month-end balances, monthly `TOTAL`s, `MINIMUM`, `MAXIMUM`, gold at grams × per-karat price, the editable rate, `Per Month`, `Past Remaining`, `Total To Pay`, `Paid` and `Balance/Excess`. Liabilities enter the same sum as negatives rather than being excluded.
 4. **Reconciliation against the owner's own numbers** — `src/test/zakatReconciliation.test.ts` reproduces the `2024` worked example in section 8 end to end, including the overpayment, and checks that switching to the maximum basis actually changes the result.
-5. **`.xlsx` export with live formulas** — `src/lib/zakatExport.ts` writes one sheet per Ramaḍān year with real `SUM`/`MIN`/`MAX`/`PRODUCT` formulas chaining TOTAL → MINIMUM/MAXIMUM → GOLD → ZAKAT → Total To Pay → Balance/Excess, payments with Person and Location, and no currency conversion anywhere. Covered by `src/test/zakatExport.test.ts`, including a write/read round trip that proves the formulas survive.
+5. **`.xlsx` export with live formulas** — `src/lib/zakatExport.ts` writes one sheet per Ramaḍān year with real `SUM`/`MIN`/`MAX`/`PRODUCT` formulas chaining TOTAL → MINIMUM/MAXIMUM → GOLD/SILVER → ZAKAT → Total To Pay → Balance/Excess, payments with Person and Location, and no currency conversion anywhere. Covered by `src/test/zakatExport.test.ts`, including a write/read round trip that proves the formulas survive.
 6. **Year selection and calendar control in the UI** — `ZakatYearCalendarControl.tsx` shows the anchor, its source, and lets the owner override or reset it; the monthly view renders the twelve months with their Gregorian ranges and month-end balances.
 
 ### Still outstanding

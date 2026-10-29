@@ -302,18 +302,18 @@ describe("buildZakatWorkbook", () => {
 		const workbook = buildZakatWorkbook({ years: [makeYear()] });
 		const sheet = sheetOf(workbook, "2024 (1444–1445)");
 
-		expect(cell(sheet, "R7").v).toBe(0.025);
-		expect(formulaAt(sheet, "S7")).toBe("SUM(O7,Q7)");
-		expect(formulaAt(sheet, "T7")).toBe("PRODUCT(S7,R7)");
-		expect(formulaAt(sheet, "U7")).toBe("T7/12");
-		expect(cell(sheet, "S7").v).toBeCloseTo(90 + 170.52 * 18846.3, 4);
+		expect(cell(sheet, "S7").v).toBe(0.025);
+		expect(formulaAt(sheet, "T7")).toBe("SUM(O7,Q7,R7)");
+		expect(formulaAt(sheet, "U7")).toBe("PRODUCT(T7,S7)");
+		expect(formulaAt(sheet, "V7")).toBe("U7/12");
+		expect(cell(sheet, "T7").v).toBeCloseTo(90 + 170.52 * 18846.3, 4);
 	});
 
 	it("feeds the maximum into TOTAL when the maximum basis is selected", () => {
 		const workbook = buildZakatWorkbook({ years: [makeYear({ basis: "maximum" })] });
 		const sheet = sheetOf(workbook, "2024 (1444–1445)");
 
-		expect(formulaAt(sheet, "S7")).toBe("SUM(P7,Q7)");
+		expect(formulaAt(sheet, "T7")).toBe("SUM(P7,Q7,R7)");
 		expect(summaryValue(sheet, "Basis")).toBe("MAXIMUM");
 	});
 
@@ -324,9 +324,9 @@ describe("buildZakatWorkbook", () => {
 		expect(formulaAt(sheet, `B${summaryRowNumber(sheet, "MINIMUM")}`)).toBe("O7");
 		expect(formulaAt(sheet, `B${summaryRowNumber(sheet, "MAXIMUM")}`)).toBe("P7");
 		expect(formulaAt(sheet, `B${summaryRowNumber(sheet, "GOLD")}`)).toBe("Q7");
-		expect(formulaAt(sheet, `B${summaryRowNumber(sheet, "Rate")}`)).toBe("R7");
-		expect(formulaAt(sheet, `B${summaryRowNumber(sheet, "ZAKAT")}`)).toBe("T7");
-		expect(formulaAt(sheet, `B${summaryRowNumber(sheet, "Per Month")}`)).toBe("U7");
+		expect(formulaAt(sheet, `B${summaryRowNumber(sheet, "Rate")}`)).toBe("S7");
+		expect(formulaAt(sheet, `B${summaryRowNumber(sheet, "ZAKAT")}`)).toBe("U7");
+		expect(formulaAt(sheet, `B${summaryRowNumber(sheet, "Per Month")}`)).toBe("V7");
 	});
 
 	it("chains ZAKAT → Total To Pay → Balance/Excess through real cell references", () => {
@@ -455,9 +455,9 @@ describe("buildZakatWorkbook", () => {
 		expect(cell(sheet, "O6").v).toBeCloseTo(2628184.68, 2);
 		expect(cell(sheet, "P6").v).toBeCloseTo(3370369.84, 2);
 		expect(cell(sheet, "Q6").v).toBeCloseTo(3213671.076, 3);
-		expect(cell(sheet, "S6").v).toBeCloseTo(5841855.756, 3);
-		expect(cell(sheet, "T6").v).toBeCloseTo(146046.3939, 4);
-		expect(cell(sheet, "U6").v).toBeCloseTo(12170.53283, 5);
+		expect(cell(sheet, "T6").v).toBeCloseTo(5841855.756, 3);
+		expect(cell(sheet, "U6").v).toBeCloseTo(146046.3939, 4);
+		expect(cell(sheet, "V6").v).toBeCloseTo(12170.53283, 5);
 		expect(summaryValue(sheet, "Total To Pay")).toBeCloseTo(234104.3939, 4);
 		expect(summaryValue(sheet, "Paid")).toBe(285500);
 		expect(summaryValue(sheet, "Balance/Excess")).toBeCloseTo(-51395.6061, 4);
@@ -471,7 +471,7 @@ describe("buildZakatWorkbook", () => {
 
 		expect(formulaAt(sheet, "B7")).toBe("SUM(B5:B6)");
 		expect(formulaAt(sheet, "O7")).toBe("MIN(B7:M7)");
-		expect(formulaAt(sheet, "T7")).toBe("PRODUCT(S7,R7)");
+		expect(formulaAt(sheet, "U7")).toBe("PRODUCT(T7,S7)");
 	});
 });
 

@@ -15,12 +15,18 @@
  * for a year that has items — so a year the owner pinned under the old model reads back
  * exactly as it did, and is honoured below an itemised list and above the shared
  * inventory.
+ *
+ * Silver rides on the same row, deliberately as ONE weight at ONE price per gram. It is
+ * not itemised and never will be: the owner keeps silver as a single line he retypes
+ * each year, priced on the same date as that year's gold.
  */
 
 import { normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { db } from "@/lib/db/local";
+import { calculateSilverValue } from "@/lib/zakatEngine";
 import { getZakatGoldYearItems, hasZakatGoldYearItemInventory } from "@/lib/zakatGoldYearItems";
 
+import type { SilverHoldingInput } from "@/lib/zakatEngine";
 import type { GoldItem, GoldPurity, ZakatGoldYear, ZakatGoldYearItem } from "@/types";
 
 /** The karats the screen prices. 21k and 22k are the two the owner actually holds. */
@@ -146,6 +152,38 @@ export function sumZakatGoldGrams(gramsByPurity: Map<GoldPurity, number>): numbe
 	return total;
 }
 
+/** A usable positive number, or undefined: a NaN or a negative is not a figure typed. */
+function toUsableAmount(amount: number | undefined): number | undefined {
+	if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) return undefined;
+	return amount;
+}
+
+/**
+ * The silver ONE zakat year held: a weight and a price per gram, both the owner's own.
+ *
+ * Nothing is inherited from another year and nothing falls back to an inventory — silver
+ * is a single line he retypes each year — so a year he never typed one for is silent
+ * here, and silent means worth zero.
+ */
+export function getZakatYearSilver(record: ZakatGoldYear | undefined): SilverHoldingInput {
+	const grams = toUsableAmount(record?.silverGrams);
+	const pricePerGram = toUsableAmount(record?.silverPricePerGram);
+	return {
+		...(grams !== undefined ? { grams } : {}),
+		...(pricePerGram !== undefined ? { pricePerGram } : {}),
+	};
+}
+
+/** `grams × price per gram` for the year's silver; zero whenever either half is missing. */
+export function getZakatYearSilverValue(record: ZakatGoldYear | undefined): number {
+	return calculateSilverValue(getZakatYearSilver(record));
+}
+
+/** The grams of silver a year is assessed on. Zero for every year that recorded none. */
+export function getZakatYearSilverGrams(record: ZakatGoldYear | undefined): number {
+	return getZakatYearSilver(record).grams ?? 0;
+}
+
 export async function listZakatGoldYears(userId: string): Promise<ZakatGoldYear[]> {
 	const records = await db.zakatGoldYears.where("userId").equals(userId).toArray();
 	return records.filter((record) => !record.deletedAt);
@@ -168,13 +206,19 @@ export interface SaveZakatGoldYearInput {
 	pricesByPurity: Partial<Record<GoldPurity, number>>;
 	/** Unix ms the prices were taken on; the sheet prices gold at 1 Ramaḍān. */
 	priceDate?: number;
+	/** Total silver held that year, in grams. Omitted clears it, as `priceDate` does. */
+	silverGrams?: number;
+	/** Price per gram of silver, on the same `priceDate` as the gold prices. */
+	silverPricePerGram?: number;
 }
 
 /**
- * Saves the price per gram the owner typed for one year, in one currency.
+ * Saves the per-gram prices the owner typed for one year, in one currency — the gold
+ * prices per karat, and the silver weight and price that share the same priced-on date.
  *
- * A grams snapshot already pinned for the year is left untouched: the two are
- * independent inputs that happen to share a row.
+ * The screen saves that block WHOLE, so a field left out is a field cleared, exactly as
+ * `priceDate` already behaves. A grams snapshot pinned for the year is left untouched:
+ * it is an independent input that happens to share a row.
  */
 export async function saveZakatGoldYearPrices({
 	userId,
@@ -182,6 +226,8 @@ export async function saveZakatGoldYearPrices({
 	islamicYear,
 	pricesByPurity,
 	priceDate,
+	silverGrams,
+	silverPricePerGram,
 }: SaveZakatGoldYearInput): Promise<ZakatGoldYear> {
 	const existing = await getLiveGoldYear(userId, currency, islamicYear);
 	const record: ZakatGoldYear = {
@@ -197,6 +243,14 @@ export async function saveZakatGoldYearPrices({
 
 	if (priceDate !== undefined && Number.isFinite(priceDate)) record.priceDate = priceDate;
 	else delete record.priceDate;
+
+	const usableSilverGrams = toUsableAmount(silverGrams);
+	if (usableSilverGrams !== undefined) record.silverGrams = usableSilverGrams;
+	else delete record.silverGrams;
+
+	const usableSilverPrice = toUsableAmount(silverPricePerGram);
+	if (usableSilverPrice !== undefined) record.silverPricePerGram = usableSilverPrice;
+	else delete record.silverPricePerGram;
 
 	await db.zakatGoldYears.put(record);
 	return record;

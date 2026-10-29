@@ -36,11 +36,27 @@ export interface GoldPriceInput {
 	pricesByPurity: Partial<Record<GoldPurity, number>>;
 }
 
+/**
+ * The silver a year held: ONE weight at ONE price per gram.
+ *
+ * Silver is not itemised the way gold is — no pieces, no purity, no lineage — because
+ * that is how the owner records it: a weight and a price he retypes each year. Either
+ * half missing means the year is worth nothing in silver, never a half-priced figure.
+ */
+export interface SilverHoldingInput {
+	/** Total silver held that year, in grams. */
+	grams?: number;
+	/** Price per gram, in the year's currency, as of the gold block's `priceDate`. */
+	pricePerGram?: number;
+}
+
 export interface ZakatAssessmentInput {
 	monthlyTotals: number[];
 	basis: ZakatBasis;
 	goldItems: Pick<GoldItem, "weight" | "purity">[];
 	goldPrices: GoldPriceInput;
+	/** Absent for every year that holds none, which must contribute exactly zero. */
+	silver?: SilverHoldingInput;
 	ratePercent: number;
 	pastRemaining: number;
 	payments: Array<{ amount: number }>;
@@ -51,6 +67,7 @@ export interface ZakatAssessment {
 	maximum: number;
 	basisAmount: number;
 	goldValue: number;
+	silverValue: number;
 	totalZakatable: number;
 	ratePercent: number;
 	zakatObligation: number;
@@ -253,11 +270,28 @@ export function calculateGoldValue(
 	return goldItems.reduce((sum, item) => sum + item.weight * (pricesByPurity[item.purity] ?? 0), 0);
 }
 
+/**
+ * `grams × price per gram`, and exactly zero whenever either half is missing.
+ *
+ * A year the owner never recorded silver for must come out byte-identical to what it
+ * came out to before silver existed, so anything that is not a usable positive number —
+ * absent, NaN, negative — contributes nothing rather than poisoning the total.
+ */
+export function calculateSilverValue(silver: SilverHoldingInput | undefined): number {
+	const { grams, pricePerGram } = silver ?? {};
+	if (typeof grams !== "number" || !Number.isFinite(grams) || grams <= 0) return 0;
+	if (typeof pricePerGram !== "number" || !Number.isFinite(pricePerGram) || pricePerGram <= 0) {
+		return 0;
+	}
+	return grams * pricePerGram;
+}
+
 export function calculateZakatAssessment({
 	monthlyTotals,
 	basis,
 	goldItems,
 	goldPrices,
+	silver,
 	ratePercent,
 	pastRemaining,
 	payments,
@@ -266,7 +300,8 @@ export function calculateZakatAssessment({
 	const maximum = monthlyTotals.length > 0 ? Math.max(...monthlyTotals) : 0;
 	const basisAmount = basis === "minimum" ? minimum : maximum;
 	const goldValue = calculateGoldValue(goldItems, goldPrices.pricesByPurity);
-	const totalZakatable = basisAmount + goldValue;
+	const silverValue = calculateSilverValue(silver);
+	const totalZakatable = basisAmount + goldValue + silverValue;
 	const zakatObligation = totalZakatable * (ratePercent / 100);
 	const paid = payments.reduce((sum, payment) => sum + payment.amount, 0);
 	const totalToPay = zakatObligation + pastRemaining;
@@ -276,6 +311,7 @@ export function calculateZakatAssessment({
 		maximum,
 		basisAmount,
 		goldValue,
+		silverValue,
 		totalZakatable,
 		ratePercent,
 		zakatObligation,

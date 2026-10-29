@@ -45,6 +45,7 @@ import { pinZakatGoldYearItems } from "@/lib/zakatGoldYearItemRepository";
 import { getZakatGoldYearItems } from "@/lib/zakatGoldYearItems";
 import {
 	getZakatGoldYearPrices,
+	getZakatYearSilver,
 	resolveZakatGoldGramsForYear,
 	sumZakatGoldGrams,
 } from "@/lib/zakatGoldYearRepository";
@@ -357,6 +358,12 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 	);
 	const totalGoldWeightGrams = sumZakatGoldGrams(goldGramsByPurity);
 
+	// Silver is this year's own single line: one weight at one price per gram, priced on
+	// the same day as the gold. A year that records none is worth zero in silver.
+	const silver = useMemo(() => getZakatYearSilver(selectedGoldYear), [selectedGoldYear]);
+	const silverGrams = silver.grams ?? 0;
+	const silverPricePerGram = silver.pricePerGram ?? 0;
+
 	// ── Carry-forward ───────────────────────────────────────────────────────
 	// Past Remaining is DERIVED, never stored: a year's Balance/Excess becomes the next
 	// year's opening figure, and an overpayment carries as a negative so it reduces what
@@ -440,6 +447,10 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 			ratePercent: assessment.ratePercent,
 			totalGoldWeightGrams,
 			totalGoldValue: assessment.goldValue,
+			// This year's silver as it was assessed: one weight at one price per gram, so
+			// the price is recoverable as value ÷ grams. A year holding none records zero.
+			totalSilverWeightGrams: silverGrams,
+			totalSilverValue: assessment.silverValue,
 			// Only the accounts this year was ACTUALLY assessed on. A snapshot is evidence
 			// of a determination, so listing every account in the currency would have it
 			// claim that accounts the owner excluded — or closed ones the year's toggle
@@ -516,6 +527,8 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 						pricePerGram: goldPrices[purity] ?? 0,
 					})),
 					goldPriceDate,
+					// One weight at one price, kept as two editable inputs like the gold.
+					silver: { grams: silverGrams, pricePerGram: silverPricePerGram },
 					pastRemaining: carryForward.pastRemaining,
 					payments: (zakatPayments ?? [])
 						.filter((payment) => payment.islamicYear === selectedYear.zakatYear)
@@ -581,8 +594,12 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 						yearLabel={selectedYear.label}
 						pricesByPurity={goldPrices}
 						gramsByPurity={goldGramsByPurity}
+						silverGrams={silverGrams}
+						silverPricePerGram={silverPricePerGram}
 						priceDate={goldPriceDate}
 						goldValue={selectedYearAssessment?.goldValue ?? 0}
+						silverValue={selectedYearAssessment?.silverValue ?? 0}
+						totalZakatable={selectedYearAssessment?.totalZakatable ?? 0}
 					/>
 
 					{/* The pieces this zakat year was held on */}
@@ -804,7 +821,17 @@ export function ZakatPageClientEnhanced({ userId: providedUserId }: ZakatPageCli
 											),
 										},
 										{
-											label: "TOTAL (basis + gold)",
+											label: "Silver value",
+											value: (
+												<CurrencyAmount
+													amount={selectedYearAssessment.silverValue}
+													currency={referenceCurrency}
+													className="font-medium"
+												/>
+											),
+										},
+										{
+											label: "TOTAL (basis + gold + silver)",
 											value: (
 												<CurrencyAmount
 													amount={selectedYearAssessment.totalZakatable}

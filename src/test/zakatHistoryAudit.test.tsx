@@ -209,7 +209,15 @@ describe("the record is read in its own currency", () => {
 		// The owner's 2020 sheet paid 7,776 a gram in RUPEES; showing it as dollars made
 		// the card contradict the gold value printed two lines beneath it.
 		await seed({
-			calculations: [snapshot({ goldPricePerGram: 7_776, silverPricePerGram: 95.5 })],
+			calculations: [
+				snapshot({
+					goldPricePerGram: 7_776,
+					// Silver is one weight at one price, so 50 g worth 4,775 reads back as
+					// 95.50 a gram — in RUPEES, like everything else on the record.
+					totalSilverWeightGrams: 50,
+					totalSilverValue: 4_775,
+				}),
+			],
 		});
 		renderHistory();
 		await expandFirstRecord();
@@ -339,6 +347,7 @@ describe("the comparison itself", () => {
 			totalZakatable: SAVED_TOTAL_ZAKATABLE + 0.004,
 			zakatObligation: SAVED_OBLIGATION + 0.004,
 			goldValue: GOLD_VALUE - 0.004,
+			silverValue: 0,
 		});
 
 		expect(audit.status).toBe("matches");
@@ -350,6 +359,7 @@ describe("the comparison itself", () => {
 			totalZakatable: SAVED_TOTAL_ZAKATABLE + 200_000,
 			zakatObligation: SAVED_OBLIGATION + 5_000,
 			goldValue: GOLD_VALUE,
+			silverValue: 0,
 		});
 
 		expect(audit.status).toBe("diverged");

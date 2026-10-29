@@ -285,6 +285,17 @@ export interface ZakatGoldYear {
 	 * reads back exactly as it did. Never written for a year that has items.
 	 */
 	gramsByPurity?: Partial<Record<GoldPurity, number>>;
+	/**
+	 * Total silver held that year, in grams.
+	 *
+	 * Silver is one weight and one price per year, never itemised: the owner keeps it as
+	 * a single line he retypes each year, so there is no per-piece list, no karat and no
+	 * lineage to carry across years. Absent means the year held none, which is worth
+	 * exactly zero rather than borrowing another year's figure.
+	 */
+	silverGrams?: number;
+	/** Price per gram of silver, in `currency`, as of the same `priceDate` as the gold. */
+	silverPricePerGram?: number;
 	/** Unix ms the prices were taken on; the sheet prices gold at 1 Ramaḍān. */
 	priceDate?: number;
 	updatedAt: number;
@@ -352,7 +363,14 @@ export interface ZakatCalculation {
 	nisabStandard?: "gold" | "silver";
 	/** Blended price per gram actually used: total gold value ÷ total grams. */
 	goldPricePerGram: number;
-	/** @deprecated Only the silver nisab ever used this. Never written now. */
+	/**
+	 * @deprecated Only the silver NISAB ever used this, and nisab was dropped. Never
+	 * written now — and deliberately NOT reused for the silver a year actually holds:
+	 * a nisab threshold and a holding's price per gram are different statements, and a
+	 * record saved years ago must not start reading as though silver had been held.
+	 * Silver holdings are recorded in `totalSilverWeightGrams` / `totalSilverValue`,
+	 * whose quotient IS the price per gram, there being one weight at one price.
+	 */
 	silverPricePerGram?: number;
 	/** Price per gram for each karat, in `referenceCurrency`, as of `assessmentDate`. */
 	goldPricesByPurity?: Partial<Record<GoldPurity, number>>;
@@ -365,6 +383,12 @@ export interface ZakatCalculation {
 	// Gold holdings
 	totalGoldWeightGrams: number;
 	totalGoldValue: number;
+
+	// Silver holdings. One weight at one price per gram, so the price the year was
+	// assessed at is `totalSilverValue / totalSilverWeightGrams`. Optional: a year with
+	// no silver records none, and reads back as zero.
+	totalSilverWeightGrams?: number;
+	totalSilverValue?: number;
 
 	// Account balances snapshot
 	accountBalances: {

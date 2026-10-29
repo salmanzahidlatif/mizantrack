@@ -147,6 +147,8 @@ function zakatCalculation(id: string, patch: Partial<ZakatCalculation> = {}): Za
 		ratePercent: 2.5,
 		totalGoldWeightGrams: 170.52,
 		totalGoldValue: 3_213_867.4,
+		totalSilverWeightGrams: 500,
+		totalSilverValue: 105_000,
 		accountBalances: [
 			{
 				accountId: "acc-1",
@@ -210,6 +212,8 @@ function zakatGoldYear(islamicYear: number, patch: Partial<ZakatGoldYear> = {}):
 		islamicYear,
 		pricesByPurity: { "21k": 16_778.12, "22k": 17_500 },
 		gramsByPurity: { "21k": 170.52 },
+		silverGrams: 500,
+		silverPricePerGram: 210,
 		priceDate: BASE,
 		updatedAt: BASE,
 		...patch,
@@ -807,6 +811,9 @@ describe("MizanTrack full backup — zakat and report fidelity", () => {
 		expect(goldYear?.pricesByPurity).toEqual({ "21k": 16_778.12, "22k": 17_500 });
 		expect(goldYear?.gramsByPurity).toEqual({ "21k": 170.52 });
 		expect(goldYear?.priceDate).toBe(BASE);
+		// Silver rides on the same row, so the backup carries it without a table of its own.
+		expect(goldYear?.silverGrams).toBe(500);
+		expect(goldYear?.silverPricePerGram).toBe(210);
 
 		const year = await db.zakatYears.get(`${USER_ID}:1446`);
 		expect(year?.ramadanStart).toBe(BASE);
@@ -818,6 +825,8 @@ describe("MizanTrack full backup — zakat and report fidelity", () => {
 
 		const calculation = await db.zakatCalculations.get("zc-1");
 		expect(calculation?.goldPricesByPurity).toEqual({ "21k": 18_846.3, "22k": 19_600 });
+		expect(calculation?.totalSilverWeightGrams).toBe(500);
+		expect(calculation?.totalSilverValue).toBe(105_000);
 		expect(calculation?.accountBalances).toHaveLength(1);
 		expect(calculation?.monthlyBalances?.[0]?.month).toBe("Ramaḍān 1446");
 

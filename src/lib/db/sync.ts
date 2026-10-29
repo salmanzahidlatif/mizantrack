@@ -365,9 +365,10 @@ const OPTIONAL_SYNC_FIELDS = {
 		"showArchivedAccounts",
 		"deletedAt",
 	],
-	// The prices are always written; the grams snapshot and price date are only present
-	// when the owner pinned them, so clearing either must merge as null.
-	zakatGoldYears: ["gramsByPurity", "priceDate", "deletedAt"],
+	// The prices are always written; the grams snapshot, the price date and the year's
+	// silver are only present when the owner typed them, so clearing any of them must
+	// merge as null rather than read as "unchanged" on the other device.
+	zakatGoldYears: ["gramsByPurity", "priceDate", "silverGrams", "silverPricePerGram", "deletedAt"],
 	// A piece's note is the only field that can be emptied, and a sold piece has to
 	// travel as an explicit tombstone — absence would read as "unchanged" and leave the
 	// gold on the other device's books. A sale year clears the same way: "not sold after

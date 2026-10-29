@@ -341,8 +341,8 @@ describe("export reflects the selected year's gold price and payments", () => {
 		expect(cell(sheet2023, "E9").v).toBeCloseTo(2_861_005.0224, 4);
 		expect(cell(sheet2024, "E9").v).toBeCloseTo(3_213_671.076, 4);
 
-		// Each sheet carries only its own year's payments.
-		expect(cell(sheet2023, "D14").v).toBe(66_000);
-		expect(cell(sheet2024, "D14").v).toBe(285_500);
+		// Each sheet carries only its own year's payments, below the silver block.
+		expect(cell(sheet2023, "D17").v).toBe(66_000);
+		expect(cell(sheet2024, "D17").v).toBe(285_500);
 	});
 });

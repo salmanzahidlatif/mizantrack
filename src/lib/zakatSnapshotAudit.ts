@@ -45,7 +45,11 @@ export function toZakatCurrencyPrecision(amount: number): number {
  */
 export type ZakatSnapshotStatus = "matches" | "diverged" | "unchecked";
 
-export type ZakatSnapshotFigureKey = "totalZakatable" | "zakatObligation" | "goldValue";
+export type ZakatSnapshotFigureKey =
+	| "totalZakatable"
+	| "zakatObligation"
+	| "goldValue"
+	| "silverValue";
 
 export interface ZakatSnapshotFigure {
 	key: ZakatSnapshotFigureKey;
@@ -74,12 +78,14 @@ export interface ZakatSnapshotFigures {
 	totalZakatable: number;
 	zakatObligation: number;
 	goldValue: number;
+	silverValue: number;
 }
 
 const FIGURE_LABELS: Record<ZakatSnapshotFigureKey, string> = {
 	totalZakatable: "Total zakatable",
 	zakatObligation: "Zakat obligation",
 	goldValue: "Gold value",
+	silverValue: "Silver value",
 };
 
 /**
@@ -99,6 +105,9 @@ export function toZakatSnapshotFigures(calculation: ZakatCalculation): ZakatSnap
 		totalZakatable: calculation.totalZakatable,
 		zakatObligation: calculation.zakatObligation,
 		goldValue: calculation.totalGoldValue,
+		// A calculation saved before silver existed recorded none, which is a statement
+		// that the year held none — zero, not "unknown".
+		silverValue: calculation.totalSilverValue ?? 0,
 	};
 }
 
@@ -198,6 +207,7 @@ export function auditZakatSnapshots(
 				totalZakatable: assessment.totalZakatable,
 				zakatObligation: assessment.zakatObligation,
 				goldValue: assessment.goldValue,
+				silverValue: assessment.silverValue,
 			})
 		);
 	}

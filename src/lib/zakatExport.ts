@@ -2,8 +2,8 @@
  * Excel export for the zakat year, rebuilt to mirror the owner's `Zakat - All.xlsx`.
  *
  * The workbook is a live model, not a printout: every derived cell carries a real
- * formula (`.f`), so editing a month-end balance, a gold price or a payment inside
- * Excel re-flows TOTAL → MINIMUM/MAXIMUM → GOLD → ZAKAT → Total To Pay →
+ * formula (`.f`), so editing a month-end balance, a gold or silver price or a payment
+ * inside Excel re-flows TOTAL → MINIMUM/MAXIMUM → GOLD/SILVER → ZAKAT → Total To Pay →
  * Balance/Excess exactly as the owner's hand-built sheets do. Cached values are
  * written alongside the formulas so viewers that do not recalculate still show the
  * same numbers MizanTrack shows.
@@ -48,6 +48,15 @@ export interface ZakatExportGoldRow {
 	pricePerGram: number;
 }
 
+/**
+ * Silver is ONE weight at ONE price per gram — the single line the owner keeps — with
+ * both kept as editable inputs so the sheet's value formula stays live.
+ */
+export interface ZakatExportSilver {
+	grams?: number;
+	pricePerGram?: number;
+}
+
 export interface ZakatExportYear {
 	grid: ZakatYearGrid;
 	/** The single currency this sheet is expressed in. Never converted. */
@@ -57,6 +66,8 @@ export interface ZakatExportYear {
 	/** Editable percentage, 2.5 by default; written to the sheet as a fraction. */
 	ratePercent: number;
 	goldRows?: ZakatExportGoldRow[];
+	/** The year's silver. An empty block still reserves its row to type into. */
+	silver?: ZakatExportSilver;
 	/** Date the per-gram prices were taken on, typically 1 Ramaḍān. */
 	goldPriceDate?: number | Date;
 	/** Balance carried in from earlier years. Visible and editable in the sheet. */
@@ -75,10 +86,11 @@ const ACCOUNT_CURRENCY_COLUMN = 13; // N
 const MINIMUM_COLUMN = 14; // O
 const MAXIMUM_COLUMN = 15; // P
 const GOLD_COLUMN = 16; // Q
-const RATE_COLUMN = 17; // R
-const TOTAL_COLUMN = 18; // S
-const ZAKAT_COLUMN = 19; // T
-const PER_MONTH_COLUMN = 20; // U
+const SILVER_COLUMN = 17; // R
+const RATE_COLUMN = 18; // S
+const TOTAL_COLUMN = 19; // T
+const ZAKAT_COLUMN = 20; // U
+const PER_MONTH_COLUMN = 21; // V
 
 const TITLE_ROW = 0;
 const ISLAMIC_YEAR_ROW = 1;
@@ -87,6 +99,7 @@ const HEADER_ROW = 3;
 const FIRST_ACCOUNT_ROW = 4;
 
 const GOLD_VALUE_COLUMN = 4; // E
+const SILVER_VALUE_COLUMN = 4; // E — the silver block mirrors the gold block's columns
 const PAYMENT_AMOUNT_COLUMN = 3; // D
 const SUMMARY_VALUE_COLUMN = 1; // B
 
@@ -151,6 +164,8 @@ interface SheetLayout {
 	firstGoldRow: number;
 	lastGoldRow: number;
 	goldTotalRow: number;
+	silverHeaderRow: number;
+	silverRow: number;
 	paymentsTitleRow: number;
 	paymentsHeaderRow: number;
 	firstPaymentRow: number;
@@ -170,7 +185,11 @@ function computeLayout(year: ZakatExportYear, accountCount: number): SheetLayout
 	const firstGoldRow = goldHeaderRow + 1;
 	const lastGoldRow = firstGoldRow + goldRows - 1;
 	const goldTotalRow = lastGoldRow + 1;
-	const paymentsTitleRow = goldTotalRow + 2;
+	// Silver is one line, so its block is a header and a single row — reserved even for
+	// a year that holds none, exactly as every other block reserves its row.
+	const silverHeaderRow = goldTotalRow + 2;
+	const silverRow = silverHeaderRow + 1;
+	const paymentsTitleRow = silverRow + 2;
 	const paymentsHeaderRow = paymentsTitleRow + 1;
 	const firstPaymentRow = paymentsHeaderRow + 1;
 	const lastPaymentRow = firstPaymentRow + paymentRows - 1;
@@ -183,6 +202,8 @@ function computeLayout(year: ZakatExportYear, accountCount: number): SheetLayout
 		firstGoldRow,
 		lastGoldRow,
 		goldTotalRow,
+		silverHeaderRow,
+		silverRow,
 		paymentsTitleRow,
 		paymentsHeaderRow,
 		firstPaymentRow,
@@ -245,8 +266,49 @@ function buildGoldBlock(
 	return goldValue;
 }
 
-/** Payment rows carry Person and Location, the two fields the owner records by hand. */
-function buildPaymentsBlock(rows: SheetRow[], year: ZakatExportYear, layout: SheetLayout): number {
+/**
+ * The year's silver: grams and price per gram as editable inputs, value as a formula.
+ *
+ * The row is written even when the year holds none, so the owner has a line to type into
+ * and the TOTAL formula always has a cell to read.
+ */
+function buildSilverBlock(
+	rows: SheetRow[],
+	formulas: FormulaCell[],
+	year: ZakatExportYear,
+	layout: SheetLayout
+): number {
+	const grams = finite(year.silver?.grams);
+	const pricePerGram = finite(year.silver?.pricePerGram);
+
+	setCell(rows, layout.silverHeaderRow, 0, "SILVER");
+	setCell(rows, layout.silverHeaderRow, 2, "Grams");
+	setCell(rows, layout.silverHeaderRow, 3, `Price per gram (${year.currency})`);
+	setCell(rows, layout.silverHeaderRow, SILVER_VALUE_COLUMN, "Value");
+	setCell(rows, layout.silverHeaderRow, 5, "Priced on");
+
+	setCell(rows, layout.silverRow, 0, "Silver");
+	setCell(rows, layout.silverRow, 2, grams);
+	setCell(rows, layout.silverRow, 3, pricePerGram);
+	setCell(rows, layout.silverRow, SILVER_VALUE_COLUMN, null);
+	// Silver shares the gold block's priced-on date; the year has only the one.
+	setCell(rows, layout.silverRow, 5, dateCell(year.goldPriceDate));
+
+	formulas.push({
+		row: layout.silverRow,
+		column: SILVER_VALUE_COLUMN,
+		formula: `PRODUCT(${cellRef(layout.silverRow, 2)},${cellRef(layout.silverRow, 3)})`,
+		value: grams * pricePerGram,
+	});
+
+	return grams * pricePerGram;
+}
+
+/** Payment rows carry Person and Location, the two fields the owner records by hand. */ function buildPaymentsBlock(
+	rows: SheetRow[],
+	year: ZakatExportYear,
+	layout: SheetLayout
+): number {
 	const payments = year.payments ?? [];
 
 	setCell(rows, layout.paymentsTitleRow, 0, "PAYMENTS");
@@ -280,6 +342,7 @@ interface SummaryInput {
 	minimum: number;
 	maximum: number;
 	goldValue: number;
+	silverValue: number;
 	totalZakatable: number;
 	zakatObligation: number;
 	paid: number;
@@ -305,7 +368,8 @@ function buildSummaryBlock(
 	const minimumRow = layout.summaryFirstRow;
 	const maximumRow = minimumRow + 1;
 	const goldRow = maximumRow + 1;
-	const basisRow = goldRow + 1;
+	const silverRow = goldRow + 1;
+	const basisRow = silverRow + 1;
 	const totalZakatableRow = basisRow + 1;
 	const rateRow = totalZakatableRow + 1;
 	const zakatRow = rateRow + 1;
@@ -319,6 +383,7 @@ function buildSummaryBlock(
 		[minimumRow, "MINIMUM", MINIMUM_COLUMN, totals.minimum],
 		[maximumRow, "MAXIMUM", MAXIMUM_COLUMN, totals.maximum],
 		[goldRow, "GOLD", GOLD_COLUMN, totals.goldValue],
+		[silverRow, "SILVER", SILVER_COLUMN, totals.silverValue],
 		[totalZakatableRow, "TOTAL", TOTAL_COLUMN, totals.totalZakatable],
 		[rateRow, "Rate", RATE_COLUMN, rate],
 		[zakatRow, "ZAKAT", ZAKAT_COLUMN, totals.zakatObligation],
@@ -403,6 +468,7 @@ function buildYearSheet(year: ZakatExportYear): XLSX.WorkSheet {
 		[MINIMUM_COLUMN, "MINIMUM"],
 		[MAXIMUM_COLUMN, "MAXIMUM"],
 		[GOLD_COLUMN, "GOLD"],
+		[SILVER_COLUMN, "SILVER"],
 		[RATE_COLUMN, "RATE"],
 		[TOTAL_COLUMN, "TOTAL"],
 		[ZAKAT_COLUMN, "ZAKAT"],
@@ -471,17 +537,26 @@ function buildYearSheet(year: ZakatExportYear): XLSX.WorkSheet {
 		value: goldValue,
 	});
 
+	const silverValue = buildSilverBlock(rows, formulas, year, layout);
+	setCell(rows, totalRow, SILVER_COLUMN, null);
+	formulas.push({
+		row: totalRow,
+		column: SILVER_COLUMN,
+		formula: cellRef(layout.silverRow, SILVER_VALUE_COLUMN),
+		value: silverValue,
+	});
+
 	const rate = finite(year.ratePercent) / 100;
 	setCell(rows, totalRow, RATE_COLUMN, rate);
 
 	const basisColumn = year.basis === "maximum" ? MAXIMUM_COLUMN : MINIMUM_COLUMN;
 	const basisAmount = year.basis === "maximum" ? maximum : minimum;
-	const totalZakatable = basisAmount + goldValue;
+	const totalZakatable = basisAmount + goldValue + silverValue;
 	setCell(rows, totalRow, TOTAL_COLUMN, null);
 	formulas.push({
 		row: totalRow,
 		column: TOTAL_COLUMN,
-		formula: `SUM(${cellRef(totalRow, basisColumn)},${cellRef(totalRow, GOLD_COLUMN)})`,
+		formula: `SUM(${cellRef(totalRow, basisColumn)},${cellRef(totalRow, GOLD_COLUMN)},${cellRef(totalRow, SILVER_COLUMN)})`,
 		value: totalZakatable,
 	});
 
@@ -508,6 +583,7 @@ function buildYearSheet(year: ZakatExportYear): XLSX.WorkSheet {
 		minimum,
 		maximum,
 		goldValue,
+		silverValue,
 		totalZakatable,
 		zakatObligation,
 		paid,

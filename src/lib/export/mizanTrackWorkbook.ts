@@ -108,6 +108,8 @@ const ZAKAT_CALCULATION_COLUMNS = [
 	"ratePercent",
 	"totalGoldWeightGrams",
 	"totalGoldValue",
+	"totalSilverWeightGrams",
+	"totalSilverValue",
 	"accountBalances",
 	"totalZakatable",
 	"nisabThreshold",

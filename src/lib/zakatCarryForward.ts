@@ -39,8 +39,9 @@ export const ZAKAT_CARRY_FORWARD_MAX_LOOKBACK_YEARS = 25;
 /**
  * What one zakat year settled at, before anything is carried into it.
  *
- * `zakatObligation` is the year's own zakat (basis + gold, at the chosen rate) and `paid`
- * is the sum of its payments — both already produced by `calculateZakatAssessment`.
+ * `zakatObligation` is the year's own zakat (basis + gold + silver, at the chosen rate)
+ * and `paid` is the sum of its payments — both already produced by
+ * `calculateZakatAssessment`.
  */
 export interface ZakatYearSettlement {
 	islamicYear: number;

@@ -33,10 +33,18 @@ interface ZakatGoldYearPricingProps {
 	pricesByPurity: Partial<Record<GoldPurity, number>>;
 	/** Grams this year is assessed on, rolled up from the pieces IT held. */
 	gramsByPurity: Map<GoldPurity, number>;
+	/** Grams of silver saved for THIS year. Zero until the owner types a weight. */
+	silverGrams: number;
+	/** Price per gram of silver for THIS year, on the same date as the gold prices. */
+	silverPricePerGram: number;
 	/** Date the prices were taken on; the sheet prices gold at 1 Ramaḍān. */
 	priceDate: Date;
 	/** `grams × price per gram`, summed over the karats, for this year. */
 	goldValue: number;
+	/** `grams × price per gram` for this year's silver. Zero when it holds none. */
+	silverValue: number;
+	/** Basis + gold + silver: what this year's rate is actually taken from. */
+	totalZakatable: number;
 }
 
 function formatInputAmount(amount: number | undefined): string {
@@ -62,12 +70,22 @@ function parseDraftPrices(draft: Record<GoldPurity, string>): Partial<Record<Gol
 	return parsed;
 }
 
+/** A typed figure, or undefined: anything that is not a positive number is not one. */
+function parseDraftAmount(raw: string): number | undefined {
+	const trimmed = raw.trim();
+	if (trimmed === "") return undefined;
+	const value = Number(trimmed);
+	if (!Number.isFinite(value) || value <= 0) return undefined;
+	return value;
+}
+
 /**
- * The gold price for ONE zakat year, in the selected currency.
+ * The gold and silver prices for ONE zakat year, in the selected currency.
  *
  * The price always belongs to the year — the owner's sheet carried 170.52 g of 21k from
- * 2021 to 2024 at four different prices — and so does the holding it is multiplied by,
- * which is edited piece by piece just below in `ZakatGoldYearInventory`.
+ * 2021 to 2024 at four different prices — and so does the holding it is multiplied by.
+ * Gold is edited piece by piece just below in `ZakatGoldYearInventory`; silver is one
+ * weight at one price, typed right here, because that is how the owner keeps it.
  */
 export function ZakatGoldYearPricing({
 	userId,
@@ -76,10 +94,18 @@ export function ZakatGoldYearPricing({
 	yearLabel,
 	pricesByPurity,
 	gramsByPurity,
+	silverGrams,
+	silverPricePerGram,
 	priceDate,
 	goldValue,
+	silverValue,
+	totalZakatable,
 }: ZakatGoldYearPricingProps) {
 	const [draft, setDraft] = useState(() => toDraftPrices(pricesByPurity));
+	const [draftSilverGrams, setDraftSilverGrams] = useState(() => formatInputAmount(silverGrams));
+	const [draftSilverPrice, setDraftSilverPrice] = useState(() =>
+		formatInputAmount(silverPricePerGram)
+	);
 	const [draftDate, setDraftDate] = useState(priceDate);
 	const [calendarOpen, setCalendarOpen] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -91,14 +117,30 @@ export function ZakatGoldYearPricing({
 	}, [islamicYear, pricesByPurity]);
 
 	useEffect(() => {
+		setDraftSilverGrams(formatInputAmount(silverGrams));
+	}, [islamicYear, silverGrams]);
+
+	useEffect(() => {
+		setDraftSilverPrice(formatInputAmount(silverPricePerGram));
+	}, [islamicYear, silverPricePerGram]);
+
+	useEffect(() => {
 		setDraftDate(priceDate);
 	}, [islamicYear, priceDate]);
 
 	const parsedDraft = parseDraftPrices(draft);
+	const parsedSilverGrams = parseDraftAmount(draftSilverGrams);
+	const parsedSilverPrice = parseDraftAmount(draftSilverPrice);
 	const isDirty =
 		JSON.stringify(parsedDraft) !== JSON.stringify(pricesByPurity) ||
+		(parsedSilverGrams ?? 0) !== silverGrams ||
+		(parsedSilverPrice ?? 0) !== silverPricePerGram ||
 		draftDate.getTime() !== priceDate.getTime();
-	const isPriced = Object.keys(pricesByPurity).length > 0;
+	const isPriced = Object.keys(pricesByPurity).length > 0 || silverPricePerGram > 0;
+	// Weight is always required for silver: a price with no weight is worth nothing, and
+	// saying so here is kinder than silently contributing zero to the year.
+	const silverNeedsWeight = parsedSilverPrice !== undefined && parsedSilverGrams === undefined;
+	const totalGoldGrams = [...gramsByPurity.values()].reduce((sum, grams) => sum + grams, 0);
 
 	async function handleSave() {
 		setSaving(true);
@@ -109,11 +151,13 @@ export function ZakatGoldYearPricing({
 				islamicYear,
 				pricesByPurity: parsedDraft,
 				priceDate: draftDate.getTime(),
+				silverGrams: parsedSilverGrams,
+				silverPricePerGram: parsedSilverPrice,
 			});
-			toast.success(`Gold price saved for ${yearLabel}.`);
+			toast.success(`Gold and silver prices saved for ${yearLabel}.`);
 		} catch (error) {
-			console.error("Failed to save the year's gold price", error);
-			toast.error("Could not save the gold price.");
+			console.error("Failed to save the year's metal prices", error);
+			toast.error("Could not save the prices.");
 		} finally {
 			setSaving(false);
 		}
@@ -123,10 +167,10 @@ export function ZakatGoldYearPricing({
 		setSaving(true);
 		try {
 			await clearZakatGoldYear(userId, currency, islamicYear);
-			toast.success(`Gold price cleared for ${yearLabel}.`);
+			toast.success(`Gold and silver prices cleared for ${yearLabel}.`);
 		} catch (error) {
-			console.error("Failed to clear the year's gold price", error);
-			toast.error("Could not clear the gold price.");
+			console.error("Failed to clear the year's metal prices", error);
+			toast.error("Could not clear the prices.");
 		} finally {
 			setSaving(false);
 		}
@@ -136,10 +180,11 @@ export function ZakatGoldYearPricing({
 		<div className={cn(CARD_SURFACE, "space-y-3 p-4")}>
 			<div className="flex flex-wrap items-start justify-between gap-2">
 				<div>
-					<h3 className="text-sm font-medium">Gold Price per gram ({currency})</h3>
+					<h3 className="text-sm font-medium">Gold / Silver price per gram ({currency})</h3>
 					<p className="text-xs text-muted-foreground">
-						One price per karat for {yearLabel}, in {currency}. Each year keeps its own price — the
-						same weight is worth something different every year.
+						One price per karat of gold, plus the silver this year held, for {yearLabel}, in{" "}
+						{currency}. Each year keeps its own prices — the same weight is worth something
+						different every year.
 					</p>
 				</div>
 				<Badge variant={isPriced ? "secondary" : "outline"}>
@@ -174,6 +219,47 @@ export function ZakatGoldYearPricing({
 				})}
 			</div>
 
+			{/* Silver: one weight, one price, for this year alone. Not itemised like gold. */}
+			<div className="grid gap-3 border-t pt-3 sm:grid-cols-2">
+				<div className="space-y-1">
+					<Label htmlFor="silver-grams" className="text-xs text-muted-foreground">
+						Silver held (grams)
+					</Label>
+					<Input
+						id="silver-grams"
+						type="number"
+						min={0}
+						step="any"
+						inputMode="decimal"
+						disabled={saving}
+						value={draftSilverGrams}
+						onChange={(event) => setDraftSilverGrams(event.target.value)}
+						placeholder="0.00"
+					/>
+				</div>
+				<div className="space-y-1">
+					<Label htmlFor="silver-price" className="text-xs text-muted-foreground">
+						Silver price per gram
+					</Label>
+					<Input
+						id="silver-price"
+						type="number"
+						min={0}
+						step="any"
+						inputMode="decimal"
+						disabled={saving}
+						value={draftSilverPrice}
+						onChange={(event) => setDraftSilverPrice(event.target.value)}
+						placeholder="0.00"
+					/>
+				</div>
+				{silverNeedsWeight && (
+					<p className="text-xs text-destructive sm:col-span-2">
+						Enter the silver weight too — a price on its own adds nothing to this year.
+					</p>
+				)}
+			</div>
+
 			<div className="grid gap-3 sm:grid-cols-2">
 				<div className="space-y-1.5">
 					<Label>Priced on</Label>
@@ -201,17 +287,39 @@ export function ZakatGoldYearPricing({
 						</PopoverContent>
 					</Popover>
 					<p className="text-xs text-muted-foreground">
-						Defaults to 1 Ramaḍān, the day the owner&apos;s sheet prices gold.
+						Defaults to 1 Ramaḍān, the day the owner&apos;s sheet prices gold. Silver is priced on
+						the same day.
 					</p>
 				</div>
 
 				<div className="space-y-1.5">
-					<Label>This year&apos;s gold value</Label>
-					<p className="text-lg font-bold tabular-nums">
-						<CurrencyAmount amount={goldValue} currency={currency} className="text-lg font-bold" />
-					</p>
+					<Label>This year&apos;s metals</Label>
+					<div className="space-y-1 text-sm">
+						<div className="flex justify-between">
+							<span className="text-muted-foreground tabular-nums">
+								Gold • {totalGoldGrams.toFixed(2)}g
+							</span>
+							<CurrencyAmount amount={goldValue} currency={currency} className="font-medium" />
+						</div>
+						<div className="flex justify-between">
+							<span className="text-muted-foreground tabular-nums">
+								Silver • {silverGrams.toFixed(2)}g
+							</span>
+							<CurrencyAmount amount={silverValue} currency={currency} className="font-medium" />
+						</div>
+						<div className="flex justify-between border-t pt-1">
+							<span className="font-medium">Total for {yearLabel}</span>
+							<CurrencyAmount
+								amount={totalZakatable}
+								currency={currency}
+								showNegativeSign
+								className="font-bold"
+							/>
+						</div>
+					</div>
 					<p className="text-xs text-muted-foreground">
-						The pieces listed below, at the price typed above. Both belong to this year alone.
+						The pieces listed below plus this year&apos;s silver, at the prices typed above, on top
+						of the accounts basis. All of it belongs to this year alone.
 					</p>
 				</div>
 			</div>
@@ -225,7 +333,7 @@ export function ZakatGoldYearPricing({
 						variant="ghost"
 						size="icon"
 						disabled={saving}
-						aria-label="Clear this year's gold price"
+						aria-label="Clear this year's gold and silver prices"
 						onClick={() => void handleReset()}>
 						<RotateCcw className="h-4 w-4" />
 					</Button>

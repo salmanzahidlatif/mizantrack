@@ -3,10 +3,10 @@
  *
  * A year's assessment is not just a call to `calculateZakatAssessment`: it is the
  * accounts chosen for that year, the closed-accounts rule that year was settled under,
- * that year's month-end grid, that year's grams at that year's price per gram, and that
- * year's payments. Every one of those is a decision, and every screen that quotes a
- * year's figure has to make the same ones — the calculator, the carry-forward chain and
- * the History audit alike.
+ * that year's month-end grid, that year's grams at that year's price per gram — gold and
+ * silver alike — and that year's payments. Every one of those is a decision, and every
+ * screen that quotes a year's figure has to make the same ones — the calculator, the
+ * carry-forward chain and the History audit alike.
  *
  * Assembling that by hand in each caller is exactly how the saved snapshots and the live
  * figures drifted apart in the first place, so the assembly lives here and the callers
@@ -34,6 +34,7 @@ import {
 } from "@/lib/zakatGoldYearItems";
 import {
 	getZakatGoldYearPrices,
+	getZakatYearSilver,
 	resolveZakatGoldGramsForYear,
 	sumZakatGoldGrams,
 	toZakatGoldItems,
@@ -208,6 +209,10 @@ export interface ZakatYearAssessment {
 	goldPricesByPurity: Partial<Record<GoldPurity, number>>;
 	goldPriceDate: Date;
 	totalGoldWeightGrams: number;
+	/** The grams of silver this year held. Zero for a year that recorded none. */
+	totalSilverWeightGrams: number;
+	/** Price per gram of silver this year, in `referenceCurrency`. Zero when unpriced. */
+	silverPricePerGram: number;
 }
 
 /** Builds the per-year lookups once, for however many years are about to be assessed. */
@@ -320,6 +325,10 @@ export function buildZakatYearAssessment(
 			? new Date(goldYear.priceDate)
 			: definition.months[0]!.startDate;
 
+	// Silver is the year's own single line: one weight at one price per gram, priced on
+	// the same date as the gold. A year that recorded none contributes exactly zero.
+	const silver = getZakatYearSilver(goldYear);
+
 	const input: ZakatAssessmentInput = {
 		monthlyTotals: grid.monthlyTotals,
 		basis,
@@ -328,6 +337,7 @@ export function buildZakatYearAssessment(
 			priceDate: format(goldPriceDate, "yyyy-MM-dd"),
 			pricesByPurity: goldPricesByPurity,
 		},
+		silver,
 		ratePercent,
 		pastRemaining,
 		payments: context.payments.filter((payment) => payment.islamicYear === definition.zakatYear),
@@ -345,6 +355,8 @@ export function buildZakatYearAssessment(
 		goldPricesByPurity,
 		goldPriceDate,
 		totalGoldWeightGrams: sumZakatGoldGrams(goldGramsByPurity),
+		totalSilverWeightGrams: silver.grams ?? 0,
+		silverPricePerGram: silver.pricePerGram ?? 0,
 	};
 }
 

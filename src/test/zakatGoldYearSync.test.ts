@@ -1,8 +1,9 @@
 /**
  * Cross-device sync regression tests for the per-year gold table (`zakatGoldYears`).
  *
- * Only inputs are persisted — the price per gram the owner typed for a year, the date it
- * was taken on, and an optional grams snapshot — so these tests check that a year's price
+ * Only inputs are persisted — the prices per gram the owner typed for a year, the date
+ * they were taken on, the year's silver, and an optional grams snapshot — so these tests
+ * check that a year's price
  * survives a push/pull round trip intact, that a cleared snapshot travels as an explicit
  * null instead of reading as "unchanged", and that a reset propagates as a tombstone.
  */
@@ -16,6 +17,8 @@ import {
 	clearZakatGoldYear,
 	clearZakatGoldYearGrams,
 	getZakatGoldYearPrices,
+	getZakatYearSilver,
+	getZakatYearSilverValue,
 	saveZakatGoldYearGrams,
 	saveZakatGoldYearPrices,
 } from "@/lib/zakatGoldYearRepository";
@@ -258,5 +261,95 @@ describe("syncAll — per-year gold prices", () => {
 
 		const pushed = findWrite(mockSet, `users/${USER_ID}/zakatGoldYears/${USER_ID}:PKR:1446`);
 		expect(pushed?.deletedAt).toBeGreaterThan(0);
+	});
+
+	it("pushes the year's silver weight and price beside the gold", async () => {
+		await markAllTableMigrationsDone();
+		await saveZakatGoldYearPrices({
+			userId: USER_ID,
+			currency: "PKR",
+			islamicYear: 1444,
+			pricesByPurity: { "21k": 18_846.3 },
+			silverGrams: 500,
+			silverPricePerGram: 210,
+		});
+
+		const { mockSet } = await configureEmptySyncMocks();
+
+		await syncAll(USER_ID);
+
+		expect(findWrite(mockSet, `users/${USER_ID}/zakatGoldYears/${USER_ID}:PKR:1444`)).toMatchObject(
+			{
+				pricesByPurity: { "21k": 18_846.3 },
+				silverGrams: 500,
+				silverPricePerGram: 210,
+			}
+		);
+	});
+
+	/**
+	 * Silver is optional, so dropping it has to travel as an explicit null: absence reads
+	 * as "unchanged" on the other device, which would leave it valuing silver the owner
+	 * has already removed.
+	 */
+	it("writes removed silver as null rather than omitting it", async () => {
+		await markAllTableMigrationsDone();
+		await saveZakatGoldYearPrices({
+			userId: USER_ID,
+			currency: "PKR",
+			islamicYear: 1445,
+			pricesByPurity: { "21k": 20_000 },
+			silverGrams: 500,
+			silverPricePerGram: 210,
+		});
+		await saveZakatGoldYearPrices({
+			userId: USER_ID,
+			currency: "PKR",
+			islamicYear: 1445,
+			pricesByPurity: { "21k": 20_000 },
+		});
+
+		const { mockSet } = await configureEmptySyncMocks();
+
+		await syncAll(USER_ID);
+
+		expect(findWrite(mockSet, `users/${USER_ID}/zakatGoldYears/${USER_ID}:PKR:1445`)).toMatchObject(
+			{
+				pricesByPurity: { "21k": 20_000 },
+				silverGrams: null,
+				silverPricePerGram: null,
+			}
+		);
+	});
+
+	it("pulls a remote year's silver into Dexie, ready to value that year", async () => {
+		await markAllTableMigrationsDone();
+		const { firestore } = await configureEmptySyncMocks();
+
+		configureRemoteGoldYears(firestore, USER_ID, [
+			{
+				id: `${USER_ID}:PKR:1443`,
+				data: {
+					id: `${USER_ID}:PKR:1443`,
+					userId: USER_ID,
+					currency: "PKR",
+					islamicYear: 1443,
+					pricesByPurity: { "21k": 16_778.12 },
+					gramsByPurity: null,
+					silverGrams: 320.5,
+					silverPricePerGram: 185.25,
+					priceDate: new Date(2022, 3, 4).getTime(),
+					deletedAt: null,
+					updatedAt: 50_000,
+					syncedAt: firestoreTimestamp(5_000),
+				},
+			},
+		]);
+
+		await syncAll(USER_ID);
+
+		const stored = await db.zakatGoldYears.get(`${USER_ID}:PKR:1443`);
+		expect(getZakatYearSilver(stored)).toEqual({ grams: 320.5, pricePerGram: 185.25 });
+		expect(getZakatYearSilverValue(stored)).toBeCloseTo(320.5 * 185.25, 6);
 	});
 });
