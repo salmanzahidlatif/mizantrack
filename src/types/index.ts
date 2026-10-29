@@ -1,4 +1,20 @@
 export type TransactionType = "Expense" | "Income" | "Transfer";
+
+export type RecurrenceFrequency = "daily" | "weekly" | "monthly" | "yearly";
+
+/**
+ * How a repeated transaction expands. The rule itself is never stored: occurrences are
+ * materialised as real transactions when the owner saves, so budgets, analytics and
+ * zakat read them like any other row. Each occurrence carries the series' `recurrenceId`.
+ */
+export type RecurrenceRule = {
+	frequency: RecurrenceFrequency;
+	/** Repeat every N periods — 1 is monthly, 2 is every other month. */
+	interval: number;
+} & ({ endMode: "count"; count: number } | { endMode: "until"; until: Date });
+
+/** Which occurrences of a series an edit or delete reaches. */
+export type RecurrenceEditScope = "single" | "future" | "series";
 export type CategoryType = "Income" | "Expense";
 
 export interface Account {
@@ -52,6 +68,11 @@ export interface Transaction {
 	};
 	/** External-system identity used for idempotent re-imports; never use as this app's primary key. */
 	sourceId?: string;
+	/**
+	 * Groups every occurrence a single "repeat" produced, so the series can later be
+	 * edited or deleted as one. Absent on a one-off transaction.
+	 */
+	recurrenceId?: string;
 	updatedAt: number;
 	deletedAt?: number;
 }

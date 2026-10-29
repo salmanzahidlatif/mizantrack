@@ -3,13 +3,19 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
 import { useLiveQuery } from "dexie-react-hooks";
-import { CalendarIcon, ChevronDown } from "lucide-react";
+import { CalendarIcon, ChevronDown, Repeat } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useForm, type FieldErrors, type Resolver, type SubmitErrorHandler } from "react-hook-form";
 import { toast } from "sonner";
 
 import { AccountIcon } from "@/components/icons/AccountIcon";
 import { IconGridPicker } from "@/components/shared/IconGridPicker";
+import {
+	DEFAULT_RECURRENCE_DRAFT,
+	RecurrenceFields,
+	toRecurrenceRule,
+	type RecurrenceDraft,
+} from "@/components/transactions/RecurrenceFields";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -29,9 +35,13 @@ import { useCategories } from "@/hooks/useCategories";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { scrollFocusedFieldIntoView } from "@/hooks/useKeyboardInset";
 import {
+	bulkDeleteTransactions,
+	createRecurringTransactions,
 	createTransaction,
 	deleteTransaction,
+	loadRecurrenceSeriesIds,
 	updateTransaction,
+	updateTransactionSeries,
 } from "@/lib/actions/transactions";
 import {
 	currencyCodesMatch,
@@ -41,6 +51,7 @@ import {
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { getCurrencyDisplay } from "@/lib/currencySymbols";
 import { db } from "@/lib/db/local";
+import { generateRecurrenceDates } from "@/lib/recurrence";
 import {
 	EMPTY_TRANSACTION_USAGE_RANKING,
 	loadRecentTransactionUsageRanking,
@@ -51,9 +62,15 @@ import { transactionSchema, type TransactionFormValues } from "@/lib/validations
 import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
-import type { Account, Category, Transaction, TransactionType } from "@/types";
+import type { Account, Category, RecurrenceEditScope, Transaction, TransactionType } from "@/types";
 
 const TYPE_TABS: TransactionType[] = ["Expense", "Income", "Transfer"];
+
+const SCOPE_OPTIONS: { value: RecurrenceEditScope; label: string }[] = [
+	{ value: "single", label: "Only this" },
+	{ value: "future", label: "This & later" },
+	{ value: "series", label: "All" },
+];
 
 const TYPE_COLOR: Record<TransactionType, string> = {
 	Expense: "border-red-500 bg-red-500 text-white",
@@ -243,6 +260,9 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 	const [confirming, setConfirming] = useState(false);
 	const [datePickerOpen, setDatePickerOpen] = useState(false);
 	const [saving, setSaving] = useState(false);
+	const [recurrence, setRecurrence] = useState<RecurrenceDraft>(DEFAULT_RECURRENCE_DRAFT);
+	const [editRecurrenceId, setEditRecurrenceId] = useState<string | null>(null);
+	const [editScope, setEditScope] = useState<RecurrenceEditScope>("single");
 	const newTransactionDefaultsRef = useRef<NewTransactionDefaults | undefined>(undefined);
 
 	const {
@@ -388,24 +408,25 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 	useEffect(() => {
 		let cancelled = false;
 
-		if (!isTransactionDrawerOpen) {
+		function resetToNewTransaction() {
 			reset(getNewTransactionDefaults(newTransactionDefaultsRef.current));
 			setEditAccounts([]);
 			setEditCategory(null);
 			setShowTravel(false);
 			setConfirming(false);
 			setSaving(false);
+			setRecurrence(DEFAULT_RECURRENCE_DRAFT);
+			setEditRecurrenceId(null);
+			setEditScope("single");
+		}
+
+		if (!isTransactionDrawerOpen || !editTransactionId) {
+			resetToNewTransaction();
 			return;
 		}
-		if (!editTransactionId) {
-			reset(getNewTransactionDefaults(newTransactionDefaultsRef.current));
-			setEditAccounts([]);
-			setEditCategory(null);
-			setShowTravel(false);
-			setConfirming(false);
-			setSaving(false);
-			return;
-		}
+
+		setRecurrence(DEFAULT_RECURRENCE_DRAFT);
+		setEditScope("single");
 
 		void db.transactions
 			.get(editTransactionId)
@@ -424,6 +445,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 					travelCurrency: txn.travelCurrency,
 				});
 				setShowTravel(Boolean(txn.travelCurrency));
+				setEditRecurrenceId(txn.recurrenceId ?? null);
 				const [sourceAccount, toAccount, category] = await Promise.all([
 					db.accounts.get(txn.accountId),
 					txn.toAccountId ? db.accounts.get(txn.toAccountId) : undefined,
@@ -471,10 +493,31 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 		setSaving(true);
 		try {
 			if (editTransactionId) {
-				await updateTransaction(userId, editTransactionId, values);
-				toast.success("Transaction updated");
+				if (editRecurrenceId && editScope !== "single") {
+					const ids = await loadRecurrenceSeriesIds(userId, editTransactionId, editScope);
+					// The opened occurrence leads so the action knows which one keeps the new date.
+					const ordered = [editTransactionId, ...ids.filter((id) => id !== editTransactionId)];
+					const updated = await updateTransactionSeries(userId, ordered, values);
+					toast.success(
+						`${updated} ${updated === 1 ? "transaction" : "transactions"} updated in this series`
+					);
+				} else {
+					await updateTransaction(userId, editTransactionId, values);
+					toast.success("Transaction updated");
+				}
 			} else {
-				await createTransaction(userId, values);
+				const rule = toRecurrenceRule(recurrence);
+				if (rule) {
+					const { transactionIds } = await createRecurringTransactions(userId, values, rule);
+					toast.success(`${transactionIds.length} repeating transactions recorded`);
+				} else if (recurrence.enabled) {
+					toast.error("Finish setting up the repeat, or switch it off.");
+					setSaving(false);
+					return;
+				} else {
+					await createTransaction(userId, values);
+					toast.success("Transaction recorded");
+				}
 				newTransactionDefaultsRef.current = getNewTransactionDefaults({
 					accountId: values.accountId,
 					date: values.date,
@@ -483,7 +526,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 				setEditAccounts([]);
 				setEditCategory(null);
 				setShowTravel(false);
-				toast.success("Transaction recorded");
+				setRecurrence(DEFAULT_RECURRENCE_DRAFT);
 			}
 			closeTransactionDrawer();
 		} catch (error) {
@@ -497,6 +540,27 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 		toast.error(getFirstErrorMessage(formErrors) ?? "Please check the highlighted fields.");
 	};
 
+	const plannedOccurrenceCount =
+		!editTransactionId && watchedDate instanceof Date
+			? (() => {
+					const rule = toRecurrenceRule(recurrence);
+					return rule ? generateRecurrenceDates(watchedDate, rule).length : 0;
+				})()
+			: 0;
+	const submitLabel = editTransactionId
+		? editRecurrenceId && editScope !== "single"
+			? "Save Series"
+			: "Save Changes"
+		: plannedOccurrenceCount > 1
+			? `Record ${plannedOccurrenceCount} Transactions`
+			: "Record";
+	const deleteLabel =
+		editRecurrenceId && editScope !== "single"
+			? editScope === "series"
+				? "Delete Whole Series"
+				: "Delete This & Later"
+			: "Delete Transaction";
+
 	async function handleDelete() {
 		if (!editTransactionId) return;
 		if (!confirming) {
@@ -506,8 +570,16 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 		}
 		setSaving(true);
 		try {
-			await deleteTransaction(userId, editTransactionId);
-			toast.success("Transaction deleted");
+			if (editRecurrenceId && editScope !== "single") {
+				const ids = await loadRecurrenceSeriesIds(userId, editTransactionId, editScope);
+				const deleted = await bulkDeleteTransactions(userId, ids);
+				toast.success(
+					`${deleted} ${deleted === 1 ? "transaction" : "transactions"} deleted from this series`
+				);
+			} else {
+				await deleteTransaction(userId, editTransactionId);
+				toast.success("Transaction deleted");
+			}
 			closeTransactionDrawer();
 		} catch (error) {
 			toast.error(errorMessage(error));
@@ -564,6 +636,44 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 						data-keyboard-scroll-container="true"
 						className="min-h-0 flex-1 scroll-pb-[calc(8rem_+_var(--keyboard-inset,0px))] space-y-4 overflow-y-auto overscroll-contain px-4 py-4"
 						onFocusCapture={(event) => scrollFocusedFieldIntoView(event.target)}>
+						{/* Recurring series scope */}
+						{editTransactionId && editRecurrenceId && (
+							<div
+								className="space-y-2 rounded-lg border border-border bg-muted/40 p-3"
+								role="group"
+								aria-labelledby="txn-series-scope-label">
+								<p
+									id="txn-series-scope-label"
+									className="flex items-center gap-2 text-xs font-medium text-foreground">
+									<Repeat className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+									Part of a repeating series — apply changes to
+								</p>
+								<div className="grid grid-cols-3 gap-1.5">
+									{SCOPE_OPTIONS.map((option) => (
+										<button
+											key={option.value}
+											type="button"
+											aria-pressed={editScope === option.value}
+											onClick={() => setEditScope(option.value)}
+											className={`rounded-lg border py-2 text-xs font-medium transition-colors ${
+												editScope === option.value
+													? "border-primary bg-primary text-primary-foreground"
+													: "border-border hover:border-primary"
+											}`}>
+											{option.label}
+										</button>
+									))}
+								</div>
+								{editScope !== "single" && (
+									<p className="text-xs text-muted-foreground">
+										{editScope === "future"
+											? "This occurrence and every later one keep their own dates and take every other change."
+											: "Every occurrence keeps its own date and takes every other change."}
+									</p>
+								)}
+							</div>
+						)}
+
 						{/* Type tabs */}
 						<div className="flex gap-2">
 							{TYPE_TABS.map((t) => (
@@ -727,6 +837,15 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 							<Input id="txn-place" placeholder="e.g. Carrefour" {...register("place")} />
 						</div>
 
+						{/* Repeat (new transactions only) */}
+						{!editTransactionId && (
+							<RecurrenceFields
+								startDate={watchedDate instanceof Date ? watchedDate : undefined}
+								value={recurrence}
+								onChange={setRecurrence}
+							/>
+						)}
+
 						{/* Travel Currency toggle */}
 						<button
 							type="button"
@@ -830,7 +949,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 								onClick={() => {
 									void handleDelete();
 								}}>
-								{confirming ? "Tap again to confirm delete" : "Delete Transaction"}
+								{confirming ? "Tap again to confirm delete" : deleteLabel}
 							</Button>
 						)}
 						<Button
@@ -838,7 +957,7 @@ export function TransactionDrawer({ userId }: TransactionDrawerProps) {
 							form={TRANSACTION_FORM_ID}
 							disabled={isSubmitting || saving}
 							className="w-full">
-							{isSubmitting || saving ? "Saving…" : editTransactionId ? "Save Changes" : "Record"}
+							{isSubmitting || saving ? "Saving…" : submitLabel}
 						</Button>
 						<DrawerClose asChild>
 							<Button
