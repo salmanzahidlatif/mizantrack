@@ -2,7 +2,7 @@
 
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { format } from "date-fns";
-import { useCallback, useMemo, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
 import { EmptyState } from "@/components/shared/EmptyState";
 import { SkeletonTransactionRow } from "@/components/shared/SkeletonTransactionRow";
@@ -120,6 +120,35 @@ function VirtualList({
 	onToggleSelect,
 }: VirtualListProps) {
 	const activeStickyIndexRef = useRef<number | null>(null);
+	// Size the list's own scroll so it ends exactly at the bottom of the page's scroll
+	// area instead of a hardcoded guess. The old `calc(100dvh - 200px)` under-counted the
+	// mobile header (title, month strip, two filter rows, search), so the list ran past the
+	// viewport and the whole page scrolled on top of the list — a double scroll. Measuring
+	// the real top and the scroller's padding (which carries the safe-area + bottom nav)
+	// keeps the page itself from overflowing.
+	const [maxHeight, setMaxHeight] = useState<number>();
+	useEffect(() => {
+		const el = parentRef.current;
+		if (!el) return;
+
+		const scroller = el.closest("main");
+		const measure = () => {
+			const top = el.getBoundingClientRect().top;
+			const bottom = scroller
+				? scroller.getBoundingClientRect().bottom -
+					(parseFloat(getComputedStyle(scroller).paddingBottom) || 0)
+				: window.innerHeight - 96;
+			setMaxHeight(Math.max(260, Math.round(bottom - top - 8)));
+		};
+
+		measure();
+		const raf = requestAnimationFrame(measure);
+		window.addEventListener("resize", measure);
+		return () => {
+			window.removeEventListener("resize", measure);
+			cancelAnimationFrame(raf);
+		};
+	}, [parentRef, selectionMode]);
 	const stickyIndexes = useMemo(
 		() =>
 			items.reduce<number[]>((indexes, item, index) => {
@@ -168,7 +197,7 @@ function VirtualList({
 		<div
 			ref={parentRef}
 			className={cn(CARD_SURFACE, "no-scrollbar overflow-auto")}
-			style={{ maxHeight: "calc(100dvh - 200px)" }}>
+			style={{ maxHeight: maxHeight ? `${maxHeight}px` : "calc(100dvh - 220px)" }}>
 			<div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
 				{virtualizer.getVirtualItems().map((virtualRow) => {
 					const item = items[virtualRow.index];
