@@ -128,7 +128,13 @@ export const TransactionRow = memo(function TransactionRow({
 				)}`
 			: formatAccountLabel(account, false);
 	const archivedDescription = getArchivedDescription(account, toAccount);
-	const categoryCurrency = category?.currency ? getCurrencyByCode(category.currency) : undefined;
+	// The screen is already scoped to one currency, so a category tagged with that same
+	// currency adds nothing. Only badge a category whose currency differs from the screen's
+	// (a genuinely foreign-currency category), mirroring how the amount drops its symbol.
+	const categoryCurrency =
+		category?.currency && !currencyCodesMatch(category.currency, screenCurrency)
+			? getCurrencyByCode(category.currency)
+			: undefined;
 	const signedAmount = transaction.type === "Expense" ? -transaction.amount : transaction.amount;
 
 	function handleOpen() {
