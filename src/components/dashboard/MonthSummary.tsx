@@ -56,8 +56,8 @@ export function MonthSummary({
 							className={cn(
 								"flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
 								variant === "positive"
-									? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-									: "bg-red-500/10 text-red-600 dark:text-red-400"
+									? "bg-emerald-500/10 text-income"
+									: "bg-red-500/10 text-expense"
 							)}>
 							<Icon className="h-3.5 w-3.5" />
 						</span>

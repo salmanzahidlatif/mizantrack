@@ -127,9 +127,9 @@ export function CurrencyAmount({
 			dir="ltr"
 			className={cn(
 				"inline-block font-semibold tracking-tight tabular-nums transition-colors duration-200",
-				resolvedVariant === "positive" && "text-emerald-600 dark:text-emerald-400",
-				resolvedVariant === "negative" && "text-red-600 dark:text-red-400",
-				resolvedVariant === "transfer" && "text-blue-600 dark:text-blue-400",
+				resolvedVariant === "positive" && "text-income",
+				resolvedVariant === "negative" && "text-expense",
+				resolvedVariant === "transfer" && "text-transfer",
 				"[unicode-bidi:isolate]",
 				className
 			)}>

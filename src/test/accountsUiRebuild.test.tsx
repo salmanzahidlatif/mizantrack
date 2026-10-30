@@ -280,7 +280,7 @@ describe("accounts UI rebuild", () => {
 
 		const negativeAmount = screen.getByText("-1,497.10").closest("[data-currency-amount]");
 
-		expect(negativeAmount).toHaveClass("text-red-600");
+		expect(negativeAmount).toHaveClass("text-expense");
 	});
 
 	it("shows accounts but not stale money while analytics balances are pending", () => {

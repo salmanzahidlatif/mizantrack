@@ -605,9 +605,7 @@ function DesktopMetricStrip({
 				<span
 					className={cn(
 						"text-lg leading-6 font-semibold tabular-nums md:text-xl md:leading-7",
-						savingsRate >= 0
-							? "text-emerald-600 dark:text-emerald-400"
-							: "text-red-600 dark:text-red-400"
+						savingsRate >= 0 ? "text-income" : "text-expense"
 					)}>
 					{Math.round(savingsRate)}%
 				</span>

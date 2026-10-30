@@ -43,10 +43,9 @@ const TYPE_ICON = {
 } as const;
 
 const TYPE_COLOR = {
-	Expense: "bg-red-50 text-red-600 ring-red-500/10 dark:bg-red-950/60 dark:text-red-400",
-	Income:
-		"bg-emerald-50 text-emerald-600 ring-emerald-500/10 dark:bg-emerald-950/60 dark:text-emerald-400",
-	Transfer: "bg-blue-50 text-blue-600 ring-blue-500/10 dark:bg-blue-950/60 dark:text-blue-400",
+	Expense: "bg-red-50 text-expense ring-red-500/10 dark:bg-red-950/60",
+	Income: "bg-emerald-50 text-income ring-emerald-500/10 dark:bg-emerald-950/60",
+	Transfer: "bg-blue-50 text-transfer ring-blue-500/10 dark:bg-blue-950/60",
 } as const;
 
 function formatAccountLabel(account: Account | undefined, showCurrency: boolean): string {
