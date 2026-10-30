@@ -68,7 +68,7 @@
 	--card-foreground: oklch(0.145 0 0);
 	--popover: oklch(1 0 0);
 	--popover-foreground: oklch(0.145 0 0);
-	--primary: oklch(0.52 0.21 276);
+	--primary: oklch(0.52 0.09 182);
 	--primary-foreground: oklch(0.985 0 0);
 	--secondary: oklch(0.97 0 0);
 	--secondary-foreground: oklch(0.205 0 0);
@@ -79,11 +79,11 @@
 	--destructive: oklch(0.577 0.245 27.325);
 	--border: oklch(0.922 0 0);
 	--input: oklch(0.922 0 0);
-	--ring: oklch(0.58 0.19 277);
+	--ring: oklch(0.62 0.1 182);
 	/* Categorical chart ramp — five distinct hues, legible on white and dark cards. */
-	--chart-1: oklch(0.6 0.19 277);
+	--chart-1: oklch(0.6 0.1 182);
 	--chart-2: oklch(0.69 0.15 233);
-	--chart-3: oklch(0.7 0.12 182);
+	--chart-3: oklch(0.6 0.19 277);
 	--chart-4: oklch(0.77 0.16 70);
 	--chart-5: oklch(0.65 0.22 15);
 	--radius: 0.625rem;
@@ -95,12 +95,12 @@
 	--warning: oklch(0.666 0.179 58.3);
 	--sidebar: oklch(0.985 0 0);
 	--sidebar-foreground: oklch(0.145 0 0);
-	--sidebar-primary: oklch(0.52 0.21 276);
+	--sidebar-primary: oklch(0.52 0.09 182);
 	--sidebar-primary-foreground: oklch(0.985 0 0);
 	--sidebar-accent: oklch(0.97 0 0);
 	--sidebar-accent-foreground: oklch(0.205 0 0);
 	--sidebar-border: oklch(0.922 0 0);
-	--sidebar-ring: oklch(0.58 0.19 277);
+	--sidebar-ring: oklch(0.62 0.1 182);
 }
 
 .dark {
@@ -110,8 +110,8 @@
 	--card-foreground: oklch(0.985 0 0);
 	--popover: oklch(0.205 0 0);
 	--popover-foreground: oklch(0.985 0 0);
-	--primary: oklch(0.62 0.19 277);
-	--primary-foreground: oklch(0.985 0 0);
+	--primary: oklch(0.78 0.13 182);
+	--primary-foreground: oklch(0.205 0 0);
 	--secondary: oklch(0.269 0 0);
 	--secondary-foreground: oklch(0.985 0 0);
 	--muted: oklch(0.269 0 0);
@@ -121,11 +121,11 @@
 	--destructive: oklch(0.704 0.191 22.216);
 	--border: oklch(1 0 0 / 10%);
 	--input: oklch(1 0 0 / 15%);
-	--ring: oklch(0.62 0.19 277);
+	--ring: oklch(0.72 0.12 182);
 	/* Categorical chart ramp — same hues as light; mid-tone, legible on dark cards. */
-	--chart-1: oklch(0.68 0.17 277);
+	--chart-1: oklch(0.74 0.12 182);
 	--chart-2: oklch(0.72 0.14 233);
-	--chart-3: oklch(0.74 0.12 182);
+	--chart-3: oklch(0.68 0.17 277);
 	--chart-4: oklch(0.8 0.15 70);
 	--chart-5: oklch(0.7 0.2 15);
 	/* Financial semantics (dark). income=emerald-400, expense=red-400,
@@ -136,12 +136,12 @@
 	--warning: oklch(0.828 0.157 83.6);
 	--sidebar: oklch(0.205 0 0);
 	--sidebar-foreground: oklch(0.985 0 0);
-	--sidebar-primary: oklch(0.62 0.19 277);
-	--sidebar-primary-foreground: oklch(0.985 0 0);
+	--sidebar-primary: oklch(0.78 0.13 182);
+	--sidebar-primary-foreground: oklch(0.205 0 0);
 	--sidebar-accent: oklch(0.269 0 0);
 	--sidebar-accent-foreground: oklch(0.985 0 0);
 	--sidebar-border: oklch(1 0 0 / 10%);
-	--sidebar-ring: oklch(0.62 0.19 277);
+	--sidebar-ring: oklch(0.72 0.12 182);
 }
 
 @layer base {
