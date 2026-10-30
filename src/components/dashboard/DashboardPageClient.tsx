@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
 	AnalyticsIntervalChooser,
@@ -231,7 +231,7 @@ function normalizePeriodRanges(
 	);
 }
 
-function MonthStrip({
+function MonthStripBase({
 	userId,
 	currency,
 	selectedMonth,
@@ -413,7 +413,7 @@ function BalanceBasisBadge({
 	);
 }
 
-function WhatYouHaveCard({
+function WhatYouHaveCardBase({
 	userId,
 	analytics,
 	onAddAccount,
@@ -504,7 +504,12 @@ function WhatYouHaveCard({
 	);
 }
 
-function SummarySplitCard({ analytics, currency, periodLabel, className }: SummarySplitCardProps) {
+function SummarySplitCardBase({
+	analytics,
+	currency,
+	periodLabel,
+	className,
+}: SummarySplitCardProps) {
 	if (!analytics) {
 		return <SkeletonCard className={cn("h-28 md:h-full", className)} />;
 	}
@@ -561,7 +566,7 @@ function SummarySplitCard({ analytics, currency, periodLabel, className }: Summa
 	);
 }
 
-function DesktopMetricStrip({
+function DesktopMetricStripBase({
 	analytics,
 	currency,
 }: {
@@ -659,7 +664,7 @@ function DesktopMetricStrip({
 	);
 }
 
-function BudgetProgressPanel({
+function BudgetProgressPanelBase({
 	rows,
 	isLoading,
 	currency,
@@ -763,6 +768,16 @@ function BudgetProgressPanel({
 		</section>
 	);
 }
+
+// Memoised so unrelated dashboard state (opening the interval chooser, swipe-gesture
+// ticks) does not re-render every card, chart and the money components inside them. The
+// props they receive are referentially stable — the parent memoises its derived queries
+// and wraps the handlers below in useCallback.
+const MonthStrip = memo(MonthStripBase);
+const WhatYouHaveCard = memo(WhatYouHaveCardBase);
+const SummarySplitCard = memo(SummarySplitCardBase);
+const DesktopMetricStrip = memo(DesktopMetricStripBase);
+const BudgetProgressPanel = memo(BudgetProgressPanelBase);
 
 export function DashboardPageClient({ userId: providedUserId }: DashboardPageClientProps = {}) {
 	const userId = useRequiredUserId(providedUserId);
@@ -885,18 +900,23 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	);
 	const swipeRef = useMonthSwipe(changeMonth, canGoNext);
 
-	function handleSelectMonth(month: Date) {
-		const nextMonth = clampDashboardPeriod(month, interval, periodNavOptions);
-		if (nextMonth.getTime() === selectedMonth.getTime()) return;
+	const handleSelectMonth = useCallback(
+		(month: Date) => {
+			const nextMonth = clampDashboardPeriod(month, interval, periodNavOptions);
+			if (nextMonth.getTime() === selectedMonth.getTime()) return;
 
-		setSelectedMonth(nextMonth);
-		haptics.selection();
-	}
+			setSelectedMonth(nextMonth);
+			haptics.selection();
+		},
+		[haptics, interval, periodNavOptions, selectedMonth]
+	);
 
-	function handleAddAccount() {
+	const handleAddAccount = useCallback(() => {
 		haptics.light();
 		openAddAccount();
-	}
+	}, [haptics, openAddAccount]);
+
+	const openInterval = useCallback(() => setIntervalOpen(true), []);
 
 	function handleToggleFutureBalances() {
 		setIncludeFutureDatedBalances(!includeFutureDatedBalances);
@@ -935,7 +955,7 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 				timeZoneOffsetMinutes={timeZoneOffsetMinutes}
 				onChangeMonth={changeMonth}
 				onSelectMonth={handleSelectMonth}
-				onOpenInterval={() => setIntervalOpen(true)}
+				onOpenInterval={openInterval}
 			/>
 
 			<AnalyticsIntervalChooser
