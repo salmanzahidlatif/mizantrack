@@ -5,6 +5,40 @@
 > risk level and explicit guardrails. Nothing here should ship without passing
 > `npm run validate && npm run test` **and** a visual check in the running app.
 
+## Status & decisions (updated 2026-10-30)
+
+**Done (committed to `main`):**
+- Visual refresh: **Trust Teal** accent (primary/ring/sidebar, light+dark) + a 5-hue
+  categorical chart palette replacing the all-grey charts. (Indigo was tried first and
+  rejected as too "techy"; teal chosen.)
+- **A1** — financial colour tokens `--color-income/expense/transfer/warning` defined and
+  applied to `CurrencyAmount`, `TransactionRow` chips, `MonthSummary`, dashboard savings-rate.
+- **C2** — `TransactionRow` wrapped in `React.memo`; `buildItems` memoised in `TransactionList`.
+- **C3** — dashboard sub-components memoised (`*Base` + `memo` alias) with `useCallback`'d
+  handlers.
+- Mobile fixes: transactions **double-scroll** fixed (list sized to the scroll viewport via
+  measurement, not a hardcoded `calc`); redundant per-row **currency badge** hidden when it
+  matches the screen currency; **filters compacted** into one horizontally-scrollable row.
+
+**Decided NOT to do (with reason):**
+- **A4** (convert dashboard sections to the `Card` component): the `Card` primitive is
+  `CARD_SURFACE` + a `flex flex-col gap-4 py-4` layout, so converting the bespoke grid-based
+  dashboard sections would change their internal layout/padding for no token gain — they
+  already use the shared `CARD_SURFACE`. Skipped as a visual-regression risk.
+- **A3** (blanket `Button`-primitive sweep): the raw `<button>`s are mostly intentional
+  custom controls (segmented toggle pills, nav pills, icon-grid cells), not `Button`
+  re-implementations. A blanket conversion would change their look/behaviour. Do only genuine
+  one-off Button-duplicates opportunistically.
+- **C1** (split the two 970–1040 LOC form monoliths): `TransactionDrawer` and
+  `ZakatPageClientEnhanced` are single functions with no sub-component seams; splitting means
+  decomposing live stateful forms — real regression risk in critical flows, zero UX/perf
+  benefit. Defer to a dedicated, device-verified pass if ever wanted.
+
+**Direction:** focus on mobile/visual polish driven by real device testing; apply the design
+system consistently as files are touched, rather than large speculative refactors.
+
+---
+
 ## Guiding principle
 
 The app already completed a UI/UX polish sprint (tokens, glass nav, shadows, skeletons,
