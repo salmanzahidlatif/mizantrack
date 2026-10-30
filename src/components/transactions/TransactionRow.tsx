@@ -8,6 +8,7 @@ import {
 	TrendingDown,
 	TrendingUp,
 } from "lucide-react";
+import { memo } from "react";
 
 import { CurrencyAmount } from "@/components/shared/CurrencyAmount";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -76,7 +77,13 @@ export function ArchivedAccountIndicator({ label = "Archived account" }: { label
 	);
 }
 
-export function TransactionRow({
+/**
+ * Memoised because it is the virtualised row: it re-renders on every scroll frame and
+ * whenever the list re-renders for unrelated reasons. Its props are referentially stable
+ * (the parent memoises the account/category arrays and the toggle callback), so memo lets
+ * a row skip re-rendering unless its own transaction or selected state changes.
+ */
+export const TransactionRow = memo(function TransactionRow({
 	transaction,
 	accounts,
 	categories,
@@ -216,4 +223,4 @@ export function TransactionRow({
 			</div>
 		</button>
 	);
-}
+});

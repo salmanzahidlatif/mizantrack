@@ -60,6 +60,12 @@ export function TransactionList({
 	const openAddTransaction = useUIStore((s) => s.openAddTransaction);
 	const parentRef = useRef<HTMLDivElement>(null);
 
+	// Group into date headers + rows once per data change, not on every render. This runs
+	// a date `format()` for every transaction in the filtered set, so keeping it out of the
+	// render path matters as the history grows. Hoisted above the early returns to respect
+	// the rules of hooks.
+	const items = useMemo(() => (transactions ? buildItems(transactions) : []), [transactions]);
+
 	if (transactions === undefined) {
 		return (
 			<div className={cn(CARD_SURFACE, "overflow-hidden")}>
@@ -77,8 +83,6 @@ export function TransactionList({
 			/>
 		);
 	}
-
-	const items = buildItems(transactions);
 
 	return (
 		<VirtualList
