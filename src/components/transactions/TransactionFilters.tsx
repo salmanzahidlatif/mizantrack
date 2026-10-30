@@ -184,10 +184,12 @@ export function TransactionFilters({ accounts, userId: explicitUserId }: Transac
 
 	return (
 		<div className="space-y-2">
-			<div className="flex flex-wrap gap-2">
+			{/* One horizontally-scrollable row instead of wrapping to two, so the filters take
+			    a single line on mobile and leave more height for the list. */}
+			<div className="-mx-1 no-scrollbar flex gap-2 overflow-x-auto px-1 md:flex-wrap">
 				{/* Period */}
 				<Select value={period} onValueChange={(v) => setPeriod(v as FilterPeriod)}>
-					<SelectTrigger className="h-8 w-auto min-w-[130px] text-xs">
+					<SelectTrigger className="h-8 w-auto min-w-[130px] shrink-0 text-xs">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>
@@ -203,7 +205,7 @@ export function TransactionFilters({ accounts, userId: explicitUserId }: Transac
 				<Select
 					value={selectedAccountId}
 					onValueChange={(v) => setAccountId(v === "all" ? null : v)}>
-					<SelectTrigger className="h-8 w-auto min-w-[130px] text-xs">
+					<SelectTrigger className="h-8 w-auto min-w-[130px] shrink-0 text-xs">
 						<SelectValue placeholder="All Accounts" />
 					</SelectTrigger>
 					<SelectContent>
@@ -223,7 +225,7 @@ export function TransactionFilters({ accounts, userId: explicitUserId }: Transac
 				<Select
 					value={transactionType}
 					onValueChange={(v) => setTransactionType(v as TransactionType | "All")}>
-					<SelectTrigger className="h-8 w-auto min-w-[120px] text-xs">
+					<SelectTrigger className="h-8 w-auto min-w-[120px] shrink-0 text-xs">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>
@@ -239,7 +241,7 @@ export function TransactionFilters({ accounts, userId: explicitUserId }: Transac
 				<Select
 					value={selectedCategoryValue}
 					onValueChange={(value) => setCategoryId(fromCategorySelectValue(value))}>
-					<SelectTrigger className="h-8 w-auto min-w-[150px] text-xs">
+					<SelectTrigger className="h-8 w-auto min-w-[150px] shrink-0 text-xs">
 						<SelectValue placeholder="All Categories" />
 					</SelectTrigger>
 					<SelectContent>
@@ -262,7 +264,11 @@ export function TransactionFilters({ accounts, userId: explicitUserId }: Transac
 				</Select>
 
 				{isFiltered && (
-					<Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={handleReset}>
+					<Button
+						variant="ghost"
+						size="sm"
+						className="h-8 shrink-0 px-2 text-xs"
+						onClick={handleReset}>
 						<X className="mr-1 h-3 w-3" />
 						Reset
 					</Button>

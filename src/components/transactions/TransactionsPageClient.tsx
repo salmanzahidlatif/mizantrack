@@ -125,7 +125,7 @@ export function TransactionsPageClient({
 	const allSelected = visibleCount > 0 && selectedIds.size === visibleCount;
 
 	return (
-		<div className="space-y-3">
+		<div className="space-y-2">
 			{/* Header */}
 			<div className="flex items-start justify-between gap-3">
 				<div>
