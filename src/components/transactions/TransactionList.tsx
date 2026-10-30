@@ -120,6 +120,14 @@ function VirtualList({
 	onToggleSelect,
 }: VirtualListProps) {
 	const activeStickyIndexRef = useRef<number | null>(null);
+	// Row entrance stagger plays once, on first mount — not again on every filter, search or
+	// month change, which made the whole list "fly in" repeatedly and feel busy. After the
+	// initial reveal window rows appear instantly (including those scrolled into view).
+	const [entered, setEntered] = useState(false);
+	useEffect(() => {
+		const timer = window.setTimeout(() => setEntered(true), 700);
+		return () => window.clearTimeout(timer);
+	}, []);
 	// Size the list's own scroll so it ends exactly at the bottom of the page's scroll
 	// area instead of a hardcoded guess. The old `calc(100dvh - 200px)` under-counted the
 	// mobile header (title, month strip, two filter rows, search), so the list ran past the
@@ -196,7 +204,7 @@ function VirtualList({
 	return (
 		<div
 			ref={parentRef}
-			className={cn(CARD_SURFACE, "no-scrollbar overflow-auto")}
+			className={cn(CARD_SURFACE, "no-scrollbar overflow-auto fade-in")}
 			style={{ maxHeight: maxHeight ? `${maxHeight}px` : "calc(100dvh - 220px)" }}>
 			<div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
 				{virtualizer.getVirtualItems().map((virtualRow) => {
@@ -224,7 +232,9 @@ function VirtualList({
 									</p>
 								</div>
 							) : (
-								<div className={LIST_ROW} style={staggerDelay(Math.min(virtualRow.index, 10), 28)}>
+								<div
+									className={entered ? undefined : LIST_ROW}
+									style={entered ? undefined : staggerDelay(Math.min(virtualRow.index, 10), 28)}>
 									<TransactionRow
 										transaction={item.transaction}
 										accounts={accounts}

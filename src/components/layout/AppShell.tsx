@@ -90,6 +90,23 @@ export function AppShell({ user, children }: AppShellProps) {
 	const pathname = usePathname();
 	const pageTitle = getPageTitle(pathname);
 	const mainRef = useRef<HTMLElement>(null);
+	// Page content enters from the right when moving to a later tab and from the left when
+	// going back, so the motion direction matches where the user is heading (including swipe
+	// navigation). prevPathnameRef still holds the previous route during this render; the
+	// effect below advances it afterwards.
+	const prevPathnameRef = useRef(pathname);
+	const navDirection = (() => {
+		const order = NAV_ITEMS.map((item) => item.href);
+		const indexFor = (path: string) =>
+			order.findIndex((href) => path === href || path.startsWith(`${href}/`));
+		const from = indexFor(prevPathnameRef.current);
+		const to = indexFor(pathname);
+		if (from === -1 || to === -1 || from === to) return "forward" as const;
+		return to > from ? ("forward" as const) : ("back" as const);
+	})();
+	useEffect(() => {
+		prevPathnameRef.current = pathname;
+	}, [pathname]);
 	const [contentScrolled, setContentScrolled] = useState(false);
 	const swipeNavigation = useSwipeNavigation({
 		containerRef: mainRef,
@@ -438,7 +455,9 @@ export function AppShell({ user, children }: AppShellProps) {
 									you&apos;re back online.
 								</div>
 							)}
-							<div key={pathname} className="page-enter">
+							<div
+								key={pathname}
+								className={navDirection === "back" ? "page-enter-back" : "page-enter"}>
 								<div className="mb-3 md:hidden">
 									<h1
 										className={cn(
