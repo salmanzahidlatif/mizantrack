@@ -118,8 +118,11 @@ describe("aggregateSalaryProgression", () => {
 		expect(result.points[1]?.averageGrowthShare).toBeCloseTo(0.2, 6);
 
 		expect(result.hikes).toHaveLength(1);
+		// Raises are pinned to the month they took effect, and placed on the yearly bucket.
 		expect(result.hikes[0]).toMatchObject({
-			key: "2025",
+			key: "2025-01",
+			label: "Jan 25",
+			bucketKey: "2025",
 			fromAverage: 10_000,
 			toAverage: 12_000,
 		});
@@ -129,14 +132,15 @@ describe("aggregateSalaryProgression", () => {
 		expect(result.startingAverage).toBe(10_000);
 		expect(result.latestAverage).toBe(12_000);
 		expect(result.overallGrowthShare).toBeCloseTo(0.2, 6);
-		expect(result.cagr).toBeCloseTo(0.2, 2);
+		// 20% growth from Jan 2024 to Dec 2025 (~1.92 years) compounds to ~10% a year.
+		expect(result.cagr).toBeCloseTo(0.0998, 3);
 		expect(result.firstSalaryMs).toBe(at(2024, 0, 25));
 		expect(result.lastSalaryMs).toBe(at(2025, 11, 25));
 	});
 
 	it("does not fake a raise when one month holds two salary payments", () => {
 		// The June 2025 salary lands early, on 29 May 2025. May then holds two payments and
-		// June holds none: 2025 has 12 payments spread over 11 calendar months.
+		// June holds none, so the early one is counted in June, the month it was for.
 		const transactions = [
 			...monthlySalary(2024, 10_000, "a"),
 			...monthlySalary(2025, 10_000, "b").map((transaction, monthIndex) =>
@@ -153,12 +157,13 @@ describe("aggregateSalaryProgression", () => {
 		const year2025 = result.points.find((point) => point.key === "2025");
 		expect(year2025).toMatchObject({
 			total: 120_000,
-			monthsWithIncome: 11,
+			monthsWithIncome: 12,
 			monthsCovered: 12,
 			average: 10_000,
 			transactionCount: 12,
 			isHike: false,
 		});
+		expect(result.reattributedPaymentCount).toBe(1);
 		expect(year2025?.averageGrowthShare).toBe(0);
 
 		const year2026 = result.points.find((point) => point.key === "2026");
@@ -238,10 +243,11 @@ describe("aggregateSalaryProgression", () => {
 	});
 
 	it("still reports a monthly raise once the new run-rate holds", () => {
+		// The baseline needs three paid months, so a prorated first month cannot be the "before".
 		const transactions = [
 			makeTransaction({ id: "jan", date: at(2025, 0, 25), amount: 10_000 }),
 			makeTransaction({ id: "feb", date: at(2025, 1, 25), amount: 10_000 }),
-			makeTransaction({ id: "mar", date: at(2025, 2, 25), amount: 12_000 }),
+			makeTransaction({ id: "mar", date: at(2025, 2, 25), amount: 10_000 }),
 			makeTransaction({ id: "apr", date: at(2025, 3, 25), amount: 12_000 }),
 			makeTransaction({ id: "may", date: at(2025, 4, 25), amount: 12_000 }),
 		];
@@ -254,11 +260,123 @@ describe("aggregateSalaryProgression", () => {
 
 		expect(result.hikes).toHaveLength(1);
 		expect(result.hikes[0]).toMatchObject({
-			key: "2025-03",
+			key: "2025-04",
+			bucketKey: "2025-04",
 			fromAverage: 10_000,
 			toAverage: 12_000,
 		});
 		expect(result.hikes[0]?.share).toBeCloseTo(0.2, 6);
+	});
+
+	it("shows a late salary on the 1st as a normal month, not a 100% raise", () => {
+		// October's salary arrives on 1 Nov, November's on 29 Nov, as in the reported bug.
+		const transactions = [
+			...Array.from({ length: 9 }, (_, month) =>
+				makeTransaction({ id: `m-${month}`, date: at(2025, month, 27) })
+			),
+			makeTransaction({ id: "oct-late", date: at(2025, 10, 1) }),
+			makeTransaction({ id: "nov", date: at(2025, 10, 29) }),
+			makeTransaction({ id: "dec", date: at(2025, 11, 27) }),
+		];
+
+		const result = aggregateSalaryProgression(USER_ID, ACCOUNTS, CATEGORIES, transactions, {
+			...BASE_QUERY,
+			interval: "monthly",
+			now: new Date(at(2025, 11, 30)),
+		});
+
+		expect(result.points.map((point) => point.total)).toEqual(Array(12).fill(10_000));
+		expect(result.points.every((point) => point.isHike === false)).toBe(true);
+		expect(result.hikes).toEqual([]);
+		expect(result.overallGrowthShare).toBe(0);
+		expect(result.reattributedPaymentCount).toBe(1);
+	});
+
+	it("never measures a raise from a month that only held a small side payment", () => {
+		// April's salary is missing and only a 15 cashback landed, as in the reported bug.
+		const transactions = [
+			makeTransaction({ id: "jan", date: at(2025, 0, 25) }),
+			makeTransaction({ id: "feb", date: at(2025, 1, 25) }),
+			makeTransaction({ id: "mar", date: at(2025, 2, 25) }),
+			makeTransaction({ id: "apr", date: at(2025, 3, 15), amount: 15 }),
+			makeTransaction({ id: "may", date: at(2025, 4, 25) }),
+			makeTransaction({ id: "jun", date: at(2025, 5, 25) }),
+		];
+
+		const result = aggregateSalaryProgression(USER_ID, ACCOUNTS, CATEGORIES, transactions, {
+			...BASE_QUERY,
+			interval: "monthly",
+			now: new Date(at(2025, 5, 28)),
+		});
+
+		expect(result.hikes).toEqual([]);
+	});
+
+	it("does not let a messy first few months turn steady growth negative", () => {
+		// A prorated first month and a catch-up month, then a steady salary that later rises.
+		const transactions = [
+			makeTransaction({ id: "prorated", date: at(2024, 0, 25), amount: 3_000 }),
+			makeTransaction({ id: "catch-up", date: at(2024, 1, 25), amount: 40_000 }),
+			...Array.from({ length: 10 }, (_, index) =>
+				makeTransaction({ id: `steady-${index}`, date: at(2024, index + 2, 25) })
+			),
+			...Array.from({ length: 12 }, (_, index) =>
+				makeTransaction({ id: `raised-${index}`, date: at(2025, index, 25), amount: 12_000 })
+			),
+		];
+
+		const result = aggregateSalaryProgression(
+			USER_ID,
+			ACCOUNTS,
+			CATEGORIES,
+			transactions,
+			BASE_QUERY
+		);
+
+		expect(result.startingAverage).toBe(10_000);
+		expect(result.latestAverage).toBe(12_000);
+		expect(result.overallGrowthShare).toBeCloseTo(0.2, 6);
+	});
+
+	it("reports a raise as the latest salary straight away but ignores a bonus month", () => {
+		const base = [
+			makeTransaction({ id: "jan", date: at(2025, 0, 25) }),
+			makeTransaction({ id: "feb", date: at(2025, 1, 25) }),
+			makeTransaction({ id: "mar", date: at(2025, 2, 25) }),
+		];
+		const query = { ...BASE_QUERY, now: new Date(at(2025, 3, 28)) };
+
+		const raised = aggregateSalaryProgression(
+			USER_ID,
+			ACCOUNTS,
+			CATEGORIES,
+			[...base, makeTransaction({ id: "apr", date: at(2025, 3, 25), amount: 11_000 })],
+			query
+		);
+		const bonus = aggregateSalaryProgression(
+			USER_ID,
+			ACCOUNTS,
+			CATEGORIES,
+			[...base, makeTransaction({ id: "apr", date: at(2025, 3, 25), amount: 20_000 })],
+			query
+		);
+
+		expect(raised.latestAverage).toBe(11_000);
+		expect(bonus.latestAverage).toBe(10_000);
+	});
+
+	it("does not count the current month before its salary has arrived", () => {
+		const transactions = Array.from({ length: 10 }, (_, month) =>
+			makeTransaction({ id: `m-${month}`, date: at(2026, month, 27) })
+		);
+
+		const result = aggregateSalaryProgression(USER_ID, ACCOUNTS, CATEGORIES, transactions, {
+			...BASE_QUERY,
+			now: new Date(at(2026, 10, 10)),
+		});
+
+		// Jan–Oct paid; November's salary is not due yet, so it must not dilute the year.
+		expect(result.points[0]).toMatchObject({ isPartial: true, monthsCovered: 10, average: 10_000 });
 	});
 
 	it("counts only the salary category when rental income also exists", () => {
@@ -462,7 +580,8 @@ describe("aggregateSalaryProgression", () => {
 			BASE_QUERY
 		);
 		expect(single.points).toHaveLength(1);
-		expect(single.cagr).toBeNull();
+		// Measured month to month, a flat year is 0% growth rather than "not computable".
+		expect(single.cagr).toBe(0);
 		expect(single.overallGrowthShare).toBe(0);
 
 		const empty = aggregateSalaryProgression(USER_ID, ACCOUNTS, CATEGORIES, [], {

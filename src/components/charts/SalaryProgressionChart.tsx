@@ -106,6 +106,14 @@ function formatShare(share: number | null | undefined, signed = false): string {
 	return `${sign}${percent.toFixed(1)}%`;
 }
 
+/**
+ * An in-progress bucket is only drawn once salary has arrived in it. Before payday it holds
+ * nothing yet, and plotting that 0 would read as a pay cut.
+ */
+function isPlottedPartial(point: SalaryProgressionPoint | undefined): boolean {
+	return point?.isPartial === true && point.transactionCount > 0;
+}
+
 function getShareToneClass(share: number | null | undefined): string {
 	if (share === null || share === undefined || !Number.isFinite(share) || share === 0) {
 		return "text-foreground";
@@ -222,11 +230,11 @@ export function SalaryProgressionChart({
 				// in-progress tail so a partial period is never mistaken for a finished one.
 				solidValue: point.isPartial ? null : point[metric],
 				partialValue:
-					point.isPartial || points[index + 1]?.isPartial === true ? point[metric] : null,
+					isPlottedPartial(point) || isPlottedPartial(points[index + 1]) ? point[metric] : null,
 			})),
 		[points, metric]
 	);
-	const hasPartial = useMemo(() => points.some((point) => point.isPartial), [points]);
+	const hasPartial = useMemo(() => points.some(isPlottedPartial), [points]);
 	const detectedNote = useMemo(() => {
 		const ids = data?.usedCategoryIds ?? [];
 		if (ids.length === 0) return null;
@@ -242,7 +250,7 @@ export function SalaryProgressionChart({
 	const hikeMarkers = useMemo(() => {
 		const hikes = data?.hikes ?? [];
 		return hikes
-			.map((hike) => ({ hike, point: pointsByKey.get(hike.key) }))
+			.map((hike) => ({ hike, point: pointsByKey.get(hike.bucketKey) }))
 			.filter((entry): entry is { hike: (typeof hikes)[number]; point: SalaryProgressionPoint } =>
 				Boolean(entry.point)
 			);
@@ -370,6 +378,16 @@ export function SalaryProgressionChart({
 					data-testid="salary-detected-categories"
 					className="mb-3 text-[11px] text-muted-foreground">
 					{detectedNote}
+				</p>
+			)}
+
+			{data.reattributedPaymentCount > 0 && (
+				<p
+					data-testid="salary-reattributed-note"
+					className="mb-3 text-[11px] text-muted-foreground">
+					{data.reattributedPaymentCount === 1
+						? "1 payment credited early or late is counted in the month it was for."
+						: `${data.reattributedPaymentCount} payments credited early or late are counted in the month they were for.`}
 				</p>
 			)}
 

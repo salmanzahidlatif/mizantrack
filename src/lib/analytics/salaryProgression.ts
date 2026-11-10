@@ -1,8 +1,12 @@
 import { getActiveUserAccounts, normalizeCurrencyCode } from "@/lib/analytics/balanceMath";
 import { yieldAfterChunk, type AnalyticsChunkOptions } from "@/lib/analytics/chunking";
 import {
+	attributeSalaryPayments,
+	getMonthIndex,
+	getMonthStartMs,
+} from "@/lib/analytics/salaryAttribution";
+import {
 	getLocalTimeZoneOffsetMinutes,
-	getMonthKey,
 	getPeriodRange,
 	getPeriodRangeOffset,
 	type PeriodRange,
@@ -61,15 +65,21 @@ export interface SalaryProgressionPoint {
 	averageDelta: number;
 	/** averageDelta / previous non-empty average, or null when 0. */
 	averageGrowthShare: number | null;
-	/** True when the run-rate rose by at least hikeThreshold and the new level held. */
+	/** True when a confirmed salary raise took effect inside this bucket. */
 	isHike: boolean;
 }
 
 export interface SalaryHike {
+	/** Month the raise took effect: "2025-04". */
 	key: string;
+	/** Month label: "Apr 25". */
 	label: string;
+	/** Key of the chart bucket containing the raise month, for placing markers. */
+	bucketKey: string;
 	atMs: number;
+	/** Typical monthly salary before the raise (median of the preceding months). */
 	fromAverage: number;
+	/** Confirmed monthly salary after the raise. */
 	toAverage: number;
 	/** Fractional increase, e.g. 0.15 for a 15% raise. */
 	share: number;
@@ -83,16 +93,24 @@ export interface SalaryProgressionAnalytics {
 	usedCategoryIds: string[];
 	/** True when auto-detection found nothing and the engine fell back to all Income. */
 	usedFallbackAllIncome: boolean;
+	/**
+	 * Payments counted in a different month from the one they were credited in, because
+	 * their description named that month or they were paid early/late into an empty month.
+	 */
+	reattributedPaymentCount: number;
 	firstSalaryMs?: number;
 	lastSalaryMs?: number;
 	totalEarned: number;
-	/** Monthly run-rate of the first non-empty bucket. */
+	/**
+	 * Typical monthly salary at the start: median of the first few paid months. A median
+	 * keeps a prorated joining month or a catch-up payment from skewing the baseline.
+	 */
 	startingAverage: number;
-	/** Monthly run-rate of the latest non-empty bucket. */
+	/** Typical monthly salary now: median of the latest few paid months. */
 	latestAverage: number;
 	/** (latestAverage - startingAverage) / startingAverage, or null when starting is 0. */
 	overallGrowthShare: number | null;
-	/** Compound annual growth rate of the monthly run-rate, or null when not computable. */
+	/** Compound annual growth rate of the monthly salary, or null when not computable. */
 	cagr: number | null;
 	hikes: SalaryHike[];
 }
@@ -100,17 +118,25 @@ export interface SalaryProgressionAnalytics {
 const DEFAULT_INTERVAL: SalaryProgressionInterval = "yearly";
 const DEFAULT_HIKE_THRESHOLD = 0.05;
 const MONTHS_PER_YEAR = 12;
-const MS_PER_MINUTE = 60 * 1000;
 const MS_PER_YEAR = 365.2425 * 24 * 60 * 60 * 1000;
 /** Hard cap so a pathological date can never emit an unbounded series. */
 const MAX_BUCKET_COUNT = 600;
 /** Below this elapsed span a compound annual rate is meaningless noise. */
 const MIN_CAGR_YEARS = 0.5;
 /**
- * Monthly buckets are noisy — a bonus or a double-paid month looks exactly like a raise.
- * A monthly hike is only reported once the elevated run-rate survives into a later bucket.
+ * Raises are detected on the monthly salary series, whatever the chart interval.
+ * The baseline is the median of the last few paid months, so a single bonus month or a
+ * month holding only a small side payment can never become the "before" figure.
  */
-const MONTHLY_HIKE_CONFIRMATION_BUCKETS = 2;
+const HIKE_BASELINE_MONTHS = 3;
+/** The start of employment is noisy (prorated pay, arrears), so look at more months. */
+const STARTING_SALARY_MONTHS = 6;
+const LATEST_SALARY_MONTHS = 3;
+/**
+ * The latest month is reported as-is unless it strays this far from the recent median,
+ * which marks it as a bonus or a short month rather than the current salary level.
+ */
+const LATEST_OUTLIER_SHARE = 0.25;
 
 interface BucketAccumulator {
 	key: string;
@@ -119,7 +145,7 @@ interface BucketAccumulator {
 	toMs: number;
 	total: number;
 	transactionCount: number;
-	monthKeys: Set<string>;
+	monthIndices: Set<number>;
 }
 
 interface SalaryCategorySelection {
@@ -156,31 +182,25 @@ function safeShare(numerator: number, denominator: number): number | null {
 	return toFiniteShare(numerator / denominator);
 }
 
-/** Absolute calendar-month index (year * 12 + month) in the user's local time zone. */
-function getAbsoluteMonthIndex(ms: number, timeZoneOffsetMinutes: number): number {
-	const shifted = new Date(ms + timeZoneOffsetMinutes * MS_PER_MINUTE);
-	return shifted.getUTCFullYear() * MONTHS_PER_YEAR + shifted.getUTCMonth();
-}
-
 /**
  * Calendar months a bucket covers, clamped so partial buckets stay honest:
- * months before employment started and months that have not happened yet are excluded.
+ * months before employment started and months that have not been paid yet are excluded.
+ * `coverageEndMs` stops before the current month until this month's salary has arrived,
+ * otherwise the latest bucket looks like a pay cut every month before payday.
  */
 function countCoveredMonths(
 	fromMs: number,
 	toMs: number,
 	firstSalaryMs: number | undefined,
-	nowMs: number,
+	coverageEndMs: number,
 	timeZoneOffsetMinutes: number
 ): number {
 	const start = firstSalaryMs === undefined ? fromMs : Math.max(fromMs, firstSalaryMs);
-	const end = Math.min(toMs, nowMs);
+	const end = Math.min(toMs, coverageEndMs);
 	if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
 
 	const months =
-		getAbsoluteMonthIndex(end, timeZoneOffsetMinutes) -
-		getAbsoluteMonthIndex(start, timeZoneOffsetMinutes) +
-		1;
+		getMonthIndex(end, timeZoneOffsetMinutes) - getMonthIndex(start, timeZoneOffsetMinutes) + 1;
 	return Number.isFinite(months) ? Math.max(0, months) : 0;
 }
 
@@ -344,65 +364,34 @@ function findBucket(buckets: BucketAccumulator[], dateMs: number): BucketAccumul
 }
 
 interface BuildPointsOptions {
-	hikeThreshold: number;
-	interval: SalaryProgressionInterval;
 	firstSalaryMs: number | undefined;
 	nowMs: number;
+	coverageEndMs: number;
 	timeZoneOffsetMinutes: number;
-}
-
-interface HikeCandidate {
-	index: number;
-	fromAverage: number;
-	share: number;
-}
-
-/**
- * A monthly raise only counts once the elevated run-rate persists into a later funded
- * bucket. Without this a one-off bonus month reads as a permanent raise.
- */
-function isSustainedHike(
-	points: SalaryProgressionPoint[],
-	candidate: HikeCandidate,
-	hikeThreshold: number
-): boolean {
-	const requiredLevel = candidate.fromAverage * (1 + hikeThreshold);
-	let confirmed = 1;
-
-	for (let index = candidate.index + 1; index < points.length; index++) {
-		const next = points[index];
-		if (!next || next.monthsWithIncome === 0) continue;
-		if (next.average < requiredLevel) return false;
-
-		confirmed++;
-		if (confirmed >= MONTHLY_HIKE_CONFIRMATION_BUCKETS) return true;
-	}
-
-	return false;
+	hikeMonthStartMs: number[];
 }
 
 function buildPoints(
 	buckets: BucketAccumulator[],
 	options: BuildPointsOptions
-): { points: SalaryProgressionPoint[]; hikes: SalaryHike[] } {
-	const { hikeThreshold, interval, firstSalaryMs, nowMs, timeZoneOffsetMinutes } = options;
+): SalaryProgressionPoint[] {
+	const { firstSalaryMs, nowMs, coverageEndMs, timeZoneOffsetMinutes, hikeMonthStartMs } = options;
 	const points: SalaryProgressionPoint[] = [];
-	const candidates: HikeCandidate[] = [];
 	let previousTotal: number | undefined;
 	let previousAverage: number | undefined;
 
 	for (const bucket of buckets) {
-		const monthsWithIncome = bucket.monthKeys.size;
+		const monthsWithIncome = bucket.monthIndices.size;
 		const total = toFiniteNumber(bucket.total);
 		const hasIncome = bucket.transactionCount > 0;
 		const coveredMonths = countCoveredMonths(
 			bucket.fromMs,
 			bucket.toMs,
 			firstSalaryMs,
-			nowMs,
+			coverageEndMs,
 			timeZoneOffsetMinutes
 		);
-		// A funded bucket always covers at least the month its payment landed in.
+		// A funded bucket always covers at least the month its payment is attributed to.
 		const monthsCovered = hasIncome ? Math.max(1, coveredMonths) : coveredMonths;
 		const average = monthsCovered > 0 ? toFiniteNumber(total / monthsCovered) : 0;
 
@@ -416,7 +405,7 @@ function buildPoints(
 		const averageGrowthShare =
 			comparable && previousAverage! > 0 ? safeShare(averageDelta, previousAverage!) : null;
 
-		const point: SalaryProgressionPoint = {
+		points.push({
 			key: bucket.key,
 			label: bucket.label,
 			fromMs: bucket.fromMs,
@@ -431,41 +420,83 @@ function buildPoints(
 			growthShare,
 			averageDelta,
 			averageGrowthShare,
-			isHike: false,
-		};
-		points.push(point);
-
-		if (averageGrowthShare !== null && averageGrowthShare >= hikeThreshold) {
-			candidates.push({
-				index: points.length - 1,
-				fromAverage: previousAverage!,
-				share: averageGrowthShare,
-			});
-		}
+			isHike: hikeMonthStartMs.some((ms) => ms >= bucket.fromMs && ms <= bucket.toMs),
+		});
 
 		previousTotal = total;
 		if (monthsWithIncome > 0) previousAverage = average;
 	}
 
-	const hikes: SalaryHike[] = [];
-	for (const candidate of candidates) {
-		if (interval === "monthly" && !isSustainedHike(points, candidate, hikeThreshold)) continue;
+	return points;
+}
 
-		const point = points[candidate.index];
-		if (!point) continue;
+function median(values: number[]): number {
+	if (values.length === 0) return 0;
+	const sorted = [...values].sort((a, b) => a - b);
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
+}
 
-		point.isHike = true;
-		hikes.push({
-			key: point.key,
-			label: point.label,
-			atMs: point.fromMs,
-			fromAverage: candidate.fromAverage,
-			toAverage: point.average,
-			share: candidate.share,
-		});
+interface MonthlySalary {
+	monthIndex: number;
+	total: number;
+}
+
+/**
+ * Current monthly salary. The newest month wins so a raise shows immediately, unless it
+ * is far off the recent median (a bonus month, or a month short of its payment).
+ */
+function getLatestSalaryLevel(values: number[]): number {
+	const latest = values[values.length - 1];
+	if (latest === undefined) return 0;
+
+	const recentMedian = median(values.slice(-LATEST_SALARY_MONTHS));
+	if (recentMedian <= 0) return latest;
+	return Math.abs(latest - recentMedian) / recentMedian <= LATEST_OUTLIER_SHARE
+		? latest
+		: recentMedian;
+}
+
+interface DetectedHike {
+	month: MonthlySalary;
+	fromAverage: number;
+	toAverage: number;
+	share: number;
+}
+
+/**
+ * Raises on the monthly salary series. A month counts as a raise only when it clears the
+ * threshold against the median of the preceding paid months AND the next paid month holds
+ * that level too. The raise size uses the lower of the two months, so a bonus landing in
+ * the raise month cannot inflate it. After a raise the baseline resets to the new level.
+ */
+function detectHikes(months: MonthlySalary[], hikeThreshold: number): DetectedHike[] {
+	const hikes: DetectedHike[] = [];
+	let baselineWindow: number[] = [];
+
+	for (let index = 0; index < months.length; index++) {
+		const month = months[index]!;
+		const next = months[index + 1];
+
+		if (baselineWindow.length >= HIKE_BASELINE_MONTHS && next) {
+			const baseline = median(baselineWindow);
+			const required = baseline * (1 + hikeThreshold);
+			if (baseline > 0 && month.total >= required && next.total >= required) {
+				const level = Math.min(month.total, next.total);
+				const share = safeShare(level - baseline, baseline);
+				if (share !== null && share >= hikeThreshold) {
+					hikes.push({ month, fromAverage: baseline, toAverage: level, share });
+					baselineWindow = Array.from({ length: HIKE_BASELINE_MONTHS }, () => level);
+					continue;
+				}
+			}
+		}
+
+		baselineWindow.push(month.total);
+		if (baselineWindow.length > HIKE_BASELINE_MONTHS) baselineWindow.shift();
 	}
 
-	return { points, hikes };
+	return hikes;
 }
 
 function computeCagr(
@@ -487,10 +518,10 @@ function buildAnalytics(
 	currency: string,
 	query: SalaryProgressionQuery,
 	selection: SalaryCategorySelection,
-	matchedTransactions: Transaction[],
-	firstSalaryMs: number | undefined
+	matchedTransactions: Transaction[]
 ): SalaryProgressionAnalytics {
 	const now = query.now ?? new Date();
+	const nowMs = now.getTime();
 	const interval = resolveInterval(query);
 	const timeZoneOffsetMinutes = resolveTimeZoneOffsetMinutes(query, now);
 	const fiscalYearStartMonth = resolveFiscalYearStartMonth(query);
@@ -503,6 +534,7 @@ function buildAnalytics(
 		points: [],
 		usedCategoryIds: selection.usedCategoryIds,
 		usedFallbackAllIncome: selection.usedFallbackAllIncome,
+		reattributedPaymentCount: 0,
 		totalEarned: 0,
 		startingAverage: 0,
 		latestAverage: 0,
@@ -511,6 +543,24 @@ function buildAnalytics(
 		hikes: [],
 	};
 
+	const attributions = attributeSalaryPayments(matchedTransactions, {
+		nowMs,
+		timeZoneOffsetMinutes,
+	});
+	const payments = matchedTransactions
+		.map((transaction) => {
+			const attribution = attributions.get(transaction.id);
+			return {
+				amount: transaction.amount,
+				effectiveMs: attribution?.effectiveMs ?? transaction.date,
+				monthIndex:
+					attribution?.monthIndex ?? getMonthIndex(transaction.date, timeZoneOffsetMinutes),
+				moved: attribution !== undefined && attribution.reason !== "credited",
+			};
+		})
+		.sort((a, b) => a.effectiveMs - b.effectiveMs);
+
+	const firstSalaryMs = payments[0]?.effectiveMs;
 	const windowStart = getWindowStartDate(now, years, firstSalaryMs, timeZoneOffsetMinutes);
 	if (!windowStart) return base;
 
@@ -527,45 +577,75 @@ function buildAnalytics(
 		toMs: range.toMs,
 		total: 0,
 		transactionCount: 0,
-		monthKeys: new Set<string>(),
+		monthIndices: new Set<number>(),
 	}));
 
 	let totalEarned = 0;
+	let reattributedPaymentCount = 0;
 	let windowFirstMs: number | undefined;
 	let windowLastMs: number | undefined;
+	const monthlyTotals = new Map<number, number>();
 
-	for (const transaction of matchedTransactions) {
-		const bucket = findBucket(buckets, transaction.date);
+	for (const payment of payments) {
+		const bucket = findBucket(buckets, payment.effectiveMs);
 		if (!bucket) continue;
 
-		bucket.total += transaction.amount;
+		bucket.total += payment.amount;
 		bucket.transactionCount++;
-		bucket.monthKeys.add(getMonthKey(new Date(transaction.date), { timeZoneOffsetMinutes }));
-		totalEarned += transaction.amount;
+		bucket.monthIndices.add(payment.monthIndex);
+		totalEarned += payment.amount;
+		monthlyTotals.set(
+			payment.monthIndex,
+			(monthlyTotals.get(payment.monthIndex) ?? 0) + payment.amount
+		);
+		if (payment.moved) reattributedPaymentCount++;
 
-		if (windowFirstMs === undefined || transaction.date < windowFirstMs) {
-			windowFirstMs = transaction.date;
-		}
-		if (windowLastMs === undefined || transaction.date > windowLastMs) {
-			windowLastMs = transaction.date;
-		}
+		windowFirstMs ??= payment.effectiveMs;
+		windowLastMs = payment.effectiveMs;
 	}
 
-	const { points, hikes } = buildPoints(buckets, {
-		hikeThreshold,
-		interval,
-		firstSalaryMs,
-		nowMs: now.getTime(),
-		timeZoneOffsetMinutes,
+	const nowMonthIndex = getMonthIndex(nowMs, timeZoneOffsetMinutes);
+	const coverageEndMs = monthlyTotals.has(nowMonthIndex)
+		? nowMs
+		: getMonthStartMs(nowMonthIndex, timeZoneOffsetMinutes) - 1;
+
+	const monthlySeries: MonthlySalary[] = [...monthlyTotals.entries()]
+		.map(([monthIndex, total]) => ({ monthIndex, total: toFiniteNumber(total) }))
+		.sort((a, b) => a.monthIndex - b.monthIndex);
+
+	const hikes: SalaryHike[] = detectHikes(monthlySeries, hikeThreshold).map((hike) => {
+		const atMs = getMonthStartMs(hike.month.monthIndex, timeZoneOffsetMinutes);
+		const range = getPeriodRangeFor(new Date(atMs), "monthly", undefined, timeZoneOffsetMinutes);
+		return {
+			key: range.key,
+			label: range.shortLabel,
+			bucketKey: findBucket(buckets, atMs)?.key ?? range.key,
+			atMs,
+			fromAverage: toFiniteNumber(hike.fromAverage),
+			toAverage: toFiniteNumber(hike.toAverage),
+			share: hike.share,
+		};
 	});
-	const fundedPoints = points.filter((point) => point.monthsWithIncome > 0);
-	const startingAverage = fundedPoints[0]?.average ?? 0;
-	const latestAverage = fundedPoints[fundedPoints.length - 1]?.average ?? 0;
+
+	const points = buildPoints(buckets, {
+		firstSalaryMs,
+		nowMs,
+		coverageEndMs,
+		timeZoneOffsetMinutes,
+		hikeMonthStartMs: hikes.map((hike) => hike.atMs),
+	});
+
+	const monthlyValues = monthlySeries.map((month) => month.total);
+	const startingAverage = toFiniteNumber(median(monthlyValues.slice(0, STARTING_SALARY_MONTHS)));
+	const latestAverage = toFiniteNumber(getLatestSalaryLevel(monthlyValues));
+	const firstMonth = monthlySeries[0];
+	const lastMonth = monthlySeries[monthlySeries.length - 1];
 
 	return {
 		...base,
 		points,
 		hikes,
+		reattributedPaymentCount,
 		firstSalaryMs: windowFirstMs,
 		lastSalaryMs: windowLastMs,
 		totalEarned: toFiniteNumber(totalEarned),
@@ -576,8 +656,8 @@ function buildAnalytics(
 		cagr: computeCagr(
 			startingAverage,
 			latestAverage,
-			fundedPoints[0]?.fromMs,
-			fundedPoints[fundedPoints.length - 1]?.fromMs
+			firstMonth && getMonthStartMs(firstMonth.monthIndex, timeZoneOffsetMinutes),
+			lastMonth && getMonthStartMs(lastMonth.monthIndex, timeZoneOffsetMinutes)
 		),
 	};
 }
@@ -593,19 +673,11 @@ export function aggregateSalaryProgression(
 	const accountIds = getCurrencyAccountIds(userId, accounts, currency);
 	const selection = resolveCategorySelection(userId, categories, currency, query);
 
-	const matchedTransactions: Transaction[] = [];
-	let firstSalaryMs: number | undefined;
+	const matchedTransactions = transactions.filter((transaction) =>
+		isSalaryTransaction(transaction, userId, accountIds, selection.categoryIdSet)
+	);
 
-	for (const transaction of transactions) {
-		if (!isSalaryTransaction(transaction, userId, accountIds, selection.categoryIdSet)) continue;
-
-		matchedTransactions.push(transaction);
-		if (firstSalaryMs === undefined || transaction.date < firstSalaryMs) {
-			firstSalaryMs = transaction.date;
-		}
-	}
-
-	return buildAnalytics(currency, query, selection, matchedTransactions, firstSalaryMs);
+	return buildAnalytics(currency, query, selection, matchedTransactions);
 }
 
 export async function aggregateSalaryProgressionChunked(
@@ -621,22 +693,18 @@ export async function aggregateSalaryProgressionChunked(
 	const selection = resolveCategorySelection(userId, categories, currency, query);
 
 	const matchedTransactions: Transaction[] = [];
-	let firstSalaryMs: number | undefined;
 	let processed = 0;
 
 	for (const transaction of transactions) {
 		processed++;
 		await yieldAfterChunk(processed, options);
 
-		if (!isSalaryTransaction(transaction, userId, accountIds, selection.categoryIdSet)) continue;
-
-		matchedTransactions.push(transaction);
-		if (firstSalaryMs === undefined || transaction.date < firstSalaryMs) {
-			firstSalaryMs = transaction.date;
+		if (isSalaryTransaction(transaction, userId, accountIds, selection.categoryIdSet)) {
+			matchedTransactions.push(transaction);
 		}
 	}
 
-	return buildAnalytics(currency, query, selection, matchedTransactions, firstSalaryMs);
+	return buildAnalytics(currency, query, selection, matchedTransactions);
 }
 
 function stableStringify(value: unknown): string {

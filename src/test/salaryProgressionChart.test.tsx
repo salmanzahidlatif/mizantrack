@@ -75,6 +75,7 @@ function buildAnalytics(
 		{
 			key: "2025",
 			label: "2025",
+			bucketKey: "2025",
 			atMs: Date.UTC(2025, 0, 1),
 			fromAverage: 10000,
 			toAverage: 12000,
@@ -88,6 +89,7 @@ function buildAnalytics(
 		points,
 		usedCategoryIds: ["salary"],
 		usedFallbackAllIncome: false,
+		reattributedPaymentCount: 0,
 		firstSalaryMs: Date.UTC(2024, 0, 15),
 		lastSalaryMs: Date.UTC(2025, 11, 15),
 		totalEarned: 264000,
@@ -231,6 +233,48 @@ describe("SalaryProgressionChart", () => {
 		expect(screen.getByTestId("salary-partial-note")).toHaveTextContent("still accumulating");
 	});
 
+	it("does not draw the current period as a drop to zero before payday", () => {
+		renderChart({
+			data: buildAnalytics({
+				points: [
+					buildPoint(),
+					buildPoint({
+						key: "2025",
+						label: "2025",
+						total: 0,
+						average: 0,
+						monthsCovered: 0,
+						monthsWithIncome: 0,
+						transactionCount: 0,
+						isPartial: true,
+					}),
+				],
+				hikes: [],
+			}),
+		});
+
+		const chartData = JSON.parse(
+			screen.getByTestId("area-chart").getAttribute("data-chart") ?? "null"
+		) as { solidValue: number | null; partialValue: number | null }[] | null;
+		expect(chartData?.map((row) => row.solidValue)).toEqual([10000, null]);
+		expect(chartData?.map((row) => row.partialValue)).toEqual([null, null]);
+		expect(screen.queryByTestId("salary-partial-note")).toBeNull();
+	});
+
+	it("explains when payments were counted in the month they were for", () => {
+		renderChart({ data: buildAnalytics({ reattributedPaymentCount: 3 }) });
+
+		expect(screen.getByTestId("salary-reattributed-note")).toHaveTextContent(
+			"3 payments credited early or late"
+		);
+	});
+
+	it("hides the reattribution note when nothing was moved", () => {
+		renderChart();
+
+		expect(screen.queryByTestId("salary-reattributed-note")).toBeNull();
+	});
+
 	it("names the detected salary categories when labels are supplied", () => {
 		renderChart({
 			data: buildAnalytics({ usedCategoryIds: ["cat-salary", "cat-bonus"] }),
@@ -363,6 +407,7 @@ describe("SalaryProgressionChart", () => {
 					{
 						key: "2099",
 						label: "2099",
+						bucketKey: "2099",
 						atMs: Date.UTC(2099, 0, 1),
 						fromAverage: 10000,
 						toAverage: 12000,
@@ -374,5 +419,26 @@ describe("SalaryProgressionChart", () => {
 
 		expect(screen.queryAllByTestId("reference-dot")).toHaveLength(0);
 		expect(screen.getAllByTestId("salary-hike-row")).toHaveLength(1);
+	});
+
+	it("places a monthly raise marker on the bucket that contains it", () => {
+		renderChart({
+			data: buildAnalytics({
+				hikes: [
+					{
+						key: "2025-04",
+						label: "Apr 25",
+						bucketKey: "2025",
+						atMs: Date.UTC(2025, 3, 1),
+						fromAverage: 10000,
+						toAverage: 12000,
+						share: 0.2,
+					},
+				],
+			}),
+		});
+
+		expect(screen.getByTestId("reference-dot")).toHaveAttribute("data-x", "2025");
+		expect(screen.getByTestId("salary-hike-row")).toHaveTextContent("Apr 25");
 	});
 });

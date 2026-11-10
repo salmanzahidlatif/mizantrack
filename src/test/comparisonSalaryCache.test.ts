@@ -271,7 +271,7 @@ describe("comparison and salary progression analytics cache", () => {
 		const analytics = await getSalaryProgression(USER_ID, salaryQuery());
 
 		expect(analytics.totalEarned).toBe(32_000);
-		expect(analytics.latestAverage).toBe(12_000);
+		expect(analytics.points.find((point) => point.key === "2026-09")?.total).toBe(12_000);
 		expect(analytics.usedCategoryIds).toEqual([SALARY_CATEGORY_ID]);
 
 		const entry = await readEntry("salaryProgression", key);
@@ -302,7 +302,7 @@ describe("comparison and salary progression analytics cache", () => {
 		const recomputed = await getSalaryProgression(USER_ID, salaryQuery());
 
 		expect(recomputed.totalEarned).toBe(35_000);
-		expect(recomputed.latestAverage).toBe(15_000);
+		expect(recomputed.points.find((point) => point.key === "2026-09")?.total).toBe(15_000);
 		const entry = await readEntry("salaryProgression", key);
 		expect(entry?.dataVersion).not.toBe(staleDataVersion);
 	});

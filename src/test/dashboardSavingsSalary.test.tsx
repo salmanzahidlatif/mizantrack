@@ -320,6 +320,7 @@ function buildSalaryAnalytics(): SalaryProgressionAnalytics {
 		],
 		usedCategoryIds: ["salary"],
 		usedFallbackAllIncome: false,
+		reattributedPaymentCount: 0,
 		firstSalaryMs: Date.UTC(2024, 0, 15),
 		lastSalaryMs: Date.UTC(2025, 11, 15),
 		totalEarned: 264000,
@@ -331,6 +332,7 @@ function buildSalaryAnalytics(): SalaryProgressionAnalytics {
 			{
 				key: "2025",
 				label: "2025",
+				bucketKey: "2025",
 				atMs: Date.UTC(2025, 0, 1),
 				fromAverage: 10000,
 				toAverage: 12000,
