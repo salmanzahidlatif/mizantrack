@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import {
 	Area,
 	AreaChart,
@@ -22,7 +22,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { CARD_SURFACE } from "@/lib/motion";
+import { CARD_SURFACE, PRESS_SCALE } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 import type {
@@ -52,6 +52,21 @@ export const SALARY_INTERVAL_OPTIONS: readonly {
 	{ value: "yearly", label: "Yearly" },
 ];
 
+/**
+ * "average" plots the monthly run-rate (salary level, comparable across partial periods).
+ * "total" plots what was actually earned per bucket.
+ */
+export type SalaryChartMetric = "average" | "total";
+
+export const SALARY_METRIC_OPTIONS: readonly {
+	value: SalaryChartMetric;
+	label: string;
+	seriesName: string;
+}[] = [
+	{ value: "average", label: "Run-rate", seriesName: "Monthly run-rate" },
+	{ value: "total", label: "Total", seriesName: "Total salary" },
+];
+
 export interface SalaryProgressionChartProps {
 	data?: SalaryProgressionAnalytics;
 	isLoading?: boolean;
@@ -73,13 +88,14 @@ interface SalaryTooltipProps {
 	active?: boolean;
 	payload?: Array<{ payload?: SalaryProgressionPoint }>;
 	currency: string;
+	metric: SalaryChartMetric;
 }
 
 interface SalaryChartRow extends SalaryProgressionPoint {
-	/** Run-rate of completed buckets only. */
-	solidAverage: number | null;
-	/** Run-rate of the in-progress tail, drawn dashed. */
-	partialAverage: number | null;
+	/** Selected metric for completed buckets only. */
+	solidValue: number | null;
+	/** Selected metric for the in-progress tail, drawn dashed. */
+	partialValue: number | null;
 }
 
 function formatShare(share: number | null | undefined, signed = false): string {
@@ -97,9 +113,17 @@ function getShareToneClass(share: number | null | undefined): string {
 	return share > 0 ? "text-income" : "text-expense";
 }
 
-function SalaryTooltip({ active, payload, currency }: SalaryTooltipProps) {
+function SalaryTooltip({ active, payload, currency, metric }: SalaryTooltipProps) {
 	const point = payload?.[0]?.payload;
 	if (!active || !point) return null;
+
+	const growthShare = metric === "total" ? point.growthShare : point.averageGrowthShare;
+	const amountRows = [
+		{ key: "average", label: "Monthly run-rate", amount: point.average },
+		{ key: "total", label: "Total", amount: point.total },
+	];
+	// Lead with whichever figure the chart is currently plotting.
+	if (metric === "total") amountRows.reverse();
 
 	return (
 		<div className="rounded-xl border border-border/70 bg-popover/95 p-3 text-xs shadow-[var(--shadow-card)] backdrop-blur">
@@ -117,14 +141,12 @@ function SalaryTooltip({ active, payload, currency }: SalaryTooltipProps) {
 				)}
 			</p>
 			<div className="space-y-1.5">
-				<div className="flex items-center justify-between gap-4">
-					<span className="text-muted-foreground">Monthly run-rate</span>
-					<CurrencyAmount amount={point.average} currency={currency} className="text-xs" />
-				</div>
-				<div className="flex items-center justify-between gap-4">
-					<span className="text-muted-foreground">Total</span>
-					<CurrencyAmount amount={point.total} currency={currency} className="text-xs" />
-				</div>
+				{amountRows.map((row) => (
+					<div key={row.key} className="flex items-center justify-between gap-4">
+						<span className="text-muted-foreground">{row.label}</span>
+						<CurrencyAmount amount={row.amount} currency={currency} className="text-xs" />
+					</div>
+				))}
 				<div className="flex items-center justify-between gap-4">
 					<span className="text-muted-foreground">Months counted</span>
 					<span className="font-medium tabular-nums">{point.monthsCovered}</span>
@@ -134,15 +156,20 @@ function SalaryTooltip({ active, payload, currency }: SalaryTooltipProps) {
 					<span className="font-medium tabular-nums">{point.transactionCount}</span>
 				</div>
 				<div className="flex items-center justify-between gap-4">
-					<span className="text-muted-foreground">Run-rate growth</span>
-					<span
-						className={cn("font-medium tabular-nums", getShareToneClass(point.averageGrowthShare))}>
-						{formatShare(point.averageGrowthShare, true)}
+					<span className="text-muted-foreground">
+						{metric === "total" ? "Total growth" : "Run-rate growth"}
+					</span>
+					<span className={cn("font-medium tabular-nums", getShareToneClass(growthShare))}>
+						{formatShare(growthShare, true)}
 					</span>
 				</div>
 			</div>
 			{point.isPartial && (
-				<p className="mt-2 text-[10px] text-muted-foreground">This period is still in progress.</p>
+				<p className="mt-2 text-[10px] text-muted-foreground">
+					{metric === "total"
+						? "This period is still in progress, so its total is incomplete."
+						: "This period is still in progress."}
+				</p>
 			)}
 		</div>
 	);
@@ -181,6 +208,10 @@ export function SalaryProgressionChart({
 	const baseId = useId();
 	const titleId = `${baseId}-title`;
 	const summaryId = `${baseId}-summary`;
+	const [metric, setMetric] = useState<SalaryChartMetric>("average");
+	const seriesName =
+		SALARY_METRIC_OPTIONS.find((option) => option.value === metric)?.seriesName ??
+		"Monthly run-rate";
 
 	const points = useMemo(() => data?.points ?? [], [data]);
 	const chartRows = useMemo<SalaryChartRow[]>(
@@ -189,11 +220,11 @@ export function SalaryProgressionChart({
 				...point,
 				// The solid series stops at the last complete bucket; the dashed one carries the
 				// in-progress tail so a partial period is never mistaken for a finished one.
-				solidAverage: point.isPartial ? null : point.average,
-				partialAverage:
-					point.isPartial || points[index + 1]?.isPartial === true ? point.average : null,
+				solidValue: point.isPartial ? null : point[metric],
+				partialValue:
+					point.isPartial || points[index + 1]?.isPartial === true ? point[metric] : null,
 			})),
-		[points]
+		[points, metric]
 	);
 	const hasPartial = useMemo(() => points.some((point) => point.isPartial), [points]);
 	const detectedNote = useMemo(() => {
@@ -230,6 +261,30 @@ export function SalaryProgressionChart({
 				Salary Progression
 			</p>
 			<div className="flex flex-wrap items-center gap-2">
+				<div
+					role="group"
+					aria-label="Salary chart metric"
+					className="flex items-center rounded-lg border border-border/70 p-0.5">
+					{SALARY_METRIC_OPTIONS.map((option) => {
+						const selected = option.value === metric;
+						return (
+							<button
+								key={option.value}
+								type="button"
+								aria-pressed={selected}
+								onClick={() => setMetric(option.value)}
+								className={cn(
+									"rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+									selected
+										? "bg-primary text-primary-foreground shadow-sm"
+										: "text-muted-foreground hover:bg-muted hover:text-foreground",
+									PRESS_SCALE
+								)}>
+								{option.label}
+							</button>
+						);
+					})}
+				</div>
 				<Select
 					value={interval}
 					onValueChange={(value) => onIntervalChange(value as SalaryProgressionInterval)}>
@@ -279,7 +334,7 @@ export function SalaryProgressionChart({
 			{header}
 
 			<div id={summaryId} className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-				<SummaryTile label="Latest" testId="salary-latest-average">
+				<SummaryTile label="Latest monthly" testId="salary-latest-average">
 					<CurrencyAmount
 						amount={data.latestAverage}
 						currency={currency}
@@ -320,7 +375,9 @@ export function SalaryProgressionChart({
 
 			{hasPartial && (
 				<p data-testid="salary-partial-note" className="mb-3 text-[11px] text-muted-foreground">
-					The dashed segment is the current period, still in progress.
+					{metric === "total"
+						? "The dashed segment is the current period. Its total is still accumulating, so it will look lower than full periods."
+						: "The dashed segment is the current period, still in progress."}
 				</p>
 			)}
 
@@ -340,11 +397,11 @@ export function SalaryProgressionChart({
 									minTickGap={16}
 								/>
 								<YAxis tick={{ fontSize: 10 }} width={56} />
-								<Tooltip content={<SalaryTooltip currency={currency} />} />
+								<Tooltip content={<SalaryTooltip currency={currency} metric={metric} />} />
 								<Area
 									type="monotone"
-									dataKey="solidAverage"
-									name="Monthly run-rate"
+									dataKey="solidValue"
+									name={seriesName}
 									stroke={INCOME_COLOR}
 									fill={INCOME_COLOR}
 									fillOpacity={0.18}
@@ -354,8 +411,8 @@ export function SalaryProgressionChart({
 								/>
 								<Area
 									type="monotone"
-									dataKey="partialAverage"
-									name="Monthly run-rate (in progress)"
+									dataKey="partialValue"
+									name={`${seriesName} (in progress)`}
 									stroke={INCOME_COLOR}
 									strokeDasharray="4 3"
 									fill={INCOME_COLOR}
@@ -368,7 +425,7 @@ export function SalaryProgressionChart({
 									<ReferenceDot
 										key={hike.key}
 										x={point.label}
-										y={point.average}
+										y={point[metric]}
 										r={4}
 										fill={INCOME_COLOR}
 										stroke="var(--background)"

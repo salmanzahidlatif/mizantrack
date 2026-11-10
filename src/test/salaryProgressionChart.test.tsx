@@ -143,12 +143,12 @@ describe("SalaryProgressionChart", () => {
 
 		const chart = screen.getByTestId("area-chart");
 		const chartData = JSON.parse(chart.getAttribute("data-chart") ?? "null") as
-			| (SalaryProgressionPoint & { solidAverage: number | null })[]
+			| (SalaryProgressionPoint & { solidValue: number | null })[]
 			| null;
 
 		expect(chartData).toHaveLength(2);
 		expect(chartData?.map((row) => row.label)).toEqual(["2024", "2025"]);
-		expect(chartData?.map((row) => row.solidAverage)).toEqual([10000, 12000]);
+		expect(chartData?.map((row) => row.solidValue)).toEqual([10000, 12000]);
 		// Totals stay available for the tooltip.
 		expect(chartData?.[1]?.total).toBe(144000);
 	});
@@ -174,12 +174,61 @@ describe("SalaryProgressionChart", () => {
 
 		const chart = screen.getByTestId("area-chart");
 		const chartData = JSON.parse(chart.getAttribute("data-chart") ?? "null") as
-			| { solidAverage: number | null; partialAverage: number | null }[]
+			| { solidValue: number | null; partialValue: number | null }[]
 			| null;
 
-		expect(chartData?.map((row) => row.solidAverage)).toEqual([10000, null]);
-		expect(chartData?.map((row) => row.partialAverage)).toEqual([10000, 10000]);
+		expect(chartData?.map((row) => row.solidValue)).toEqual([10000, null]);
+		expect(chartData?.map((row) => row.partialValue)).toEqual([10000, 10000]);
 		expect(screen.getByTestId("salary-partial-note")).toBeInTheDocument();
+	});
+
+	it("defaults to run-rate and switches the plotted series to totals", () => {
+		renderChart();
+
+		const runRate = screen.getByRole("button", { name: "Run-rate" });
+		const total = screen.getByRole("button", { name: "Total" });
+		expect(runRate).toHaveAttribute("aria-pressed", "true");
+		expect(total).toHaveAttribute("aria-pressed", "false");
+
+		fireEvent.click(total);
+
+		const chartData = JSON.parse(
+			screen.getByTestId("area-chart").getAttribute("data-chart") ?? "null"
+		) as { solidValue: number | null }[] | null;
+		expect(chartData?.map((row) => row.solidValue)).toEqual([120000, 144000]);
+		expect(total).toHaveAttribute("aria-pressed", "true");
+		expect(runRate).toHaveAttribute("aria-pressed", "false");
+		// Raise markers follow the plotted metric so they sit on the line.
+		expect(screen.getByTestId("reference-dot")).toHaveAttribute("data-y", "144000");
+	});
+
+	it("keeps the partial bucket dashed and warns its total is incomplete in totals mode", () => {
+		renderChart({
+			data: buildAnalytics({
+				points: [
+					buildPoint(),
+					buildPoint({
+						key: "2025",
+						label: "2025",
+						total: 30000,
+						average: 10000,
+						monthsCovered: 3,
+						monthsWithIncome: 3,
+						isPartial: true,
+					}),
+				],
+				hikes: [],
+			}),
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "Total" }));
+
+		const chartData = JSON.parse(
+			screen.getByTestId("area-chart").getAttribute("data-chart") ?? "null"
+		) as { solidValue: number | null; partialValue: number | null }[] | null;
+		expect(chartData?.map((row) => row.solidValue)).toEqual([120000, null]);
+		expect(chartData?.map((row) => row.partialValue)).toEqual([120000, 30000]);
+		expect(screen.getByTestId("salary-partial-note")).toHaveTextContent("still accumulating");
 	});
 
 	it("names the detected salary categories when labels are supplied", () => {
