@@ -35,10 +35,13 @@ import { Progress } from "@/components/ui/progress";
 import { useAccountsAnalytics } from "@/hooks/useAccountsAnalytics";
 import { useAnalyticsMonthSummaries } from "@/hooks/useAnalyticsMonthSummaries";
 import { useBudgets, type BudgetProgressRow } from "@/hooks/useBudgets";
+import { useCategories } from "@/hooks/useCategories";
+import { useComparisonAnalytics } from "@/hooks/useComparisonAnalytics";
 import { useDbConfig } from "@/hooks/useDbConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePeriodAnalytics } from "@/hooks/usePeriodAnalytics";
 import { useRequiredUserId } from "@/hooks/useRequiredUserId";
+import { useSalaryProgression } from "@/hooks/useSalaryProgression";
 import { resolveCurrencyCode } from "@/lib/analytics/balanceMath";
 import {
 	getLocalTimeZoneOffsetMinutes,
@@ -55,12 +58,18 @@ import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/store/filter-store";
 import { useUIStore } from "@/store/ui-store";
 
+import type { ComparisonAnalyticsQuery } from "@/lib/analytics/comparisonAnalytics";
 import type {
 	AccountsAnalytics,
 	AnalyticsMonthSummaryItem,
 	PeriodAnalytics,
 	PeriodAnalyticsQuery,
 } from "@/lib/analytics/periodAnalytics";
+import type {
+	SalaryProgressionInterval,
+	SalaryProgressionQuery,
+} from "@/lib/analytics/salaryProgression";
+import type { ComparisonPresetId } from "@/lib/comparisonPresets";
 
 const CategoryBreakdownChart = dynamic(
 	() => import("@/components/charts/CategoryDonutChart").then((mod) => mod.CategoryBreakdownChart),
@@ -96,6 +105,22 @@ const AccountDistributionChart = dynamic(
 		loading: () => (
 			<SkeletonChart className="md:h-full md:w-full md:p-5" chartClassName="h-36 md:h-44" />
 		),
+	}
+);
+
+const SavingsComparisonCard = dynamic(
+	() =>
+		import("@/components/charts/SavingsComparisonCard").then((mod) => mod.SavingsComparisonCard),
+	{
+		loading: () => <SkeletonChart className="md:h-full md:w-full" chartClassName="h-32 md:h-36" />,
+	}
+);
+
+const SalaryProgressionChart = dynamic(
+	() =>
+		import("@/components/charts/SalaryProgressionChart").then((mod) => mod.SalaryProgressionChart),
+	{
+		loading: () => <SkeletonChart className="md:h-full md:w-full" chartClassName="h-32 md:h-36" />,
 	}
 );
 
@@ -792,6 +817,13 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 	const [selectedMonth, setSelectedMonth] = useState(() => clampDashboardMonth(new Date()));
 	const [interval, setInterval] = useState<AnalyticsInterval>("monthly");
 	const [intervalOpen, setIntervalOpen] = useState(false);
+	const [comparisonPreset, setComparisonPreset] = useState<ComparisonPresetId>("year-vs-last-year");
+	const [comparisonCustomRange, setComparisonCustomRange] = useState<{
+		from: Date;
+		to: Date;
+	} | null>(null);
+	const [salaryInterval, setSalaryInterval] = useState<SalaryProgressionInterval>("yearly");
+	const [salaryYears, setSalaryYears] = useState(0);
 	const timeZoneOffsetMinutes = useMemo(() => getLocalTimeZoneOffsetMinutes(now), [now]);
 	const periodNavOptions = useMemo(
 		() => ({ now, fiscalYearStartMonth, timeZoneOffsetMinutes }),
@@ -887,6 +919,42 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 		currency,
 		interval === "monthly" ? periodAnalytics : monthlyBudgetAnalytics
 	);
+
+	const comparisonQuery = useMemo<ComparisonAnalyticsQuery | undefined>(
+		() =>
+			currency
+				? {
+						currency,
+						presetId: comparisonPreset,
+						customRange: comparisonCustomRange ?? undefined,
+						fiscalYearStartMonth,
+						timeZoneOffsetMinutes,
+					}
+				: undefined,
+		[currency, comparisonPreset, comparisonCustomRange, fiscalYearStartMonth, timeZoneOffsetMinutes]
+	);
+	const salaryQuery = useMemo<SalaryProgressionQuery | undefined>(
+		() =>
+			currency
+				? {
+						currency,
+						interval: salaryInterval,
+						years: salaryYears,
+						fiscalYearStartMonth,
+						timeZoneOffsetMinutes,
+					}
+				: undefined,
+		[currency, salaryInterval, salaryYears, fiscalYearStartMonth, timeZoneOffsetMinutes]
+	);
+	const comparisonAnalytics = useComparisonAnalytics(userId, comparisonQuery);
+	const salaryProgression = useSalaryProgression(userId, salaryQuery);
+	const incomeCategories = useCategories(userId, "Income", currency);
+	const salaryCategoryLabels = useMemo(() => {
+		if (!incomeCategories?.length) return undefined;
+		return Object.fromEntries(
+			incomeCategories.map((category) => [category.id, category.title])
+		) as Record<string, string>;
+	}, [incomeCategories]);
 
 	const changeMonth = useCallback(
 		(delta: number) => {
@@ -1051,6 +1119,34 @@ export function DashboardPageClient({ userId: providedUserId }: DashboardPageCli
 						isLoading={budgetProgress === undefined}
 						currency={currency}
 						periodLabel={budgetMonthLabel}
+					/>
+				</div>
+
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[8]}>
+					<SavingsComparisonCard
+						data={comparisonAnalytics}
+						isLoading={comparisonAnalytics === undefined}
+						currency={currency}
+						presetId={comparisonPreset}
+						onPresetChange={setComparisonPreset}
+						customRange={comparisonCustomRange}
+						onCustomRangeChange={setComparisonCustomRange}
+						fiscalYearStartMonth={fiscalYearStartMonth}
+						className="md:w-full"
+					/>
+				</div>
+
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[9]}>
+					<SalaryProgressionChart
+						data={salaryProgression}
+						isLoading={salaryProgression === undefined}
+						currency={currency}
+						interval={salaryInterval}
+						onIntervalChange={setSalaryInterval}
+						years={salaryYears}
+						onYearsChange={setSalaryYears}
+						categoryLabels={salaryCategoryLabels}
+						className="md:w-full"
 					/>
 				</div>
 			</div>

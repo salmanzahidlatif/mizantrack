@@ -30,6 +30,8 @@ interface DateRangePickerProps {
 	value?: DateRange;
 	onChange?: (range: DateRange) => void;
 	fiscalYearStartMonth?: number;
+	/** Limits which quick presets are offered. Defaults to all of them. */
+	presets?: readonly FilterPeriod[];
 }
 
 export function DateRangePicker({
@@ -37,9 +39,17 @@ export function DateRangePicker({
 	value,
 	onChange,
 	fiscalYearStartMonth = 7,
+	presets,
 }: DateRangePickerProps) {
 	const store = useFilterStore();
-	const [localPeriod, setLocalPeriod] = useState<FilterPeriod>("month");
+	const visiblePresets = presets
+		? PRESETS.filter((preset) => presets.includes(preset.value))
+		: PRESETS;
+	const [localPeriod, setLocalPeriod] = useState<FilterPeriod>(() =>
+		visiblePresets.some((preset) => preset.value === "month")
+			? "month"
+			: (visiblePresets[0]?.value ?? "month")
+	);
 	const [calendarOpen, setCalendarOpen] = useState(false);
 
 	// Standalone mode uses local state; otherwise sync with filter store
@@ -81,7 +91,7 @@ export function DateRangePicker({
 
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
-			{PRESETS.map((preset) => (
+			{visiblePresets.map((preset) => (
 				<Button
 					key={preset.value}
 					size="sm"

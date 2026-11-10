@@ -10,6 +10,8 @@ export const DASHBOARD_GRID_CELL_CLASSNAMES = [
 	"md:col-span-6 md:flex lg:col-span-5",
 	"md:col-span-6 md:flex lg:col-span-5",
 	"md:col-span-6 md:flex lg:col-span-7",
+	"md:col-span-12 md:flex lg:col-span-6",
+	"md:col-span-12 md:flex lg:col-span-6",
 ] as const;
 
 export const DASHBOARD_GRID_CELLS = {
@@ -21,4 +23,6 @@ export const DASHBOARD_GRID_CELLS = {
 	spending: DASHBOARD_GRID_CELL_CLASSNAMES[5],
 	category: DASHBOARD_GRID_CELL_CLASSNAMES[6],
 	budgets: DASHBOARD_GRID_CELL_CLASSNAMES[7],
+	savingsComparison: DASHBOARD_GRID_CELL_CLASSNAMES[8],
+	salaryProgression: DASHBOARD_GRID_CELL_CLASSNAMES[9],
 } as const;

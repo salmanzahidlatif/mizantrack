@@ -151,6 +151,12 @@ export function DashboardLoadingSkeleton() {
 				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[7]}>
 					<DashboardBudgetPanelSkeleton />
 				</div>
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[8]}>
+					<SkeletonChart className="md:h-full md:w-full" chartClassName="h-32 md:h-36" />
+				</div>
+				<div className={DASHBOARD_GRID_CELL_CLASSNAMES[9]}>
+					<SkeletonChart className="md:h-full md:w-full" chartClassName="h-32 md:h-36" />
+				</div>
 			</div>
 		</RouteLoadingFrame>
 	);
