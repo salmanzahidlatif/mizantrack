@@ -167,6 +167,26 @@ export interface DashboardStats {
 				value: unknown;
 			}
 		>;
+		comparisons?: Record<
+			string,
+			{
+				logicVersion: number;
+				dataVersion: string;
+				key: string;
+				updatedAt: number;
+				value: unknown;
+			}
+		>;
+		salaryProgression?: Record<
+			string,
+			{
+				logicVersion: number;
+				dataVersion: string;
+				key: string;
+				updatedAt: number;
+				value: unknown;
+			}
+		>;
 	};
 	balances: Record<string, number>;
 	perCurrency: Record<

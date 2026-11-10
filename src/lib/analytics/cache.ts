@@ -7,7 +7,19 @@ import {
 	markDashboardStatsCacheValid,
 	type AnalyticsSourceData,
 } from "@/lib/analytics/cacheMetadata";
+import {
+	aggregateComparisonAnalyticsChunked,
+	getComparisonAnalyticsCacheKey,
+	type ComparisonAnalytics,
+	type ComparisonAnalyticsQuery,
+} from "@/lib/analytics/comparisonAnalytics";
 import { aggregateDashboardStatsChunked } from "@/lib/analytics/computeDashboardStats";
+import {
+	aggregateSalaryProgressionChunked,
+	getSalaryProgressionCacheKey,
+	type SalaryProgressionAnalytics,
+	type SalaryProgressionQuery,
+} from "@/lib/analytics/salaryProgression";
 import { getDateRange, resolveAnalyticsPeriod, type AnalyticsInterval } from "@/lib/dateRange";
 import { db } from "@/lib/db/local";
 
@@ -21,12 +33,24 @@ import type {
 } from "@/lib/analytics/periodAnalytics";
 import type { DateRange, DashboardStats } from "@/types";
 
-type AnalyticsCacheNamespace = "accounts" | "periods" | "monthlySummaries";
+export { getComparisonAnalyticsCacheKey, getSalaryProgressionCacheKey };
 
-type CachedAnalyticsValueByNamespace = {
+export const ANALYTICS_CACHE_NAMESPACES = [
+	"accounts",
+	"periods",
+	"monthlySummaries",
+	"comparisons",
+	"salaryProgression",
+] as const;
+
+export type AnalyticsCacheNamespace = (typeof ANALYTICS_CACHE_NAMESPACES)[number];
+
+export type CachedAnalyticsValueByNamespace = {
 	accounts: AccountsAnalytics;
 	periods: PeriodAnalytics;
 	monthlySummaries: AnalyticsMonthSummaryItem[];
+	comparisons: ComparisonAnalytics;
+	salaryProgression: SalaryProgressionAnalytics;
 };
 
 export type CachedAnalyticsReadState<TNamespace extends AnalyticsCacheNamespace> = {
@@ -396,4 +420,44 @@ export async function clearAnalyticsCache(userId: string): Promise<void> {
 export function stripAnalyticsQueryCache(stats: DashboardStats): DashboardStats {
 	const { analyticsCache: _analyticsCache, ...rest } = stats;
 	return rest;
+}
+
+export async function getComparisonAnalytics(
+	userId: string,
+	query: ComparisonAnalyticsQuery
+): Promise<ComparisonAnalytics> {
+	const normalizedQuery = { ...query, currency: normalizeCacheCurrency(query.currency) };
+	return getOrComputeCachedAnalyticsValue(
+		userId,
+		"comparisons",
+		getComparisonAnalyticsCacheKey(normalizedQuery),
+		(source) =>
+			aggregateComparisonAnalyticsChunked(
+				userId,
+				source.accounts,
+				source.categories,
+				source.transactions,
+				normalizedQuery
+			)
+	);
+}
+
+export async function getSalaryProgression(
+	userId: string,
+	query: SalaryProgressionQuery
+): Promise<SalaryProgressionAnalytics> {
+	const normalizedQuery = { ...query, currency: normalizeCacheCurrency(query.currency) };
+	return getOrComputeCachedAnalyticsValue(
+		userId,
+		"salaryProgression",
+		getSalaryProgressionCacheKey(normalizedQuery),
+		(source) =>
+			aggregateSalaryProgressionChunked(
+				userId,
+				source.accounts,
+				source.categories,
+				source.transactions,
+				normalizedQuery
+			)
+	);
 }

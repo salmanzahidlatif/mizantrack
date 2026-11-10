@@ -6,23 +6,12 @@ import { useDeferredLiveQueryState } from "@/hooks/useDeferredLiveQuery";
 import {
 	getCachedAnalyticsReadState,
 	getOrComputeCachedAnalyticsValue,
+	type AnalyticsCacheNamespace,
 	type CachedAnalyticsReadState,
+	type CachedAnalyticsValueByNamespace,
 } from "@/lib/analytics/cache";
 
 import type { AnalyticsSourceData } from "@/lib/analytics/cacheMetadata";
-import type {
-	AccountsAnalytics,
-	AnalyticsMonthSummaryItem,
-	PeriodAnalytics,
-} from "@/lib/analytics/periodAnalytics";
-
-type AnalyticsCacheNamespace = "accounts" | "periods" | "monthlySummaries";
-
-type CachedAnalyticsValueByNamespace = {
-	accounts: AccountsAnalytics;
-	periods: PeriodAnalytics;
-	monthlySummaries: AnalyticsMonthSummaryItem[];
-};
 
 interface UseCachedAnalyticsValueOptions<TNamespace extends AnalyticsCacheNamespace> {
 	userId: string;
